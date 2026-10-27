@@ -46,6 +46,8 @@ std::optional<Salt> salt_from_key(std::string_view key);
 struct SaltAddition {
     Salt salt = Salt::Gypsum;
     double mass_kg = 0.0;
+
+    bool operator==(const SaltAddition&) const = default;
 };
 
 // `water` after dissolving `additions` into `volume_l` of it. Ion amounts
@@ -83,6 +85,8 @@ std::optional<Acid> acid_from_key(std::string_view key);
 struct AcidAddition {
     Acid acid = Acid::Lactic88;
     double volume_l = 0.0;
+
+    bool operator==(const AcidAddition&) const = default;
 };
 
 // Milliequivalents of acid that `volume_l` of it delivers at `ph` (an acid

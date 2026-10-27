@@ -46,17 +46,25 @@ target_link_libraries(ninkasi_calc PUBLIC ninkasi_options)
 # ---------------------------------------------------------------------------
 add_library(ninkasi_core STATIC
     src/domain/element.cpp
+    src/domain/recipe.cpp
+    src/domain/recipe_math.cpp
     src/data/audit_log.cpp
     src/data/database.cpp
     src/data/element_repository.cpp
+    src/data/ingredient_repository.cpp
     src/data/migrations.cpp
+    src/data/recipe_json.cpp
+    src/data/recipe_repository.cpp
     src/data/settings_repository.cpp
+    src/app/calc_settings.cpp
     src/app/floor_service.cpp
+    src/app/ingredient_library.cpp
     src/app/paths.cpp
+    src/app/recipe_service.cpp
     src/app/session.cpp
     src/app/unit_settings.cpp
 )
-target_link_libraries(ninkasi_core PUBLIC ninkasi_calc sqlite3)
+target_link_libraries(ninkasi_core PUBLIC ninkasi_calc sqlite3 PRIVATE nlohmann_json)
 
 # ---------------------------------------------------------------------------
 # ninkasi: the desktop application.
@@ -99,6 +107,7 @@ if(NINKASI_BUILD_TESTS)
     add_executable(ninkasi_tests
         tests/test_main.cpp
         tests/app/test_floor_service.cpp
+        tests/app/test_recipe_service.cpp
         tests/app/test_unit_settings.cpp
         tests/calc/test_alcohol.cpp
         tests/calc/test_bitterness.cpp
@@ -110,8 +119,10 @@ if(NINKASI_BUILD_TESTS)
         tests/calc/test_water.cpp
         tests/calc/test_yeast.cpp
         tests/data/test_database.cpp
+        tests/data/test_recipe_json.cpp
         tests/data/test_settings.cpp
         tests/domain/test_element.cpp
+        tests/domain/test_recipe_math.cpp
     )
     target_include_directories(ninkasi_tests PRIVATE tests)
     target_link_libraries(ninkasi_tests PRIVATE ninkasi_core doctest)

@@ -64,6 +64,8 @@ struct IbuSettings {
     double mash_hop_factor = 0.2;
     // Garetz only: brewery elevation above sea level, in meters.
     double elevation_m = 0.0;
+
+    bool operator==(const IbuSettings&) const = default;
 };
 
 // The IBUs from each addition, in the same order. They are computed together

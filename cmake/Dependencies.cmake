@@ -41,7 +41,14 @@ FetchContent_Declare(doctest
     SOURCE_SUBDIR  do-not-build
 )
 
-FetchContent_MakeAvailable(glfw imgui sqlite doctest)
+# --- nlohmann/json (header-only): recipe storage and BeerJSON import ----------
+FetchContent_Declare(json
+    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR  do-not-build
+)
+
+FetchContent_MakeAvailable(glfw imgui sqlite doctest json)
 
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
@@ -69,6 +76,9 @@ target_compile_definitions(sqlite3 PRIVATE
     SQLITE_OMIT_LOAD_EXTENSION
 )
 target_link_libraries(sqlite3 PUBLIC Threads::Threads)
+
+add_library(nlohmann_json INTERFACE)
+target_include_directories(nlohmann_json INTERFACE ${json_SOURCE_DIR}/include)
 
 add_library(doctest INTERFACE)
 target_include_directories(doctest INTERFACE ${doctest_SOURCE_DIR})

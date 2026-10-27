@@ -66,6 +66,29 @@ constexpr Migration kMigrations[] = {
             PRIMARY KEY (element_id, dimension)
         );
     )sql"},
+    {3, R"sql(
+        -- Recipes. The body is the whole recipe as JSON (data/recipe_json.cpp):
+        -- it is always read and saved as one document, and batches will keep
+        -- their own copy of it.
+        CREATE TABLE recipes (
+            id         INTEGER PRIMARY KEY,
+            name       TEXT NOT NULL,
+            style      TEXT NOT NULL DEFAULT '',
+            body       TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        -- The ingredient library: fermentables, hops and yeasts.
+        CREATE TABLE ingredients (
+            id         INTEGER PRIMARY KEY,
+            kind       TEXT NOT NULL,                     -- 'fermentable', 'hop' or 'yeast'
+            name       TEXT NOT NULL,
+            body       TEXT NOT NULL,                     -- the ingredient as JSON
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE INDEX ingredients_by_kind ON ingredients (kind, name);
+    )sql"},
 };
 
 } // namespace

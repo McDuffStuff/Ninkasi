@@ -1,0 +1,18 @@
+# Build output
+/build/
+/out/
+
+# IDE / editor
+/.vs/
+/.vscode/
+/.idea/
+*.user
+
+# Per-machine Claude Code settings
+/.claude/settings.local.json
+
+# Runtime data created when running from the source tree
+*.db
+*.db-wal
+*.db-shm
+imgui.ini

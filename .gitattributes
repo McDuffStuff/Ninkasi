@@ -1,0 +1,9 @@
+# Store text with LF line endings; check out with the platform's own.
+* text=auto
+
+# Windows scripts always use CRLF.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.ttf binary
+*.png binary

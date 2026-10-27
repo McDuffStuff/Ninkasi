@@ -203,7 +203,7 @@ void ElementWindows::draw_overview_tab(Window& window, const domain::Element& el
             label_cell("Capacity");
             double capacity_l = element.capacity_l.value_or(0.0);
             ImGui::SetNextItemWidth(120.0f * ui_scale_);
-            if (input_quantity("##capacity", capacity_l, units.unit_for(calc::Dimension::Volume))) {
+            if (input_quantity("##capacity", capacity_l, units.unit_for(calc::Measure::Volume))) {
                 floor_.set_capacity(element.id, capacity_l > 0.0 ? std::optional<double>(capacity_l) : std::nullopt);
             }
 
@@ -221,26 +221,26 @@ void ElementWindows::draw_units_tab(const domain::Element& element) {
     wrapped_note("Units for this equipment only. \"Brewery default\" follows the Units menu.");
     ImGui::Spacing();
     if (!ImGui::BeginTable("##units", 2, ImGuiTableFlags_SizingStretchProp)) return;
-    ImGui::TableSetupColumn("##dimension", ImGuiTableColumnFlags_WidthFixed, 100.0f * ui_scale_);
+    ImGui::TableSetupColumn("##measure", ImGuiTableColumnFlags_WidthFixed, 120.0f * ui_scale_);
     ImGui::TableSetupColumn("##unit", ImGuiTableColumnFlags_WidthStretch);
 
-    for (calc::Dimension dimension : calc::kAllDimensions) {
-        label_cell(calc::name(dimension).data());
+    for (calc::Measure measure : calc::kAllMeasures) {
+        label_cell(calc::name(measure).data());
 
-        const std::optional<calc::Unit> chosen = element.unit_overrides[calc::index_of(dimension)];
+        const std::optional<calc::Unit> chosen = element.unit_overrides[calc::index_of(measure)];
         const std::string default_label =
-            "Brewery default (" + std::string(calc::symbol(units_.unit_for(dimension))) + ")";
+            "Brewery default (" + std::string(calc::symbol(units_.unit_for(measure))) + ")";
         const std::string preview = chosen ? unit_label(*chosen) : default_label;
 
-        ImGui::PushID(static_cast<int>(calc::index_of(dimension)));
+        ImGui::PushID(static_cast<int>(calc::index_of(measure)));
         ImGui::SetNextItemWidth(-FLT_MIN);
         if (ImGui::BeginCombo("##unit", preview.c_str())) {
             if (ImGui::Selectable(default_label.c_str(), !chosen)) {
-                floor_.set_unit_override(element.id, dimension, std::nullopt);
+                floor_.set_unit_override(element.id, measure, std::nullopt);
             }
-            for (calc::Unit unit : calc::units_of(dimension)) {
+            for (calc::Unit unit : calc::units_of(measure)) {
                 if (ImGui::Selectable(unit_label(unit).c_str(), chosen == unit)) {
-                    floor_.set_unit_override(element.id, dimension, unit);
+                    floor_.set_unit_override(element.id, measure, unit);
                 }
             }
             ImGui::EndCombo();

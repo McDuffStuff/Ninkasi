@@ -78,9 +78,9 @@ TEST_CASE("every change is saved and survives a reload") {
         floor.set_rect(id, {10.0, 20.0, 150.0, 200.0});
         floor.rename(id, "  Brite 1  ");
         floor.set_capacity(id, 1173.48);
-        floor.set_unit_override(id, calc::Dimension::Volume, calc::Unit::Hectoliter);
-        floor.set_unit_override(id, calc::Dimension::Temperature, calc::Unit::Celsius);
-        floor.set_unit_override(id, calc::Dimension::Temperature, std::nullopt);  // cleared again
+        floor.set_unit_override(id, calc::Measure::Volume, calc::Unit::Hectoliter);
+        floor.set_unit_override(id, calc::Measure::Temperature, calc::Unit::Celsius);
+        floor.set_unit_override(id, calc::Measure::Temperature, std::nullopt);  // cleared again
     }
 
     app::FloorService reloaded(brewery.db, brewery.session);
@@ -93,8 +93,8 @@ TEST_CASE("every change is saved and survives a reload") {
     CHECK(element.rect == expected_rect);
     REQUIRE(element.capacity_l.has_value());
     CHECK(*element.capacity_l == near(1173.48, 1e-9));
-    CHECK(element.unit_overrides[calc::index_of(calc::Dimension::Volume)] == calc::Unit::Hectoliter);
-    CHECK_FALSE(element.unit_overrides[calc::index_of(calc::Dimension::Temperature)].has_value());
+    CHECK(element.unit_overrides[calc::index_of(calc::Measure::Volume)] == calc::Unit::Hectoliter);
+    CHECK_FALSE(element.unit_overrides[calc::index_of(calc::Measure::Temperature)].has_value());
 }
 
 TEST_CASE("elements can't shrink below the minimum size") {
@@ -113,7 +113,7 @@ TEST_CASE("invalid changes are rejected without saving anything") {
 
     CHECK_THROWS_AS(floor.rename(id, "   "), std::invalid_argument);
     CHECK_THROWS_AS(floor.set_capacity(id, -1.0), std::invalid_argument);
-    CHECK_THROWS_AS(floor.set_unit_override(id, calc::Dimension::Volume, calc::Unit::Pound), std::invalid_argument);
+    CHECK_THROWS_AS(floor.set_unit_override(id, calc::Measure::Volume, calc::Unit::Pound), std::invalid_argument);
     CHECK_THROWS_AS(floor.rename(id + 100, "Ghost"), std::invalid_argument);
     CHECK(floor.find(id)->name == "Fermenter 1");
     CHECK_FALSE(floor.find(id)->capacity_l.has_value());
@@ -123,7 +123,7 @@ TEST_CASE("removing an element removes its unit overrides too") {
     Brewery brewery;
     app::FloorService floor(brewery.db, brewery.session);
     const auto id = floor.add(ElementType::Fermenter, 0.0, 0.0);
-    floor.set_unit_override(id, calc::Dimension::Volume, calc::Unit::UsGallon);
+    floor.set_unit_override(id, calc::Measure::Volume, calc::Unit::UsGallon);
     REQUIRE(brewery.count("SELECT COUNT(*) FROM element_unit_overrides;") == 1);
 
     floor.remove(id);

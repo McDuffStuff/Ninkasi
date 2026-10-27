@@ -6,26 +6,26 @@ namespace ninkasi::app {
 
 namespace {
 
-std::string settings_key(calc::Dimension dimension) {
-    return "units." + std::string(calc::key(dimension));
+std::string settings_key(calc::Measure measure) {
+    return "units." + std::string(calc::key(measure));
 }
 
 } // namespace
 
 calc::UnitPreferences load_unit_preferences(data::SettingsRepository& settings) {
     calc::UnitPreferences preferences = calc::UnitPreferences::us_brewery();
-    for (calc::Dimension dimension : calc::kAllDimensions) {
-        const std::optional<std::string> saved = settings.get(settings_key(dimension));
+    for (calc::Measure measure : calc::kAllMeasures) {
+        const std::optional<std::string> saved = settings.get(settings_key(measure));
         if (!saved) continue;
-        const std::optional<calc::Unit> unit = calc::unit_from_key(*saved);
-        if (unit && calc::dimension_of(*unit) == dimension) preferences.set(*unit);
+        // set() ignores a unit that can't measure this (e.g. a volume saved for mass).
+        if (const std::optional<calc::Unit> unit = calc::unit_from_key(*saved)) preferences.set(measure, *unit);
     }
     return preferences;
 }
 
 void save_unit_preferences(data::SettingsRepository& settings, const calc::UnitPreferences& preferences) {
-    for (calc::Dimension dimension : calc::kAllDimensions) {
-        settings.set(settings_key(dimension), calc::key(preferences.unit_for(dimension)));
+    for (calc::Measure measure : calc::kAllMeasures) {
+        settings.set(settings_key(measure), calc::key(preferences.unit_for(measure)));
     }
 }
 

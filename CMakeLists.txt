@@ -34,6 +34,8 @@ add_library(ninkasi_calc STATIC
     src/calc/gravity.cpp
     src/calc/units.cpp
     src/calc/volumes.cpp
+    src/calc/water.cpp
+    src/calc/yeast.cpp
 )
 target_include_directories(ninkasi_calc PUBLIC src)
 target_link_libraries(ninkasi_calc PUBLIC ninkasi_options)
@@ -105,6 +107,8 @@ if(NINKASI_BUILD_TESTS)
         tests/calc/test_gravity.cpp
         tests/calc/test_units.cpp
         tests/calc/test_volumes.cpp
+        tests/calc/test_water.cpp
+        tests/calc/test_yeast.cpp
         tests/data/test_database.cpp
         tests/data/test_settings.cpp
         tests/domain/test_element.cpp

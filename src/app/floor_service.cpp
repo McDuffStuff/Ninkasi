@@ -103,13 +103,13 @@ void FloorService::set_capacity(std::int64_t id, std::optional<double> capacity_
     get(id) = std::move(updated);
 }
 
-void FloorService::set_unit_override(std::int64_t id, calc::Dimension dimension, std::optional<calc::Unit> unit) {
-    if (unit && calc::dimension_of(*unit) != dimension) {
-        throw std::invalid_argument("the unit doesn't measure that dimension");
+void FloorService::set_unit_override(std::int64_t id, calc::Measure measure, std::optional<calc::Unit> unit) {
+    if (unit && calc::dimension_of(*unit) != calc::dimension_of(measure)) {
+        throw std::invalid_argument("that unit can't measure " + std::string(calc::name(measure)));
     }
     domain::Element& element = get(id);
-    repository_.set_unit_override(id, dimension, unit);
-    element.unit_overrides[calc::index_of(dimension)] = unit;
+    repository_.set_unit_override(id, measure, unit);
+    element.unit_overrides[calc::index_of(measure)] = unit;
 }
 
 void FloorService::remove(std::int64_t id) {

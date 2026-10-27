@@ -348,7 +348,7 @@ void FloorView::draw_element(ImDrawList* draw_list, const domain::Element& eleme
         }
         if (type.is_vessel && element.capacity_l) {
             const calc::Unit unit =
-                units_.with_overrides(element.unit_overrides).unit_for(calc::Dimension::Volume);
+                units_.with_overrides(element.unit_overrides).unit_for(calc::Measure::Volume);
             const std::string capacity = calc::format(*element.capacity_l, unit);
             draw_list->AddText(font, small, {min.x + pad.x, max.y - pad.y - small}, muted, capacity.c_str());
         }
@@ -397,7 +397,7 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
     if (type.is_vessel) {
         ImGui::Separator();
         const std::string capacity = element->capacity_l
-                                         ? calc::format(*element->capacity_l, units.unit_for(calc::Dimension::Volume))
+                                         ? calc::format(*element->capacity_l, units.unit_for(calc::Measure::Volume))
                                          : std::string("not set");
         ImGui::Text("Capacity: %s", capacity.c_str());
         ImGui::TextUnformatted("Contents: empty");

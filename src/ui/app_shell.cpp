@@ -75,21 +75,21 @@ void AppShell::draw_units_menu() {
     if (!ImGui::BeginMenu("Units")) return;
 
     if (ImGui::MenuItem("US brewery preset")) set_units(calc::UnitPreferences::us_brewery());
-    ImGui::SetItemTooltip("Barrels, pounds, °F, °Plato, SRM and °Lovibond");
+    ImGui::SetItemTooltip("Barrels, pounds, grams for small additions, °F, °Plato, SRM and °Lovibond");
     if (ImGui::MenuItem("Metric brewery preset")) set_units(calc::UnitPreferences::metric_brewery());
-    ImGui::SetItemTooltip("Hectoliters, kilograms, °C, °Plato and EBC");
+    ImGui::SetItemTooltip("Hectoliters, kilograms, grams for small additions, °C, °Plato and EBC");
     ImGui::Separator();
 
-    for (calc::Dimension dimension : calc::kAllDimensions) {
+    for (calc::Measure measure : calc::kAllMeasures) {
         // "###" keeps the submenu's identity while its label shows the current unit.
-        const calc::Unit current = units_.unit_for(dimension);
-        const std::string label = std::string(calc::name(dimension)) + " (" + std::string(calc::symbol(current)) +
-                                  ")###units_" + std::string(calc::key(dimension));
+        const calc::Unit current = units_.unit_for(measure);
+        const std::string label = std::string(calc::name(measure)) + " (" + std::string(calc::symbol(current)) +
+                                  ")###units_" + std::string(calc::key(measure));
         if (ImGui::BeginMenu(label.c_str())) {
-            for (calc::Unit unit : calc::units_of(dimension)) {
+            for (calc::Unit unit : calc::units_of(measure)) {
                 if (ImGui::MenuItem(unit_label(unit).c_str(), nullptr, unit == current)) {
                     calc::UnitPreferences changed = units_;
-                    changed.set(unit);
+                    changed.set(measure, unit);
                     set_units(changed);
                 }
             }

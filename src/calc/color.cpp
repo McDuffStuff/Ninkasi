@@ -34,4 +34,10 @@ double estimate_srm(std::span<const GrainColor> grains, double volume_l, ColorMo
     return srm_from_mcu(malt_color_units(grains, volume_l), model);
 }
 
+Rgb srm_to_rgb(double srm) {
+    const double s = is_valid(srm) ? std::max(0.0, srm) : 0.0;
+    return {static_cast<float>(std::pow(0.975, s)), static_cast<float>(245.0 / 255.0 * std::pow(0.88, s)),
+            static_cast<float>(220.0 / 255.0 * std::pow(0.7, s))};
+}
+
 } // namespace ninkasi::calc

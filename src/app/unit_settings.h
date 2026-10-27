@@ -1,6 +1,6 @@
 #pragma once
 // The brewery-wide unit preferences, saved in the settings table as
-// "units.<dimension>" = "<unit key>" (e.g. units.volume = us_barrel).
+// "units.<measure>" = "<unit key>" (e.g. units.volume = us_barrel).
 
 #include "calc/units.h"
 #include "data/settings_repository.h"

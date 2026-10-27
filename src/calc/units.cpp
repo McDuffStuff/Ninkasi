@@ -59,10 +59,7 @@ constexpr UnitRow kUnits[] = {
 
     {Unit::Srm,             Dimension::Color,       "srm",              "SRM",     "SRM",              1, Linear,     1.0, 0.0},
     {Unit::Ebc,             Dimension::Color,       "ebc",              "EBC",     "EBC",              1, Linear,     1.0 / kEbcPerSrm, 0.0},
-
-    {Unit::Lovibond,        Dimension::MaltColor,   "lovibond",         "°L",      "Degrees Lovibond", 1, Linear,     1.0, 0.0},
-    {Unit::MaltEbc,         Dimension::MaltColor,   "malt_ebc",         "EBC",     "EBC",              1, Linear,     1.0 / kEbcPerSrm, 0.0},
-    {Unit::MaltSrm,         Dimension::MaltColor,   "malt_srm",         "SRM",     "SRM",              1, Linear,     1.0, 0.0},
+    {Unit::Lovibond,        Dimension::Color,       "lovibond",         "°L",      "Degrees Lovibond", 1, Linear,     1.0, 0.0},
 };
 
 constexpr bool rows_match_enum_order() {
@@ -92,33 +89,56 @@ constexpr auto kAllUnits = [] {
     return units;
 }();
 
-struct DimensionRow {
-    Dimension dimension;
+// Keys from earlier versions, still accepted when reading saved settings.
+struct UnitAlias {
     std::string_view key;
-    std::string_view name;
+    Unit unit;
+};
+constexpr UnitAlias kUnitAliases[] = {
+    {"malt_ebc", Unit::Ebc},
+    {"malt_srm", Unit::Srm},
 };
 
-constexpr DimensionRow kDimensions[] = {
-    {Dimension::Volume,      "volume",      "Volume"},
-    {Dimension::Mass,        "mass",        "Mass"},
-    {Dimension::Temperature, "temperature", "Temperature"},
-    {Dimension::Gravity,     "gravity",     "Gravity"},
-    {Dimension::Color,       "color",       "Beer color"},
-    {Dimension::MaltColor,   "malt_color",  "Malt color"},
+struct MeasureRow {
+    Measure measure;
+    Dimension dimension;
+    std::string_view key;   // saved in settings: never change once shipped
+    std::string_view name;
+    Unit us_brewery;
+    Unit metric_brewery;
 };
-static_assert(std::size(kDimensions) == kDimensionCount);
+
+constexpr MeasureRow kMeasures[] = {
+    {Measure::Volume,       Dimension::Volume,      "volume",        "Volume",          Unit::UsBarrel,   Unit::Hectoliter},
+    {Measure::Mass,         Dimension::Mass,        "mass",          "Grain and bulk",  Unit::Pound,      Unit::Kilogram},
+    {Measure::HopMass,      Dimension::Mass,        "hop_mass",      "Hops",            Unit::Pound,      Unit::Kilogram},
+    {Measure::AdditionMass, Dimension::Mass,        "addition_mass", "Small additions", Unit::Gram,       Unit::Gram},
+    {Measure::Temperature,  Dimension::Temperature, "temperature",   "Temperature",     Unit::Fahrenheit, Unit::Celsius},
+    {Measure::Gravity,      Dimension::Gravity,     "gravity",       "Gravity",         Unit::Plato,      Unit::Plato},
+    {Measure::Color,        Dimension::Color,       "color",         "Beer color",      Unit::Srm,        Unit::Ebc},
+    {Measure::MaltColor,    Dimension::Color,       "malt_color",    "Malt color",      Unit::Lovibond,   Unit::Ebc},
+};
+
+constexpr bool measures_match_enum_order() {
+    if (std::size(kMeasures) != kMeasureCount) return false;
+    for (std::size_t i = 0; i < std::size(kMeasures); ++i) {
+        if (static_cast<std::size_t>(kMeasures[i].measure) != i) return false;
+    }
+    return true;
+}
+static_assert(measures_match_enum_order(), "kMeasures must list every measure in enum order");
 
 const UnitRow& row(Unit unit) {
     return kUnits[static_cast<std::size_t>(unit)];
 }
 
-const DimensionRow& row(Dimension dimension) {
-    return kDimensions[index_of(dimension)];
+const MeasureRow& row(Measure measure) {
+    return kMeasures[index_of(measure)];
 }
 
 } // namespace
 
-// --- Unit and dimension information ---------------------------------------
+// --- Unit and measure information -------------------------------------------
 
 Dimension dimension_of(Unit unit) { return row(unit).dimension; }
 std::string_view symbol(Unit unit) { return row(unit).symbol; }
@@ -130,15 +150,8 @@ std::optional<Unit> unit_from_key(std::string_view unit_key) {
     for (const UnitRow& r : kUnits) {
         if (r.key == unit_key) return r.unit;
     }
-    return std::nullopt;
-}
-
-std::string_view name(Dimension dimension) { return row(dimension).name; }
-std::string_view key(Dimension dimension) { return row(dimension).key; }
-
-std::optional<Dimension> dimension_from_key(std::string_view dimension_key) {
-    for (const DimensionRow& r : kDimensions) {
-        if (r.key == dimension_key) return r.dimension;
+    for (const UnitAlias& alias : kUnitAliases) {
+        if (alias.key == unit_key) return alias.unit;
     }
     return std::nullopt;
 }
@@ -153,6 +166,21 @@ std::span<const Unit> units_of(Dimension dimension) {
 
 Unit canonical_unit(Dimension dimension) {
     return units_of(dimension).front();
+}
+
+Dimension dimension_of(Measure measure) { return row(measure).dimension; }
+std::string_view name(Measure measure) { return row(measure).name; }
+std::string_view key(Measure measure) { return row(measure).key; }
+
+std::optional<Measure> measure_from_key(std::string_view measure_key) {
+    for (const MeasureRow& r : kMeasures) {
+        if (r.key == measure_key) return r.measure;
+    }
+    return std::nullopt;
+}
+
+std::span<const Unit> units_of(Measure measure) {
+    return units_of(dimension_of(measure));
 }
 
 // --- Conversion -------------------------------------------------------------
@@ -195,41 +223,36 @@ std::string format(double canonical_value, Unit unit, bool with_symbol) {
 // --- Preferences ------------------------------------------------------------
 
 UnitPreferences::UnitPreferences() {
-    for (Dimension dimension : kAllDimensions) {
-        units_[index_of(dimension)] = canonical_unit(dimension);
+    for (Measure measure : kAllMeasures) {
+        units_[index_of(measure)] = canonical_unit(dimension_of(measure));
     }
 }
 
 UnitPreferences UnitPreferences::us_brewery() {
     UnitPreferences prefs;
-    for (Unit unit : {Unit::UsBarrel, Unit::Pound, Unit::Fahrenheit, Unit::Plato, Unit::Srm, Unit::Lovibond}) {
-        prefs.set(unit);
-    }
+    for (const MeasureRow& r : kMeasures) prefs.set(r.measure, r.us_brewery);
     return prefs;
 }
 
 UnitPreferences UnitPreferences::metric_brewery() {
     UnitPreferences prefs;
-    for (Unit unit : {Unit::Hectoliter, Unit::Kilogram, Unit::Celsius, Unit::Plato, Unit::Ebc, Unit::MaltEbc}) {
-        prefs.set(unit);
-    }
+    for (const MeasureRow& r : kMeasures) prefs.set(r.measure, r.metric_brewery);
     return prefs;
 }
 
-Unit UnitPreferences::unit_for(Dimension dimension) const {
-    return units_[index_of(dimension)];
+Unit UnitPreferences::unit_for(Measure measure) const {
+    return units_[index_of(measure)];
 }
 
-void UnitPreferences::set(Unit unit) {
-    units_[index_of(dimension_of(unit))] = unit;
+void UnitPreferences::set(Measure measure, Unit unit) {
+    if (dimension_of(unit) == dimension_of(measure)) units_[index_of(measure)] = unit;
 }
 
 UnitPreferences UnitPreferences::with_overrides(const UnitOverrides& overrides) const {
     UnitPreferences effective = *this;
-    for (Dimension dimension : kAllDimensions) {
-        const std::optional<Unit>& unit = overrides[index_of(dimension)];
-        // Only honor an override that measures the dimension it is filed under.
-        if (unit && dimension_of(*unit) == dimension) effective.set(*unit);
+    for (Measure measure : kAllMeasures) {
+        // set() ignores an override that can't measure this (e.g. a bad saved value).
+        if (const std::optional<Unit>& unit = overrides[index_of(measure)]) effective.set(measure, *unit);
     }
     return effective;
 }

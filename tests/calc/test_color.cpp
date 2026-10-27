@@ -31,6 +31,20 @@ TEST_CASE("EBC is 1.97 times SRM") {
     CHECK(ebc_to_srm(19.7) == near(10.0, 1e-12));
 }
 
+TEST_CASE("SRM swatch colors darken with SRM") {
+    const Rgb water = srm_to_rgb(0.0);
+    CHECK(water.r == doctest::Approx(1.0f));
+    CHECK(water.g == doctest::Approx(245.0f / 255.0f));
+    CHECK(water.b == doctest::Approx(220.0f / 255.0f));
+
+    const Rgb pale = srm_to_rgb(4.0);
+    const Rgb stout = srm_to_rgb(40.0);
+    CHECK(stout.r < pale.r);
+    CHECK(stout.g < pale.g);
+    CHECK(stout.b < pale.b);
+    CHECK(stout.g < 0.01f);  // nearly black
+}
+
 TEST_CASE("impossible inputs give NaN") {
     const GrainColor grist[] = {{.mass_kg = 1.0, .color_lovibond = 2.0}};
     CHECK(std::isnan(malt_color_units(grist, 0.0)));

@@ -28,4 +28,14 @@ double malt_color_units(std::span<const GrainColor> grains, double volume_l);
 double srm_from_mcu(double mcu, ColorModel model);
 double estimate_srm(std::span<const GrainColor> grains, double volume_l, ColorModel model = ColorModel::Morey);
 
+// Approximate on-screen color of beer at `srm`, for swatches and tank fills
+// (channels 0–1). A common exponential approximation, not a measurement:
+//   R = 0.975^SRM, G = 0.96 · 0.88^SRM, B = 0.86 · 0.7^SRM
+struct Rgb {
+    float r = 0.0f;
+    float g = 0.0f;
+    float b = 0.0f;
+};
+Rgb srm_to_rgb(double srm);
+
 } // namespace ninkasi::calc

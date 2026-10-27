@@ -37,13 +37,15 @@ std::vector<domain::Element> ElementRepository::load_all() {
         elements.push_back(std::move(element));
     }
 
+    // The "dimension" column holds measure keys ("volume", "hop_mass", ...).
     auto overrides = db_.prepare("SELECT element_id, dimension, unit FROM element_unit_overrides;");
     while (overrides.step()) {
         const auto found = index_by_id.find(overrides.column_int64(0));
-        const std::optional<calc::Dimension> dimension = calc::dimension_from_key(overrides.column_text(1));
+        const std::optional<calc::Measure> measure = calc::measure_from_key(overrides.column_text(1));
         const std::optional<calc::Unit> unit = calc::unit_from_key(overrides.column_text(2));
-        if (found == index_by_id.end() || !dimension || !unit || calc::dimension_of(*unit) != *dimension) continue;
-        elements[found->second].unit_overrides[calc::index_of(*dimension)] = *unit;
+        if (found == index_by_id.end() || !measure || !unit) continue;
+        if (calc::dimension_of(*unit) != calc::dimension_of(*measure)) continue;
+        elements[found->second].unit_overrides[calc::index_of(*measure)] = *unit;
     }
     return elements;
 }
@@ -81,17 +83,17 @@ void ElementRepository::remove(std::int64_t id) {
     stmt.execute();
 }
 
-void ElementRepository::set_unit_override(std::int64_t element_id, calc::Dimension dimension,
+void ElementRepository::set_unit_override(std::int64_t element_id, calc::Measure measure,
                                           std::optional<calc::Unit> unit) {
     if (unit) {
         auto stmt = db_.prepare(
             "INSERT INTO element_unit_overrides (element_id, dimension, unit) VALUES (?, ?, ?) "
             "ON CONFLICT(element_id, dimension) DO UPDATE SET unit = excluded.unit;");
-        stmt.bind(1, element_id).bind(2, calc::key(dimension)).bind(3, calc::key(*unit));
+        stmt.bind(1, element_id).bind(2, calc::key(measure)).bind(3, calc::key(*unit));
         stmt.execute();
     } else {
         auto stmt = db_.prepare("DELETE FROM element_unit_overrides WHERE element_id = ? AND dimension = ?;");
-        stmt.bind(1, element_id).bind(2, calc::key(dimension));
+        stmt.bind(1, element_id).bind(2, calc::key(measure));
         stmt.execute();
     }
 }

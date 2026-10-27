@@ -20,7 +20,8 @@ TEST_CASE("unit preferences round-trip through settings") {
     data::SettingsRepository settings(db);
 
     calc::UnitPreferences chosen = calc::UnitPreferences::metric_brewery();
-    chosen.set(calc::Unit::SpecificGravity);
+    chosen.set(calc::Measure::Gravity, calc::Unit::SpecificGravity);
+    chosen.set(calc::Measure::HopMass, calc::Unit::Gram);
     app::save_unit_preferences(settings, chosen);
 
     CHECK(app::load_unit_preferences(settings) == chosen);
@@ -36,7 +37,7 @@ TEST_CASE("unknown or mismatched saved units fall back to the default") {
     settings.set("units.temperature", "celsius");
 
     const calc::UnitPreferences loaded = app::load_unit_preferences(settings);
-    CHECK(loaded.unit_for(calc::Dimension::Volume) == calc::Unit::UsBarrel);
-    CHECK(loaded.unit_for(calc::Dimension::Mass) == calc::Unit::Pound);
-    CHECK(loaded.unit_for(calc::Dimension::Temperature) == calc::Unit::Celsius);
+    CHECK(loaded.unit_for(calc::Measure::Volume) == calc::Unit::UsBarrel);
+    CHECK(loaded.unit_for(calc::Measure::Mass) == calc::Unit::Pound);
+    CHECK(loaded.unit_for(calc::Measure::Temperature) == calc::Unit::Celsius);
 }

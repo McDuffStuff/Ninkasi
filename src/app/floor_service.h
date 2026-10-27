@@ -43,9 +43,9 @@ public:
     // Throws std::invalid_argument if the capacity is negative.
     void set_capacity(std::int64_t id, std::optional<double> capacity_l);
 
-    // Chooses the unit this element shows for one dimension; nullopt follows
+    // Chooses the unit this element shows for one measure; nullopt follows
     // the brewery-wide preference.
-    void set_unit_override(std::int64_t id, calc::Dimension dimension, std::optional<calc::Unit> unit);
+    void set_unit_override(std::int64_t id, calc::Measure measure, std::optional<calc::Unit> unit);
 
     void remove(std::int64_t id);
 

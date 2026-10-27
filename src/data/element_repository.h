@@ -28,8 +28,8 @@ public:
     // Deletes the element; its unit overrides go with it.
     void remove(std::int64_t id);
 
-    // Sets the unit an element uses for one dimension, or clears it.
-    void set_unit_override(std::int64_t element_id, calc::Dimension dimension, std::optional<calc::Unit> unit);
+    // Sets the unit an element uses for one measure, or clears it.
+    void set_unit_override(std::int64_t element_id, calc::Measure measure, std::optional<calc::Unit> unit);
 
 private:
     Database& db_;

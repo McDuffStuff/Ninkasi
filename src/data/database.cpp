@@ -53,6 +53,14 @@ Statement& Statement::bind_null(int index) {
     return *this;
 }
 
+Statement& Statement::bind_optional(int index, std::optional<double> value) {
+    return value ? bind(index, *value) : bind_null(index);
+}
+
+Statement& Statement::bind_optional(int index, std::optional<std::int64_t> value) {
+    return value ? bind(index, *value) : bind_null(index);
+}
+
 bool Statement::step() {
     switch (sqlite3_step(stmt_)) {
     case SQLITE_ROW:  return true;
@@ -85,6 +93,16 @@ std::string Statement::column_text(int col) const {
 
 bool Statement::column_is_null(int col) const {
     return sqlite3_column_type(stmt_, col) == SQLITE_NULL;
+}
+
+std::optional<double> Statement::column_optional_double(int col) const {
+    if (column_is_null(col)) return std::nullopt;
+    return column_double(col);
+}
+
+std::optional<std::int64_t> Statement::column_optional_int64(int col) const {
+    if (column_is_null(col)) return std::nullopt;
+    return column_int64(col);
 }
 
 // --- Database ---------------------------------------------------------------

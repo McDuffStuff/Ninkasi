@@ -25,6 +25,14 @@ FetchContent_Declare(imgui
     GIT_SHALLOW    TRUE
 )
 
+# --- ImPlot: charts (fermentation curves) -------------------------------------
+# v0.16 is the last release built for Dear ImGui 1.91; later ones need 1.92.
+FetchContent_Declare(implot
+    GIT_REPOSITORY https://github.com/epezent/implot.git
+    GIT_TAG        v0.16
+    GIT_SHALLOW    TRUE
+)
+
 # --- SQLite amalgamation -----------------------------------------------------
 FetchContent_Declare(sqlite
     URL https://www.sqlite.org/2025/sqlite-amalgamation-3490100.zip
@@ -48,7 +56,7 @@ FetchContent_Declare(json
     SOURCE_SUBDIR  do-not-build
 )
 
-FetchContent_MakeAvailable(glfw imgui sqlite doctest json)
+FetchContent_MakeAvailable(glfw imgui implot sqlite doctest json)
 
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
@@ -67,6 +75,13 @@ add_library(imgui STATIC
 target_include_directories(imgui PUBLIC
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${imgui_SOURCE_DIR}/misc/cpp)
 target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
+
+add_library(implot STATIC
+    ${implot_SOURCE_DIR}/implot.cpp
+    ${implot_SOURCE_DIR}/implot_items.cpp
+)
+target_include_directories(implot PUBLIC ${implot_SOURCE_DIR})
+target_link_libraries(implot PUBLIC imgui)
 
 add_library(sqlite3 STATIC ${sqlite_SOURCE_DIR}/sqlite3.c)
 target_include_directories(sqlite3 PUBLIC ${sqlite_SOURCE_DIR})

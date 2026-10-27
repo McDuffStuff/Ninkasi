@@ -47,6 +47,10 @@ public:
     // the brewery-wide preference.
     void set_unit_override(std::int64_t id, calc::Measure measure, std::optional<calc::Unit> unit);
 
+    // Why an element can't be removed (it holds beer or has a brew under
+    // way), or nullopt if it can.
+    std::optional<std::string> removal_blocker(std::int64_t id);
+    // Throws std::invalid_argument if the element is in use (see removal_blocker).
     void remove(std::int64_t id);
 
 private:

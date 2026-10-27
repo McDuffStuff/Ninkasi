@@ -5,6 +5,7 @@
 // can assume success and let errors propagate up to a single handler.
 
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -36,6 +37,9 @@ public:
     Statement& bind(int index, double value);
     Statement& bind(int index, std::string_view value);
     Statement& bind_null(int index);
+    // Bind NULL when the value is empty.
+    Statement& bind_optional(int index, std::optional<double> value);
+    Statement& bind_optional(int index, std::optional<std::int64_t> value);
 
     // Advances to the next row. Returns true while a row is available.
     bool step();
@@ -48,6 +52,9 @@ public:
     double column_double(int col) const;
     std::string column_text(int col) const;
     bool column_is_null(int col) const;
+    // nullopt for NULL.
+    std::optional<double> column_optional_double(int col) const;
+    std::optional<std::int64_t> column_optional_int64(int col) const;
 
 private:
     sqlite3* db_;

@@ -89,6 +89,129 @@ constexpr Migration kMigrations[] = {
         );
         CREATE INDEX ingredients_by_kind ON ingredients (kind, name);
     )sql"},
+    {4, R"sql(
+        -- Batches of beer, from brew day until they are packaged or dumped.
+        -- `recipe` is the recipe as brewed (JSON), kept even if the recipe
+        -- is later changed or deleted.
+        CREATE TABLE batches (
+            id          INTEGER PRIMARY KEY,
+            code        TEXT NOT NULL UNIQUE,          -- the brewery's batch number
+            name        TEXT NOT NULL,                 -- the beer, for lists
+            style       TEXT NOT NULL DEFAULT '',
+            recipe_id   INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+            recipe      TEXT NOT NULL,
+            status      TEXT NOT NULL,                 -- 'brewing', 'fermenting', 'conditioning', 'packaged', 'dumped'
+            created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            finished_at TEXT
+        );
+
+        -- Brewhouse turns. Most batches have one; filling a large fermenter
+        -- can take several.
+        CREATE TABLE brews (
+            id             INTEGER PRIMARY KEY,
+            batch_id       INTEGER NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+            brewhouse_id   INTEGER REFERENCES elements(id) ON DELETE SET NULL,
+            vessel_id      INTEGER REFERENCES elements(id) ON DELETE SET NULL,  -- knocked out into
+            started_at     TEXT NOT NULL,
+            knocked_out_at TEXT,                       -- NULL while brewing
+            volume_l       REAL NOT NULL DEFAULT 0,
+            og             REAL,
+            notes          TEXT NOT NULL DEFAULT '',
+            user_id        INTEGER NOT NULL REFERENCES users(id)
+        );
+        CREATE INDEX brews_by_batch ON brews (batch_id);
+
+        -- The ingredients each brew used, as confirmed by the brewer at
+        -- knock-out. Inventory deductions (Phase 5) are made from these.
+        -- library_id is not a foreign key: library entries can be deleted.
+        CREATE TABLE brew_ingredients (
+            id          INTEGER PRIMARY KEY,
+            brew_id     INTEGER NOT NULL REFERENCES brews(id) ON DELETE CASCADE,
+            position    INTEGER NOT NULL,              -- order in the recipe
+            kind        TEXT NOT NULL,                 -- 'fermentable', 'hop', 'yeast', 'misc'
+            library_id  INTEGER,
+            name        TEXT NOT NULL,
+            detail      TEXT NOT NULL DEFAULT '',      -- which addition, e.g. 'Boil, 60 min'
+            amount_kind TEXT NOT NULL,                 -- 'mass' (kg), 'volume' (L), 'count' (packs), 'text'
+            planned     REAL NOT NULL DEFAULT 0,
+            actual      REAL NOT NULL DEFAULT 0,
+            text        TEXT NOT NULL DEFAULT ''       -- 'text' amounts
+        );
+        CREATE INDEX brew_ingredients_by_brew ON brew_ingredients (brew_id, position);
+
+        -- The beer ledger: every change in the volume of a batch in a vessel,
+        -- positive in and negative out. A vessel's contents are the sum of
+        -- its rows. Append-only: corrections are new rows, never edits. TTB
+        -- reports are built from this table.
+        CREATE TABLE volume_events (
+            id          INTEGER PRIMARY KEY,
+            at          TEXT NOT NULL,                 -- when it happened
+            batch_id    INTEGER NOT NULL REFERENCES batches(id),
+            vessel_id   INTEGER REFERENCES elements(id) ON DELETE SET NULL,
+            volume_l    REAL NOT NULL,
+            reason      TEXT NOT NULL,                 -- see VolumeReason in domain/batch.h
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE INDEX volume_events_by_batch ON volume_events (batch_id);
+        CREATE INDEX volume_events_by_vessel ON volume_events (vessel_id);
+
+        -- Gravity, temperature and pH readings.
+        CREATE TABLE readings (
+            id            INTEGER PRIMARY KEY,
+            batch_id      INTEGER NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+            vessel_id     INTEGER REFERENCES elements(id) ON DELETE SET NULL,
+            at            TEXT NOT NULL,
+            method        TEXT NOT NULL,               -- 'hydrometer', 'refractometer', 'digital'
+            gravity_sg    REAL,                        -- corrected
+            raw_value     REAL,                        -- as read
+            temperature_c REAL,
+            ph            REAL,
+            note          TEXT NOT NULL DEFAULT '',
+            user_id       INTEGER NOT NULL REFERENCES users(id)
+        );
+        CREATE INDEX readings_by_batch ON readings (batch_id, at);
+
+        -- Whether an empty vessel is clean, needs cleaning or is out of
+        -- service. Vessels without a row are clean.
+        CREATE TABLE vessel_conditions (
+            vessel_id  INTEGER PRIMARY KEY REFERENCES elements(id) ON DELETE CASCADE,
+            condition  TEXT NOT NULL,                  -- 'clean', 'dirty', 'out_of_service'
+            changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        -- Things to do, optionally for a piece of equipment or a batch.
+        CREATE TABLE tasks (
+            id         INTEGER PRIMARY KEY,
+            title      TEXT NOT NULL,
+            notes      TEXT NOT NULL DEFAULT '',
+            element_id INTEGER REFERENCES elements(id) ON DELETE CASCADE,
+            batch_id   INTEGER REFERENCES batches(id) ON DELETE CASCADE,
+            due_date   TEXT,                           -- local date, YYYY-MM-DD
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            created_by INTEGER NOT NULL REFERENCES users(id),
+            done_at    TEXT,
+            done_by    INTEGER REFERENCES users(id)
+        );
+        CREATE INDEX tasks_by_due ON tasks (done_at, due_date);
+
+        -- What happened in the brewery, for people to read: the Log tabs.
+        -- Production events are recorded here; the audit_log keeps
+        -- configuration changes (equipment, recipes, settings).
+        CREATE TABLE activity_log (
+            id               INTEGER PRIMARY KEY,
+            at               TEXT NOT NULL,
+            user_id          INTEGER NOT NULL REFERENCES users(id),
+            kind             TEXT NOT NULL,
+            batch_id         INTEGER REFERENCES batches(id) ON DELETE CASCADE,
+            element_id       INTEGER REFERENCES elements(id) ON DELETE SET NULL,
+            other_element_id INTEGER REFERENCES elements(id) ON DELETE SET NULL,
+            text             TEXT NOT NULL
+        );
+        CREATE INDEX activity_by_batch ON activity_log (batch_id, at);
+        CREATE INDEX activity_by_element ON activity_log (element_id, at);
+        CREATE INDEX activity_by_other_element ON activity_log (other_element_id, at);
+    )sql"},
 };
 
 } // namespace

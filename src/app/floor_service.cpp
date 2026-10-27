@@ -1,6 +1,7 @@
 #include "app/floor_service.h"
 
 #include "data/audit_log.h"
+#include "data/batch_repository.h"
 
 #include <algorithm>
 #include <charconv>
@@ -112,7 +113,17 @@ void FloorService::set_unit_override(std::int64_t id, calc::Measure measure, std
     element.unit_overrides[calc::index_of(measure)] = unit;
 }
 
+std::optional<std::string> FloorService::removal_blocker(std::int64_t id) {
+    const domain::Element& element = get(id);
+    if (!data::BatchRepository(db_).in_use(id)) return std::nullopt;
+    if (element.type == domain::ElementType::Brewhouse) {
+        return element.name + " has a brew under way. Knock it out or cancel it first.";
+    }
+    return element.name + " holds beer. Move, package or dump it first.";
+}
+
 void FloorService::remove(std::int64_t id) {
+    if (const std::optional<std::string> blocker = removal_blocker(id)) throw std::invalid_argument(*blocker);
     const domain::Element& element = get(id);
     const std::string details = std::string(domain::info(element.type).name) + " \"" + element.name + "\"";
 

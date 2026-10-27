@@ -5,18 +5,6 @@
 
 namespace ninkasi::data {
 
-namespace {
-
-void bind_optional(Statement& stmt, int index, std::optional<double> value) {
-    if (value) {
-        stmt.bind(index, *value);
-    } else {
-        stmt.bind_null(index);
-    }
-}
-
-} // namespace
-
 std::vector<domain::Element> ElementRepository::load_all() {
     std::vector<domain::Element> elements;
     std::unordered_map<std::int64_t, std::size_t> index_by_id;
@@ -31,7 +19,7 @@ std::vector<domain::Element> ElementRepository::load_all() {
         element.type = *type;
         element.name = stmt.column_text(2);
         element.rect = {stmt.column_double(3), stmt.column_double(4), stmt.column_double(5), stmt.column_double(6)};
-        if (!stmt.column_is_null(7)) element.capacity_l = stmt.column_double(7);
+        element.capacity_l = stmt.column_optional_double(7);
 
         index_by_id[element.id] = elements.size();
         elements.push_back(std::move(element));
@@ -59,7 +47,7 @@ std::int64_t ElementRepository::insert(const domain::Element& element) {
         .bind(4, element.rect.y)
         .bind(5, element.rect.width)
         .bind(6, element.rect.height);
-    bind_optional(stmt, 7, element.capacity_l);
+    stmt.bind_optional(7, element.capacity_l);
     stmt.execute();
     return db_.last_insert_id();
 }
@@ -72,7 +60,7 @@ void ElementRepository::update(const domain::Element& element) {
         .bind(3, element.rect.y)
         .bind(4, element.rect.width)
         .bind(5, element.rect.height);
-    bind_optional(stmt, 6, element.capacity_l);
+    stmt.bind_optional(6, element.capacity_l);
     stmt.bind(7, element.id);
     stmt.execute();
 }

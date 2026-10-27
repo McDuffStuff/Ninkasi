@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 namespace ninkasi::ui {
 
@@ -45,8 +46,21 @@ private:
     FloorPoint to_world(ImVec2 screen) const;
     // An element's rectangle as drawn: the live one while it is being dragged.
     const domain::Rect& displayed_rect(const domain::Element& element) const;
+    // An element's outline on screen. Vessels are drawn as circles.
+    struct Shape {
+        ImVec2 min;
+        ImVec2 max;
+        bool round = false;
+        ImVec2 center;
+        float radius = 0.0f;
+
+        bool contains(ImVec2 point) const;
+    };
+    Shape shape_of(const domain::Element& element) const;
+    // Screen-space box of an element's resize handle (min, max).
+    std::pair<ImVec2, ImVec2> resize_handle(const domain::Element& element) const;
     std::optional<std::int64_t> hit_test(ImVec2 screen) const;
-    bool over_resize_handle(const domain::Rect& rect, ImVec2 screen) const;
+    bool over_resize_handle(const domain::Element& element, ImVec2 screen) const;
 
     void draw_toolbar();
     void draw_canvas();

@@ -8,9 +8,10 @@ namespace {
 
 // One row per ElementType, in enum order (checked below).
 constexpr ElementTypeInfo kTypes[] = {
-    {ElementType::Brewhouse,     "brewhouse",      "Brewhouse",      220.0, 140.0, true},
-    {ElementType::Fermenter,     "fermenter",      "Fermenter",      120.0, 160.0, true},
-    {ElementType::BriteTank,     "brite_tank",     "Brite tank",     110.0, 150.0, true},
+    // Vessels are drawn as circles, so their footprints are square.
+    {ElementType::Brewhouse,     "brewhouse",      "Brewhouse",      160.0, 160.0, true},
+    {ElementType::Fermenter,     "fermenter",      "Fermenter",      130.0, 130.0, true},
+    {ElementType::BriteTank,     "brite_tank",     "Brite tank",     120.0, 120.0, true},
     {ElementType::DryStorage,    "dry_storage",    "Dry storage",    200.0, 140.0, false},
     {ElementType::ColdStorage,   "cold_storage",   "Cold storage",   220.0, 160.0, false},
     {ElementType::KegWasher,     "keg_washer",     "Keg washer",     130.0, 90.0,  false},

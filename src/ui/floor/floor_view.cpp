@@ -86,23 +86,51 @@ const domain::Rect& FloorView::displayed_rect(const domain::Element& element) co
     return dragging ? drag_rect_ : element.rect;
 }
 
+FloorView::Shape FloorView::shape_of(const domain::Element& element) const {
+    const domain::Rect& rect = displayed_rect(element);
+    Shape shape;
+    shape.min = to_screen(rect.x, rect.y);
+    shape.max = to_screen(rect.x + rect.width, rect.y + rect.height);
+    // Vessels are round: the largest circle centered in their footprint.
+    shape.round = domain::info(element.type).is_vessel;
+    shape.center = (shape.min + shape.max) * 0.5f;
+    shape.radius = std::min(shape.max.x - shape.min.x, shape.max.y - shape.min.y) * 0.5f;
+    return shape;
+}
+
+bool FloorView::Shape::contains(ImVec2 point) const {
+    if (round) {
+        const ImVec2 d = point - center;
+        return d.x * d.x + d.y * d.y <= radius * radius;
+    }
+    return point.x >= min.x && point.x < max.x && point.y >= min.y && point.y < max.y;
+}
+
+std::pair<ImVec2, ImVec2> FloorView::resize_handle(const domain::Element& element) const {
+    const Shape shape = shape_of(element);
+    const float size = 12.0f * ui_scale_;
+    if (shape.round) {
+        // On the rim, toward the bottom-right.
+        const ImVec2 rim = shape.center + ImVec2(0.7071f, 0.7071f) * shape.radius;
+        return {rim - ImVec2(size, size) * 0.5f, rim + ImVec2(size, size) * 0.5f};
+    }
+    return {shape.max - ImVec2(size, size), shape.max};  // inside the bottom-right corner
+}
+
 std::optional<std::int64_t> FloorView::hit_test(ImVec2 screen) const {
     // Later elements are drawn on top, so test them first.
     const std::vector<domain::Element>& elements = floor_.elements();
     for (auto it = elements.rbegin(); it != elements.rend(); ++it) {
-        const domain::Rect& rect = displayed_rect(*it);
-        const ImVec2 min = to_screen(rect.x, rect.y);
-        const ImVec2 max = to_screen(rect.x + rect.width, rect.y + rect.height);
-        if (screen.x >= min.x && screen.x < max.x && screen.y >= min.y && screen.y < max.y) return it->id;
+        if (shape_of(*it).contains(screen)) return it->id;
+        // A round element's handle pokes outside it; it still belongs to it.
+        if (edit_mode_ && selected_ == it->id && over_resize_handle(*it, screen)) return it->id;
     }
     return std::nullopt;
 }
 
-bool FloorView::over_resize_handle(const domain::Rect& rect, ImVec2 screen) const {
-    const ImVec2 corner = to_screen(rect.x + rect.width, rect.y + rect.height);
-    const float handle = 12.0f * ui_scale_;
-    return screen.x >= corner.x - handle && screen.x <= corner.x && screen.y >= corner.y - handle &&
-           screen.y <= corner.y;
+bool FloorView::over_resize_handle(const domain::Element& element, ImVec2 screen) const {
+    const auto [min, max] = resize_handle(element);
+    return screen.x >= min.x && screen.x <= max.x && screen.y >= min.y && screen.y <= max.y;
 }
 
 // --- Toolbar ----------------------------------------------------------------
@@ -185,7 +213,7 @@ void FloorView::handle_mouse(bool canvas_hovered, std::optional<std::int64_t> ho
 
             const domain::Element* element = hovered ? floor_.find(*hovered) : nullptr;
             if (element && edit_mode_) {
-                drag_ = over_resize_handle(element->rect, io.MousePos) ? Drag::Resize : Drag::Move;
+                drag_ = over_resize_handle(*element, io.MousePos) ? Drag::Resize : Drag::Move;
                 drag_id_ = element->id;
                 drag_start_rect_ = drag_rect_ = element->rect;
                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) windows_.open(element->id);
@@ -209,7 +237,7 @@ void FloorView::handle_mouse(bool canvas_hovered, std::optional<std::int64_t> ho
     if (drag_ == Drag::None) {
         if (hovered) {
             const domain::Element* element = floor_.find(*hovered);
-            if (edit_mode_ && element && over_resize_handle(element->rect, io.MousePos)) {
+            if (edit_mode_ && element && over_resize_handle(*element, io.MousePos)) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
             } else {
                 ImGui::SetMouseCursor(edit_mode_ ? ImGuiMouseCursor_ResizeAll : ImGuiMouseCursor_Hand);
@@ -234,8 +262,14 @@ void FloorView::handle_mouse(bool canvas_hovered, std::optional<std::int64_t> ho
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
             break;
         case Drag::Resize:
-            drag_rect_.width = std::max(domain::kMinElementSize, drag_start_rect_.width + dx);
-            drag_rect_.height = std::max(domain::kMinElementSize, drag_start_rect_.height + dy);
+            if (const domain::Element* element = floor_.find(drag_id_); element && domain::info(element->type).is_vessel) {
+                // Round elements stay round: one size, following the drag diagonally.
+                const double diameter = std::min(drag_start_rect_.width, drag_start_rect_.height) + (dx + dy) / 2.0;
+                drag_rect_.width = drag_rect_.height = std::max(domain::kMinElementSize, diameter);
+            } else {
+                drag_rect_.width = std::max(domain::kMinElementSize, drag_start_rect_.width + dx);
+                drag_rect_.height = std::max(domain::kMinElementSize, drag_start_rect_.height + dy);
+            }
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
             break;
         case Drag::None:
@@ -296,9 +330,9 @@ void FloorView::draw_background(ImDrawList* draw_list) const {
 }
 
 void FloorView::draw_element(ImDrawList* draw_list, const domain::Element& element, bool hovered) const {
-    const domain::Rect& rect = displayed_rect(element);
-    const ImVec2 min = to_screen(rect.x, rect.y);
-    const ImVec2 max = to_screen(rect.x + rect.width, rect.y + rect.height);
+    const Shape shape = shape_of(element);
+    const ImVec2 min = shape.min;
+    const ImVec2 max = shape.max;
     const ImVec2 canvas_end = canvas_pos_ + canvas_size_;
     if (max.x < canvas_pos_.x || max.y < canvas_pos_.y || min.x > canvas_end.x || min.y > canvas_end.y) return;
 
@@ -308,27 +342,25 @@ void FloorView::draw_element(ImDrawList* draw_list, const domain::Element& eleme
     const ImVec4 accent = element_accent(element.type);
     const ImVec4& surface = style_color(ImGuiCol_WindowBg);
     const ImVec4& border = style_color(ImGuiCol_Border);
-    const float rounding = 6.0f * px;
-
-    // Body, then an accent strip along the top (clipped so it keeps the
-    // body's rounded corners).
-    draw_list->AddRectFilled(min, max, to_u32(mix(surface, accent, 0.16f)), rounding);
-    draw_list->PushClipRect(min, {max.x, min.y + 5.0f * px}, true);
-    draw_list->AddRectFilled(min, max, to_u32(accent), rounding);
-    draw_list->PopClipRect();
-
     const ImVec4 outline = selected ? accent : hovered ? mix(border, accent, 0.6f) : border;
     const float thickness = (selected ? 2.5f : hovered ? 1.75f : 1.0f) * ui_scale_;
-    draw_list->AddRect(min, max, to_u32(outline), rounding, ImDrawFlags_None, thickness);
 
-    // Vessels get a level gauge down the right side; it fills once batches exist.
-    if (type.is_vessel) {
-        const ImVec2 gauge_min(max.x - 16.0f * px, min.y + 14.0f * px);
-        const ImVec2 gauge_max(max.x - 8.0f * px, max.y - 10.0f * px);
-        if (gauge_max.y - gauge_min.y > 6.0f * px) {
-            draw_list->AddRect(gauge_min, gauge_max, to_u32(mix(surface, accent, 0.65f)), 3.0f * px, ImDrawFlags_None,
-                               ui_scale_);
-        }
+    if (shape.round) {
+        // Tanks: a body with an accent-colored rim. (It will fill with the
+        // beer's color once batches exist.)
+        const float rim = 5.0f * px;
+        draw_list->AddCircleFilled(shape.center, shape.radius, to_u32(mix(surface, accent, 0.16f)));
+        draw_list->AddCircle(shape.center, shape.radius - rim * 0.5f, to_u32(accent), 0, rim);
+        draw_list->AddCircle(shape.center, shape.radius, to_u32(outline), 0, thickness);
+    } else {
+        // Body, then an accent strip along the top (clipped so it keeps the
+        // body's rounded corners).
+        const float rounding = 6.0f * px;
+        draw_list->AddRectFilled(min, max, to_u32(mix(surface, accent, 0.16f)), rounding);
+        draw_list->PushClipRect(min, {max.x, min.y + 5.0f * px}, true);
+        draw_list->AddRectFilled(min, max, to_u32(accent), rounding);
+        draw_list->PopClipRect();
+        draw_list->AddRect(min, max, to_u32(outline), rounding, ImDrawFlags_None, thickness);
     }
 
     // Labels scale with the zoom and disappear when too small to read.
@@ -337,27 +369,56 @@ void FloorView::draw_element(ImDrawList* draw_list, const domain::Element& eleme
         ImFont* font = ImGui::GetFont();
         const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
         const ImU32 muted = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-        const ImVec2 pad(8.0f * px, 10.0f * px);
         const float small = font_size * 0.85f;
 
-        draw_list->PushClipRect(min, max, true);
-        draw_list->AddText(font, font_size, min + pad, text, element.name.c_str());
+        struct Line {
+            std::string text;
+            float size;
+            ImU32 color;
+        };
+        std::vector<Line> lines{{element.name, font_size, text}};
         // The type, unless the name already says it ("Keg washer", "Fermenter 2").
-        if (!element.name.starts_with(type.name)) {
-            draw_list->AddText(font, small, {min.x + pad.x, min.y + pad.y + font_size * 1.2f}, muted, type.name.data());
-        }
+        if (!element.name.starts_with(type.name)) lines.push_back({std::string(type.name), small, muted});
+        std::string capacity;
         if (type.is_vessel && element.capacity_l) {
             const calc::Unit unit =
                 units_.with_overrides(element.unit_overrides).unit_for(calc::Measure::Volume);
-            const std::string capacity = calc::format(*element.capacity_l, unit);
-            draw_list->AddText(font, small, {min.x + pad.x, max.y - pad.y - small}, muted, capacity.c_str());
+            capacity = calc::format(*element.capacity_l, unit);
         }
-        draw_list->PopClipRect();
+
+        if (shape.round) {
+            // Centered in the circle, clipped to its middle so text stays inside.
+            if (!capacity.empty()) lines.push_back({capacity, small, muted});
+            float height = 0.0f;
+            for (const Line& line : lines) height += line.size * 1.2f;
+            const float half_width = shape.radius * 0.85f;
+            draw_list->PushClipRect(shape.center - ImVec2(half_width, shape.radius),
+                                    shape.center + ImVec2(half_width, shape.radius), true);
+            float y = shape.center.y - height * 0.5f;
+            for (const Line& line : lines) {
+                const float width = font->CalcTextSizeA(line.size, FLT_MAX, 0.0f, line.text.c_str()).x;
+                draw_list->AddText(font, line.size, {shape.center.x - width * 0.5f, y}, line.color, line.text.c_str());
+                y += line.size * 1.2f;
+            }
+            draw_list->PopClipRect();
+        } else {
+            const ImVec2 pad(8.0f * px, 10.0f * px);
+            draw_list->PushClipRect(min, max, true);
+            float y = min.y + pad.y;
+            for (const Line& line : lines) {
+                draw_list->AddText(font, line.size, {min.x + pad.x, y}, line.color, line.text.c_str());
+                y += line.size * 1.2f;
+            }
+            if (!capacity.empty()) {
+                draw_list->AddText(font, small, {min.x + pad.x, max.y - pad.y - small}, muted, capacity.c_str());
+            }
+            draw_list->PopClipRect();
+        }
     }
 
     if (selected && edit_mode_) {
-        const float handle = 9.0f * ui_scale_;
-        draw_list->AddRectFilled({max.x - handle, max.y - handle}, max, to_u32(accent), 2.0f * ui_scale_);
+        const auto [handle_min, handle_max] = resize_handle(element);
+        draw_list->AddRectFilled(handle_min, handle_max, to_u32(accent), 2.0f * ui_scale_);
     }
 }
 

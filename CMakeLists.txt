@@ -56,6 +56,7 @@ add_library(ninkasi_core STATIC
     src/data/recipe_json.cpp
     src/data/recipe_repository.cpp
     src/data/settings_repository.cpp
+    src/app/beerjson_import.cpp
     src/app/calc_settings.cpp
     src/app/floor_service.cpp
     src/app/ingredient_library.cpp
@@ -78,13 +79,22 @@ add_executable(ninkasi
     src/ui/app_shell.cpp
     src/ui/element_style.cpp
     src/ui/elements/element_windows.cpp
+    src/ui/file_dialog.cpp
     src/ui/floor/floor_view.cpp
     src/ui/fonts.cpp
+    src/ui/recipes/brewing_settings_window.cpp
+    src/ui/recipes/ingredient_library_window.cpp
+    src/ui/recipes/recipe_editors.cpp
+    src/ui/recipes/recipe_library_window.cpp
+    src/ui/recipes/recipe_sections.cpp
     src/ui/theme.cpp
     src/ui/widgets.cpp
     ${NINKASI_FONT_SOURCE}
 )
 target_link_libraries(ninkasi PRIVATE ninkasi_core imgui)
+if(WIN32)
+    target_link_libraries(ninkasi PRIVATE comdlg32)  # the "open file" dialog
+endif()
 target_compile_definitions(ninkasi PRIVATE
     NINKASI_VERSION="${PROJECT_VERSION}"
     IMGUI_DEFINE_MATH_OPERATORS  # ImVec2 + ImVec2, ImVec2 * float, ...
@@ -106,6 +116,7 @@ if(NINKASI_BUILD_TESTS)
     enable_testing()
     add_executable(ninkasi_tests
         tests/test_main.cpp
+        tests/app/test_beerjson_import.cpp
         tests/app/test_floor_service.cpp
         tests/app/test_recipe_service.cpp
         tests/app/test_unit_settings.cpp

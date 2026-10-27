@@ -23,6 +23,8 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -99,6 +101,16 @@ int run(const Options& options) {
     {
         ui::AppShell shell(db, session, db_path, ui_scale);
 
+        // Files dropped onto the window go to the shell (e.g. BeerJSON recipes).
+        glfwSetWindowUserPointer(window, &shell);
+        glfwSetDropCallback(window, [](GLFWwindow* dropped_on, int count, const char** paths) {
+            std::vector<std::filesystem::path> files;
+            for (int i = 0; i < count; ++i) {
+                files.emplace_back(reinterpret_cast<const char8_t*>(paths[i]));  // GLFW paths are UTF-8
+            }
+            static_cast<ui::AppShell*>(glfwGetWindowUserPointer(dropped_on))->files_dropped(std::move(files));
+        });
+
         while (!glfwWindowShouldClose(window) && !shell.quit_requested()) {
             glfwPollEvents();
             if (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) {
@@ -131,6 +143,10 @@ int run(const Options& options) {
 
             glfwSwapBuffers(window);
         }
+
+        // The shell is about to go away; stop routing drops to it.
+        glfwSetDropCallback(window, nullptr);
+        glfwSetWindowUserPointer(window, nullptr);
     }
 
     ImGui_ImplOpenGL3_Shutdown();

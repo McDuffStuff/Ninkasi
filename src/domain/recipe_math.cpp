@@ -126,4 +126,40 @@ RecipeStats calculate(const Recipe& recipe, const CalcSettings& settings) {
     return stats;
 }
 
+std::string_view name(BoilGravity basis) {
+    switch (basis) {
+    case BoilGravity::PreBoil:  return "Pre-boil gravity";
+    case BoilGravity::Average:  return "Average of pre- and post-boil";
+    case BoilGravity::PostBoil: return "Post-boil gravity (OG)";
+    }
+    return "Average of pre- and post-boil";
+}
+
+std::string_view name(calc::IbuFormula formula) {
+    switch (formula) {
+    case calc::IbuFormula::Tinseth: return "Tinseth";
+    case calc::IbuFormula::Rager:   return "Rager";
+    case calc::IbuFormula::Garetz:  return "Garetz";
+    }
+    return "Tinseth";
+}
+
+std::string_view name(calc::ColorModel model) {
+    switch (model) {
+    case calc::ColorModel::Morey:   return "Morey";
+    case calc::ColorModel::Daniels: return "Daniels";
+    case calc::ColorModel::Mosher:  return "Mosher";
+    }
+    return "Morey";
+}
+
+std::string_view name(calc::AbvFormula formula) {
+    switch (formula) {
+    case calc::AbvFormula::Simple:    return "Simple (OG − FG) × 131.25";
+    case calc::AbvFormula::Alternate: return "Alternate (Hall)";
+    case calc::AbvFormula::Balling:   return "Balling (real extract)";
+    }
+    return "Simple";
+}
+
 } // namespace ninkasi::domain

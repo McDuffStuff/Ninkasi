@@ -1,5 +1,6 @@
 #include "ui/app_shell.h"
 
+#include "app/calc_settings.h"
 #include "app/unit_settings.h"
 #include "ui/widgets.h"
 
@@ -19,14 +20,33 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
       db_path_(std::move(db_path)),
       ui_scale_(ui_scale),
       units_(app::load_unit_preferences(settings_)),
+      calc_settings_(app::load_calc_settings(settings_)),
       floor_(db, session_),
+      recipes_(db, session_),
+      library_(db, session_),
       element_windows_(floor_, settings_, units_, ui_scale_),
-      floor_view_(floor_, element_windows_, settings_, units_, ui_scale_) {
+      floor_view_(floor_, element_windows_, settings_, units_, ui_scale_),
+      recipe_editors_(recipes_, library_, settings_, units_, calc_settings_, ui_scale_),
+      recipe_library_(recipes_, recipe_editors_, ui_scale_),
+      ingredient_window_(library_, units_, ui_scale_),
+      brewing_settings_(calc_settings_, settings_, recipes_, library_, units_, ui_scale_) {
     theme_ = theme_from_name(settings_.get_or(kThemeKey, "dark"));
     apply_theme(theme_, ui_scale_);
+
+    recipe_editors_.on_saved = [this] { recipe_library_.refresh(); };
+    element_windows_.on_open_recipes = [this] { recipe_library_.show(); };
+}
+
+void AppShell::files_dropped(std::vector<std::filesystem::path> files) {
+    for (std::filesystem::path& file : files) dropped_files_.push_back(std::move(file));
 }
 
 void AppShell::draw() {
+    if (!dropped_files_.empty()) {
+        recipe_library_.import_files(dropped_files_);
+        dropped_files_.clear();
+    }
+
     draw_menu_bar();
 
     // The dockspace fills the main window; every other window can dock into
@@ -35,6 +55,10 @@ void AppShell::draw() {
 
     if (show_floor_) floor_view_.draw(dockspace_id, &show_floor_);
     element_windows_.draw();
+    recipe_editors_.draw();
+    recipe_library_.draw();
+    ingredient_window_.draw();
+    brewing_settings_.draw();
     if (show_about_) draw_about_window();
     if (show_imgui_demo_) ImGui::ShowDemoWindow(&show_imgui_demo_);
 }
@@ -54,6 +78,14 @@ void AppShell::draw_menu_bar() {
             if (ImGui::MenuItem("Light", nullptr, theme_ == Theme::Light)) set_theme(Theme::Light);
             ImGui::EndMenu();
         }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Recipes")) {
+        if (ImGui::MenuItem("Recipe library")) recipe_library_.show();
+        if (ImGui::MenuItem("Ingredient library")) ingredient_window_.show();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Brewing settings")) brewing_settings_.show();
+        ImGui::SetItemTooltip("Calculation formulas and the defaults for new recipes");
         ImGui::EndMenu();
     }
     draw_units_menu();
@@ -121,7 +153,7 @@ void AppShell::set_theme(Theme theme) {
 }
 
 void AppShell::set_units(const calc::UnitPreferences& units) {
-    units_ = units;  // the floor and element windows hold a reference to units_
+    units_ = units;  // the floor, element windows and recipes hold a reference to units_
     app::save_unit_preferences(settings_, units_);
 }
 

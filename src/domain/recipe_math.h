@@ -67,4 +67,10 @@ struct RecipeStats {
 // - Salts dissolve in all the brewing water; the mash pH uses the strike water.
 RecipeStats calculate(const Recipe& recipe, const CalcSettings& settings);
 
+// Names shown to the brewer.
+std::string_view name(BoilGravity basis);
+std::string_view name(calc::IbuFormula formula);
+std::string_view name(calc::ColorModel model);
+std::string_view name(calc::AbvFormula formula);
+
 } // namespace ninkasi::domain

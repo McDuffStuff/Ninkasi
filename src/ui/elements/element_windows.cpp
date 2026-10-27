@@ -23,12 +23,6 @@ void label_cell(const char* label) {
     ImGui::TableNextColumn();
 }
 
-void wrapped_note(const char* text) {
-    ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled("%s", text);
-    ImGui::PopTextWrapPos();
-}
-
 } // namespace
 
 ElementWindows::ElementWindows(app::FloorService& floor, data::SettingsRepository& settings,
@@ -214,7 +208,13 @@ void ElementWindows::draw_overview_tab(Window& window, const domain::Element& el
     }
 
     ImGui::Spacing();
-    wrapped_note("Batches, logs and tasks for this equipment arrive with batch tracking (Phase 4).");
+    if (element.type == domain::ElementType::RecipeStation) {
+        if (ImGui::Button("Open recipe library") && on_open_recipes) on_open_recipes();
+        ImGui::SameLine();
+        ImGui::TextDisabled("Design recipes and manage ingredients");
+    } else {
+        wrapped_note("Batches, logs and tasks for this equipment arrive with batch tracking (Phase 4).");
+    }
 }
 
 void ElementWindows::draw_units_tab(const domain::Element& element) {

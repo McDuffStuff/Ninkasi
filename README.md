@@ -40,6 +40,12 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 - **Details windows** can be docked, left floating, popped out into their own OS window (e.g. on a second monitor), or maximized. Windows left open reopen next time.
 - **Units:** the **Units** menu sets the brewery-wide units (with US and metric presets). Each piece of equipment can override them in its **Units** tab.
 
+### Recipes
+- **Recipes > Recipe library** (or a recipe station's **Open recipe library**): create, open, duplicate and delete recipes, and import BeerJSON files exported from other brewing software, either with **Import BeerJSON...** or by dropping the files onto Ninkasi.
+- **The recipe editor** recalculates OG, FG, ABV, IBU, color, brew-day volumes, yeast needs and mash pH as you type, and saves automatically.
+- **Recipes > Ingredient library:** the fermentables, hops and yeasts recipes pick from. It starts with generic ingredients at typical values; update them to your suppliers' analyses. Recipes keep their own copy of each ingredient, so library edits never change existing recipes.
+- **Recipes > Brewing settings:** the formulas used (IBU, color, ABV) and the defaults new and imported recipes start from (batch size, equipment, mash steps, source water).
+
 ## Project layout
 ```
 src/calc/     brewing math and unit conversions (pure, no DB/UI)

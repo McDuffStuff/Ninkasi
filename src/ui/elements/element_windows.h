@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,9 @@ public:
     // Opens the element's window, or brings it to the front if already open.
     void open(std::int64_t element_id);
     void draw();
+
+    // Called by a recipe station's "Open recipe library" button.
+    std::function<void()> on_open_recipes;
 
 private:
     struct Window {

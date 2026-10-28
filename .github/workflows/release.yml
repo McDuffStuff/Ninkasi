@@ -50,4 +50,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $packages = Get-ChildItem dist\*.zip, dist\*.exe | ForEach-Object FullName
-          gh release create '${{ github.ref_name }}' @packages --title 'Ninkasi ${{ github.ref_name }}' --generate-notes
+          # Versions before 1.0 are betas: marked as pre-releases.
+          $beta = if ('${{ github.ref_name }}'.StartsWith('v0.')) { '--prerelease' } else { $null }
+          gh release create '${{ github.ref_name }}' @packages --title 'Ninkasi ${{ github.ref_name }}' --generate-notes $beta

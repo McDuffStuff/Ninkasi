@@ -394,8 +394,9 @@ int schema_version(Database& db) {
 void migrate(Database& db) {
     const int current = schema_version(db);
     if (current > latest_schema_version()) {
-        throw DbError("database schema version " + std::to_string(current) +
-                      " is newer than this version of Ninkasi supports");
+        throw DbError("This brewery's data was saved by a newer version of Ninkasi (database version " +
+                      std::to_string(current) + "; this version reads up to " +
+                      std::to_string(latest_schema_version()) + "). Install the latest Ninkasi to open it.");
     }
     for (const auto& migration : kMigrations) {
         if (migration.version <= current) continue;

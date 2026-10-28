@@ -9,6 +9,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 option(NINKASI_BUILD_TESTS "Build the unit test executable" ON)
+# Who publishes Ninkasi: shown in the exe's Properties and by the installer
+# (scripts/package.ps1 reads this line).
+set(NINKASI_PUBLISHER "Duncan McDuff" CACHE STRING "Who publishes Ninkasi")
 
 include(cmake/Dependencies.cmake)
 include(cmake/EmbedFile.cmake)
@@ -149,6 +152,22 @@ target_compile_definitions(ninkasi PRIVATE
     NINKASI_VERSION="${PROJECT_VERSION}"
     IMGUI_DEFINE_MATH_OPERATORS  # ImVec2 + ImVec2, ImVec2 * float, ...
 )
+
+# The version and icon in the exe (the icon only once assets/ninkasi.ico
+# exists; scripts/make-icon.ps1 makes it from a picture).
+if(WIN32)
+    string(TIMESTAMP NINKASI_YEAR "%Y")
+    set(NINKASI_ICON_FILE ${CMAKE_SOURCE_DIR}/assets/ninkasi.ico)
+    if(EXISTS ${NINKASI_ICON_FILE})
+        set(NINKASI_ICON_RESOURCE "GLFW_ICON ICON \"${NINKASI_ICON_FILE}\"")
+    else()
+        set(NINKASI_ICON_RESOURCE "// No icon yet: scripts/make-icon.ps1 makes assets/ninkasi.ico.")
+    endif()
+    # Rebuild when the icon appears or changes.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets)
+    configure_file(src/ninkasi.rc.in ${CMAKE_BINARY_DIR}/generated/ninkasi.rc @ONLY)
+    target_sources(ninkasi PRIVATE ${CMAKE_BINARY_DIR}/generated/ninkasi.rc)
+endif()
 
 # Release builds on Windows are GUI apps (no console window); Debug keeps the
 # console so log output and crashes are visible.

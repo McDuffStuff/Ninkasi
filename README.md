@@ -28,6 +28,13 @@ cmake --preset debug && cmake --build --preset debug && ctest --preset debug
 ./build/debug/ninkasi
 ```
 
+## Installing
+Download the latest release from [GitHub Releases](https://github.com/McDuffStuff/Ninkasi/releases):
+- **Ninkasi-x.y.z-setup.exe** installs Ninkasi for you (no administrator rights needed) with a Start menu shortcut and an uninstaller.
+- **Ninkasi-x.y.z-windows-x64.zip** is the same program to unzip and run, without installing.
+
+Ninkasi isn't code-signed yet, so Windows may warn that it protected your PC from an unrecognized app: choose **More info**, then **Run anyway**. The brewery's data lives in `%APPDATA%\Ninkasi`, so uninstalling or upgrading leaves it in place.
+
 ## Running
 ```
 ninkasi [--db <path>]
@@ -90,6 +97,15 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 - **File > Back up now** saves a complete copy of the brewery's data in the backup folder ("backups" beside the database, unless you choose another). With **Every day** on (the default), a backup is also made the first time Ninkasi starts each day, and the newest 14 are kept.
 - **File > Backups and export** lists the backups. **Save a copy...** puts one anywhere (another drive, a shared folder). **Restore...** (admins) closes Ninkasi; the next time it starts, the backup replaces the current data, which is first saved as a backup of its own so nothing is lost.
 - **Export** saves the records as CSV files for a spreadsheet, one table at a time or all of them into a folder: batches, brews, ingredients used, readings, the volume ledger, inventory, stock in and out, invoices, packaged goods, the packaging and keg logs, tasks and the activity log.
+
+## Making a release
+1. Set the new version in `CMakeLists.txt` (`project(Ninkasi VERSION 1.2.0 ...)`) and commit it.
+2. Tag the commit and push the tag: `git tag v1.2.0` then `git push origin v1.2.0`.
+3. GitHub builds and tests Ninkasi, packages it, and publishes the installer and the zip as a release (`.github/workflows/release.yml`). The tag must match the version, or the release stops before building.
+
+To package on this computer instead, run `.\scripts\package.ps1`: it builds and tests the release build and writes both packages to `dist\`. The installer needs Inno Setup 6 (`winget install JRSoftware.InnoSetup`); `-SkipInstaller` makes just the zip. Each package carries `THIRD-PARTY-NOTICES.txt`, the licenses of the open-source code compiled in, gathered from the sources the build fetched.
+
+**The icon:** put a square picture, at least 256 pixels a side, at `assets\ninkasi.png` and run `.\scripts\make-icon.ps1`. It writes `assets\ninkasi.ico`, which the next build puts on `ninkasi.exe`, its windows and the installer.
 
 ## Project layout
 ```

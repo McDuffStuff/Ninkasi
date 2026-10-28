@@ -1,0 +1,53 @@
+# Pushing a version tag (v1.2.0) builds, tests and packages Ninkasi for
+# Windows, then publishes the installer and the zip as a GitHub Release.
+# Running it by hand (Actions > Release > Run workflow) makes the packages
+# without publishing anything: they're attached to the run instead.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write  # to publish the release
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the version in CMakeLists.txt
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), 'project\(Ninkasi VERSION ([0-9.]+)').Groups[1].Value
+          if ("v$version" -ne '${{ github.ref_name }}') {
+            throw "The tag ${{ github.ref_name }} doesn't match version $version in CMakeLists.txt."
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build, test and package
+        shell: pwsh
+        run: .\scripts\package.ps1
+
+      - name: Keep the packages with the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ninkasi-windows
+          path: |
+            dist/*.zip
+            dist/*.exe
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $packages = Get-ChildItem dist\*.zip, dist\*.exe | ForEach-Object FullName
+          gh release create '${{ github.ref_name }}' @packages --title 'Ninkasi ${{ github.ref_name }}' --generate-notes

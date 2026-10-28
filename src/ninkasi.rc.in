@@ -1,0 +1,38 @@
+// Windows resources for ninkasi.exe: the version shown in the file's
+// Properties, and the icon when there is one (assets/ninkasi.ico). CMake
+// fills in the @...@ values; see CMakeLists.txt.
+
+#include <winver.h>
+
+// GLFW gives its windows the icon named GLFW_ICON, and Explorer shows the
+// first icon in the file, so one icon does both.
+@NINKASI_ICON_RESOURCE@
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+ PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+ FILEFLAGS 0x0L
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "@NINKASI_PUBLISHER@"
+            VALUE "FileDescription", "Ninkasi brewery management"
+            VALUE "FileVersion", "@PROJECT_VERSION@"
+            VALUE "InternalName", "ninkasi"
+            VALUE "LegalCopyright", "Copyright (C) @NINKASI_YEAR@ @NINKASI_PUBLISHER@"
+            VALUE "OriginalFilename", "ninkasi.exe"
+            VALUE "ProductName", "Ninkasi"
+            VALUE "ProductVersion", "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

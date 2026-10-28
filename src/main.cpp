@@ -5,6 +5,13 @@
 //   --db  use a specific database file instead of the default one in the
 //         user data directory (handy for testing with a scratch brewery).
 
+// First on Windows, so GLFW's OpenGL header finds the macros it expects.
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 #include "app/backup_service.h"
 #include "app/paths.h"
 #include "app/session.h"
@@ -278,13 +285,25 @@ int run(const Options& options) {
     return 0;
 }
 
+// Says why Ninkasi stopped. The release build on Windows has no console, so
+// it shows a message box too.
+void report_failure(const std::string& reason) {
+    std::fprintf(stderr, "Ninkasi failed to start: %s\n", reason.c_str());
+#ifdef _WIN32
+    const std::string message = "Ninkasi couldn't start.\n\n" + reason;
+    std::wstring wide(static_cast<std::size_t>(MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, nullptr, 0)), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, message.c_str(), -1, wide.data(), static_cast<int>(wide.size()));
+    MessageBoxW(nullptr, wide.c_str(), L"Ninkasi", MB_OK | MB_ICONERROR);
+#endif
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     try {
         return run(parse_args(argc, argv));
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "Ninkasi failed to start: %s\n", e.what());
+        report_failure(e.what());
         return 1;
     }
 }

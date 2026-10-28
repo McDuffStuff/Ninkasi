@@ -11,15 +11,12 @@
 
 namespace ninkasi::ui {
 
-namespace {
-constexpr const char* kThemeKey = "ui.theme";
-}
-
-AppShell::AppShell(data::Database& db, app::Session session, std::string db_path, float ui_scale,
-                   std::string startup_notice)
+AppShell::AppShell(data::Database& db, app::UserService& users, app::Session session, std::string db_path,
+                   float ui_scale, std::string startup_notice)
     : settings_(db),
       session_(std::move(session)),
       personal_(db, session_.user_id),
+      users_(users),
       db_path_(std::move(db_path)),
       ui_scale_(ui_scale),
       units_(app::load_unit_preferences(settings_)),
@@ -43,6 +40,7 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
       batch_windows_(batches_, floor_, dialogs_, personal_, units_, calc_settings_, ui_scale_),
       ttb_window_(ttb_, batches_, packaged_goods_, ui_scale_),
       backup_window_(backups_, exports_, ui_scale_),
+      people_window_(users_, session_, ui_scale_),
       floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
                   packaging_views_, personal_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, personal_, units_, calc_settings_, ui_scale_),
@@ -90,6 +88,7 @@ void AppShell::draw() {
     batch_windows_.draw();
     ttb_window_.draw();
     backup_window_.draw();
+    people_window_.draw();
     task_views_.draw();
     inventory_views_.draw();
     packaging_views_.draw();
@@ -107,6 +106,11 @@ void AppShell::draw_menu_bar() {
     if (!ImGui::BeginMainMenuBar()) return;
 
     if (ImGui::BeginMenu("File")) {
+        if (session_.is_admin()) {
+            if (ImGui::MenuItem("People...")) people_window_.show();
+            ImGui::SetItemTooltip("Who uses Ninkasi, their roles and passwords");
+            ImGui::Separator();
+        }
         if (ImGui::MenuItem("Back up now")) {
             backup_window_.back_up_now();
             backup_window_.show();
@@ -144,18 +148,36 @@ void AppShell::draw_menu_bar() {
         ImGui::MenuItem("ImGui Demo (developer)", nullptr, &show_imgui_demo_);
         ImGui::EndMenu();
     }
-
-    // Current user, right-aligned.
-    const float name_width = ImGui::CalcTextSize(session_.display_name.c_str()).x;
-    ImGui::SameLine(ImGui::GetWindowWidth() - name_width - ImGui::GetStyle().ItemSpacing.x * 2.0f);
-    ImGui::TextDisabled("%s", session_.display_name.c_str());
+    draw_account_menu();
 
     ImGui::EndMainMenuBar();
+}
+
+void AppShell::draw_account_menu() {
+    // The signed-in person's name, right-aligned, as a menu of their own.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float width = ImGui::CalcTextSize(session_.display_name.c_str()).x + style.ItemSpacing.x * 3.0f;
+    ImGui::SameLine(ImGui::GetWindowWidth() - width);
+    if (!ImGui::BeginMenu((session_.display_name + "###account").c_str())) return;
+    ImGui::TextDisabled("%s", domain::name(session_.role).data());
+    ImGui::Separator();
+    if (ImGui::MenuItem("Change my password...")) people_window_.change_my_password();
+    const bool can_sign_out = users_.sign_in_needed();
+    if (ImGui::MenuItem("Sign out", nullptr, false, can_sign_out)) sign_out_requested_ = true;
+    if (!can_sign_out) ImGui::SetItemTooltip("With one person and no password, Ninkasi opens without signing in.");
+    ImGui::EndMenu();
 }
 
 void AppShell::draw_units_menu() {
     if (!ImGui::BeginMenu("Units")) return;
 
+    // Everyone sees the brewery's units; only admins change them.
+    const bool admin = session_.is_admin();
+    if (!admin) {
+        ImGui::TextDisabled("Only an admin can change the units.");
+        ImGui::Separator();
+    }
+    ImGui::BeginDisabled(!admin);
     if (ImGui::MenuItem("US brewery preset")) set_units(calc::UnitPreferences::us_brewery());
     ImGui::SetItemTooltip("Barrels, pounds, grams for small additions, °F, °Plato, SRM and °Lovibond");
     if (ImGui::MenuItem("Metric brewery preset")) set_units(calc::UnitPreferences::metric_brewery());
@@ -178,8 +200,7 @@ void AppShell::draw_units_menu() {
             ImGui::EndMenu();
         }
     }
-    ImGui::Separator();
-    ImGui::TextDisabled("Equipment can override these in its Units tab.");
+    ImGui::EndDisabled();
     ImGui::EndMenu();
 }
 

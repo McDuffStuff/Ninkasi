@@ -28,6 +28,9 @@ public:
     // Loads the floor from the database.
     FloorService(data::Database& db, Session session);
 
+    // Whether the signed-in person can set up equipment (admins can).
+    bool can_set_up() const { return session_.is_admin(); }
+
     const std::vector<domain::Element>& elements() const { return elements_; }
     // nullptr if there is no such element. The pointer is invalidated by add() and remove().
     const domain::Element* find(std::int64_t id) const;

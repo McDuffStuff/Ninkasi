@@ -116,8 +116,10 @@ add_executable(ninkasi
     src/ui/file_dialog.cpp
     src/ui/floor/floor_view.cpp
     src/ui/search_combo.cpp
+    src/ui/sign_in_screen.cpp
     src/ui/inventory/inventory_views.cpp
     src/ui/packaging/packaging_views.cpp
+    src/ui/people_window.cpp
     src/ui/fonts.cpp
     src/ui/recipes/brewing_settings_window.cpp
     src/ui/recipes/ingredient_library_window.cpp

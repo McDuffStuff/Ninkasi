@@ -37,6 +37,8 @@ public:
                   std::filesystem::path db_path);
 
     // --- Settings, saved as they change; admins only (NotAllowed otherwise) ----------
+    // Whether the signed-in person can change these and restore backups (admins can).
+    bool can_change_settings() const { return session_.is_admin(); }
     bool automatic() const { return automatic_; }
     void set_automatic(bool automatic);
     // How many backups to keep in the folder; at least 1.

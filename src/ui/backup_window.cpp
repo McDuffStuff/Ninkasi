@@ -112,11 +112,15 @@ void BackupWindow::draw_backups() {
         ImGui::TextDisabled("%s", backup_status_.c_str());
     }
     ImGui::Spacing();
+    // Anyone can back up; the settings and restoring are for admins.
+    const bool admin = backups_.can_change_settings();
+    if (!admin) ImGui::TextDisabled("Only an admin can change these settings or restore a backup.");
 
     if (ImGui::BeginTable("##backup_settings", 2, ImGuiTableFlags_SizingFixedFit)) {
         // The second column reaches the window's edge, so the folder wraps there.
         ImGui::TableSetupColumn("##label");
         ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::BeginDisabled(!admin);
         table_row("Every day");
         bool automatic = backups_.automatic();
         if (ImGui::Checkbox("Back up when Ninkasi starts, once a day", &automatic)) backups_.set_automatic(automatic);
@@ -138,6 +142,7 @@ void BackupWindow::draw_backups() {
                 stale_ = true;
             }
         }
+        ImGui::EndDisabled();
         ImGui::SameLine();
         if (ImGui::SmallButton("Open")) {
             std::error_code error;
@@ -153,8 +158,10 @@ void BackupWindow::draw_backups() {
         ImGui::Spacing();
         ImGui::TextColored(kWarningColor, "%s will be restored the next time Ninkasi starts.",
                            shown(pending->filename()).c_str());
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Cancel the restore")) backups_.cancel_restore();
+        if (admin) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Cancel the restore")) backups_.cancel_restore();
+        }
     }
 
     ImGui::SeparatorText("Backups in the folder");
@@ -181,7 +188,7 @@ void BackupWindow::draw_backups() {
         ImGui::TableNextColumn();
         ImGui::TextDisabled("%s", size_text(file.bytes).c_str());
         ImGui::TableNextColumn();
-        if (ImGui::SmallButton("Restore...")) {
+        if (admin && ImGui::SmallButton("Restore...")) {
             restore_ = file.path;
             confirm_restore_ = true;
         }

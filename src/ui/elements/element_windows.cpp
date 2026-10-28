@@ -322,9 +322,14 @@ void ElementWindows::draw_equipment_settings(Window& window, const domain::Eleme
     const domain::ElementTypeInfo& type = domain::info(element.type);
     const calc::UnitPreferences& units = units_;
 
+    // Setting up equipment is for admins; everyone else sees it.
+    const bool can_set_up = floor_.can_set_up();
+    if (!can_set_up) ImGui::TextDisabled("Only an admin can change equipment.");
+
     if (!ImGui::BeginTable("##equipment", 2, ImGuiTableFlags_SizingStretchProp)) return;
     ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 100.0f * ui_scale_);
     ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::BeginDisabled(!can_set_up);
 
     label_cell("Name");
     if (!window.editing_name) window.name_edit = element.name;
@@ -347,6 +352,7 @@ void ElementWindows::draw_equipment_settings(Window& window, const domain::Eleme
             floor_.set_capacity(element.id, capacity_l > 0.0 ? std::optional<double>(capacity_l) : std::nullopt);
         }
     }
+    ImGui::EndDisabled();
     ImGui::EndTable();
 }
 

@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <cstddef>
+#include <initializer_list>
 
 // Generated at configure time by cmake/EmbedFile.cmake.
 namespace ninkasi::embedded {
@@ -15,6 +16,7 @@ namespace ninkasi::ui {
 namespace {
 
 constexpr float kBaseFontSize = 16.0f;
+constexpr float kHeadingFontSize = 26.0f;
 
 // Latin-1 plus the punctuation and symbols the UI uses (° · – — “ ” … − ≈).
 // Roboto has no arrows, so UI text must not use them.
@@ -31,9 +33,17 @@ const ImWchar kGlyphRanges[] = {
 void load_fonts(float scale) {
     ImFontConfig config;
     config.FontDataOwnedByAtlas = false;  // the data lives in the executable
-    ImGui::GetIO().Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(embedded::kRobotoMediumTtf),
-                                               static_cast<int>(embedded::kRobotoMediumTtfSize),
-                                               kBaseFontSize * scale, &config, kGlyphRanges);
+    // The first font added is the default.
+    for (const float size : {kBaseFontSize, kHeadingFontSize}) {
+        ImGui::GetIO().Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(embedded::kRobotoMediumTtf),
+                                                   static_cast<int>(embedded::kRobotoMediumTtfSize), size * scale,
+                                                   &config, kGlyphRanges);
+    }
+}
+
+ImFont* heading_font() {
+    ImFontAtlas* fonts = ImGui::GetIO().Fonts;
+    return fonts->Fonts.Size > 1 ? fonts->Fonts[1] : fonts->Fonts[0];
 }
 
 } // namespace ninkasi::ui

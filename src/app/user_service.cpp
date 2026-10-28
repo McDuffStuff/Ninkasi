@@ -142,7 +142,8 @@ void UserService::rename(const Session& by, std::int64_t id, std::string_view na
 
     data::Transaction tx(db_);
     repository_.set_name(id, trimmed);
-    data::record_audit(db_, by.user_id, "user.rename", kEntity, id, user.name + " → " + std::string(trimmed));
+    data::record_audit(db_, by.user_id, "user.rename", kEntity, id,
+                       "renamed \"" + user.name + "\" to \"" + std::string(trimmed) + "\"");
     tx.commit();
 }
 

@@ -79,15 +79,21 @@ void BrewingSettingsWindow::draw() {
     const bool expanded = ImGui::Begin("Brewing settings", &visible_);
     if (raise) raise_os_window();
     if (expanded) {
+        // Everyone can read the brewery's settings; only admins change them.
+        const bool admin = session_.is_admin();
+        if (!admin) wrapped_note("Only an admin can change these settings.");
         if (ImGui::BeginTabBar("##settings")) {
             if (ImGui::BeginTabItem("Calculations")) {
+                ImGui::BeginDisabled(!admin);
                 if (draw_calculations()) {
                     calc_dirty_ = true;
                     last_change_ = ImGui::GetTime();
                 }
+                ImGui::EndDisabled();
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("New recipe defaults")) {
+                ImGui::BeginDisabled(!admin);
                 wrapped_note("New recipes, and recipes imported from BeerJSON, start with these values. "
                              "Changing them doesn't change existing recipes.");
                 const RecipeContext context{units_, library_, ui_scale_};
@@ -104,6 +110,7 @@ void BrewingSettingsWindow::draw() {
                     defaults_dirty_ = true;
                     last_change_ = ImGui::GetTime();
                 }
+                ImGui::EndDisabled();
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();

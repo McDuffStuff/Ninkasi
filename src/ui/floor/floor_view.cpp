@@ -167,18 +167,23 @@ bool FloorView::over_resize_handle(const domain::Element& element, ImVec2 screen
 // --- Toolbar ----------------------------------------------------------------
 
 void FloorView::draw_toolbar() {
-    ImGui::Checkbox("Edit layout", &edit_mode_);
+    // Setting up equipment is for admins.
+    if (floor_.can_set_up()) {
+        ImGui::Checkbox("Edit layout", &edit_mode_);
 
-    ImGui::SameLine();
-    if (ImGui::Button("Add equipment")) ImGui::OpenPopup(kAddPopup);
-    if (ImGui::BeginPopup(kAddPopup)) {
-        for (const domain::ElementTypeInfo& type : domain::element_types()) {
-            if (ImGui::MenuItem(type.name.data())) add_element(type.type, to_world(canvas_pos_ + canvas_size_ * 0.5f));
+        ImGui::SameLine();
+        if (ImGui::Button("Add equipment")) ImGui::OpenPopup(kAddPopup);
+        if (ImGui::BeginPopup(kAddPopup)) {
+            for (const domain::ElementTypeInfo& type : domain::element_types()) {
+                if (ImGui::MenuItem(type.name.data())) {
+                    add_element(type.type, to_world(canvas_pos_ + canvas_size_ * 0.5f));
+                }
+            }
+            ImGui::EndPopup();
         }
-        ImGui::EndPopup();
+        ImGui::SameLine();
     }
 
-    ImGui::SameLine();
     if (ImGui::Button("Fit")) fit_requested_ = true;
     ImGui::SetItemTooltip("Zoom to show all equipment");
     ImGui::SameLine();
@@ -706,11 +711,13 @@ void FloorView::draw_context_menu() {
         }
         if (ImGui::MenuItem("Open details")) windows_.open(copy.id);
         draw_element_actions(copy);
-        ImGui::Separator();
-        if (ImGui::MenuItem("Delete...", nullptr, false, edit_mode_)) request_delete(copy.id);
-        if (!edit_mode_) ImGui::SetItemTooltip("Turn on Edit layout to delete equipment.");
+        if (floor_.can_set_up()) {
+            ImGui::Separator();
+            if (ImGui::MenuItem("Delete...", nullptr, false, edit_mode_)) request_delete(copy.id);
+            if (!edit_mode_) ImGui::SetItemTooltip("Turn on Edit layout to delete equipment.");
+        }
     } else {
-        if (ImGui::BeginMenu("Add here")) {
+        if (floor_.can_set_up() && ImGui::BeginMenu("Add here")) {
             for (const domain::ElementTypeInfo& type : domain::element_types()) {
                 if (ImGui::MenuItem(type.name.data())) add_element(type.type, context_point_);
             }
@@ -718,8 +725,10 @@ void FloorView::draw_context_menu() {
         }
         if (ImGui::MenuItem("Fit to view")) fit_requested_ = true;
     }
-    ImGui::Separator();
-    ImGui::MenuItem("Edit layout", nullptr, &edit_mode_);
+    if (floor_.can_set_up()) {
+        ImGui::Separator();
+        ImGui::MenuItem("Edit layout", nullptr, &edit_mode_);
+    }
     ImGui::EndPopup();
 }
 

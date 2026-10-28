@@ -7,6 +7,9 @@ namespace ninkasi::ui {
 
 enum class Theme { Dark, Light };
 
+// Where each person's theme is saved, in their own settings.
+inline constexpr const char* kThemeKey = "ui.theme";
+
 // Applies the theme to the current ImGui style, with sizes multiplied by
 // `scale` (the monitor's content scale). Requires an ImGui context.
 void apply_theme(Theme theme, float scale);

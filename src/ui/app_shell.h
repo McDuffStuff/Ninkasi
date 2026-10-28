@@ -12,6 +12,7 @@
 #include "app/session.h"
 #include "app/task_service.h"
 #include "app/ttb_service.h"
+#include "app/user_service.h"
 #include "calc/units.h"
 #include "data/database.h"
 #include "data/settings_repository.h"
@@ -23,6 +24,7 @@
 #include "ui/floor/floor_view.h"
 #include "ui/inventory/inventory_views.h"
 #include "ui/packaging/packaging_views.h"
+#include "ui/people_window.h"
 #include "ui/recipes/brewing_settings_window.h"
 #include "ui/recipes/ingredient_library_window.h"
 #include "ui/recipes/recipe_editors.h"
@@ -39,12 +41,12 @@ namespace ninkasi::ui {
 
 class AppShell {
 public:
-    // Requires an ImGui context; applies the saved theme immediately.
-    // `ui_scale` is the monitor's content scale (1.0 at 96 DPI). A
-    // `startup_notice` (a backup restored, say) is shown when it opens.
-    // Makes the day's automatic backup if one is due.
-    AppShell(data::Database& db, app::Session session, std::string db_path, float ui_scale,
-             std::string startup_notice = {});
+    // Requires an ImGui context; applies the person's theme immediately.
+    // `session` is whoever signed in. `ui_scale` is the monitor's content
+    // scale (1.0 at 96 DPI). A `startup_notice` (a backup restored, say) is
+    // shown when it opens. Makes the day's automatic backup if one is due.
+    AppShell(data::Database& db, app::UserService& users, app::Session session, std::string db_path,
+             float ui_scale, std::string startup_notice = {});
 
     AppShell(const AppShell&) = delete;
     AppShell& operator=(const AppShell&) = delete;
@@ -57,10 +59,13 @@ public:
     void files_dropped(std::vector<std::filesystem::path> files);
 
     bool quit_requested() const { return quit_requested_; }
+    // The person chose Sign out: close the shell and show the sign-in screen.
+    bool sign_out_requested() const { return sign_out_requested_; }
 
 private:
     void draw_menu_bar();
     void draw_units_menu();
+    void draw_account_menu();
     void draw_about_window();
     void draw_notice();
     void set_theme(Theme theme);
@@ -71,6 +76,7 @@ private:
     data::SettingsRepository settings_;  // the brewery's
     app::Session session_;
     data::SettingsRepository personal_;  // the signed-in person's: theme, open windows, floor view
+    app::UserService& users_;
     std::string db_path_;
     float ui_scale_;
     Theme theme_ = Theme::Dark;
@@ -94,6 +100,7 @@ private:
     BatchWindows batch_windows_;
     TtbWindow ttb_window_;
     BackupWindow backup_window_;
+    PeopleWindow people_window_;
     FloorView floor_view_;
     RecipeEditors recipe_editors_;
     RecipeLibraryWindow recipe_library_;
@@ -105,6 +112,7 @@ private:
     bool show_about_ = false;
     bool show_imgui_demo_ = false;
     bool quit_requested_ = false;
+    bool sign_out_requested_ = false;
     std::string notice_;  // shown once, then cleared
 };
 

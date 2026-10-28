@@ -3,6 +3,7 @@
 
 #include "domain/timestamp.h"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -16,7 +17,7 @@ namespace ninkasi::domain {
 // TTB and backup settings) or set up equipment on the floor.
 enum class Role { Admin, Brewer };
 
-inline constexpr Role kAllRoles[] = {Role::Admin, Role::Brewer};
+inline constexpr std::array kAllRoles = {Role::Admin, Role::Brewer};
 
 struct User {
     std::int64_t id = 0;

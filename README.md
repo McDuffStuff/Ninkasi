@@ -32,14 +32,21 @@ cmake --preset debug && cmake --build --preset debug && ctest --preset debug
 ```
 ninkasi [--db <path>]
 ```
-By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninkasi` (Linux): the `ninkasi.db` database and `imgui.ini` window layout. Pass `--db` to use a different database, e.g. a scratch brewery for testing.
+By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninkasi` (Linux), in the `ninkasi.db` database. Pass `--db` to use a different database, e.g. a scratch brewery for testing.
+
+### People and signing in
+- A one-person brewery opens straight to the floor. Once an admin adds a second person in **File > People** (or anyone has a password), Ninkasi starts at a sign-in screen: choose your name, type your password if you have one, and press Enter. Your name in the top right corner has **Change my password...** and **Sign out**.
+- **Admins** can do everything. **Brewers** log the brewery's work (brews, transfers, readings, inventory, packaging, tasks and recipes) but don't manage people, set up equipment on the floor, change the units, brewing, TTB or backup settings, or restore backups.
+- While more than one person uses Ninkasi, every admin needs a password; brewers can go without. There is always at least one admin. Someone who leaves is made inactive rather than removed, so the records they made keep their name.
+- Each person keeps their own theme and window layout.
+- Passwords are hashed with Argon2id. They decide who can do what in Ninkasi; they don't encrypt the data, which anyone who can open the database file can read.
 
 ### The Brewery Floor
 - **Viewing:** hover over equipment for a summary, click it for its details window, right-click it for actions, drag empty space (or middle-drag) to pan, and scroll to zoom. **Fit** frames everything. Tanks show the beer in them with its latest gravity, temperature and volume; a numbered badge counts open tasks (red when one is overdue).
-- **Editing:** tick **Edit layout**, then drag equipment to move it, drag its corner handle to resize, double-click for details, or press Delete to remove it. Add equipment from the toolbar or by right-clicking the floor.
+- **Editing** (admins): tick **Edit layout**, then drag equipment to move it, drag its corner handle to resize, double-click for details, or press Delete to remove it. Add equipment from the toolbar or by right-clicking the floor.
 - **Details windows** can be docked, left floating, popped out into their own OS window (e.g. on a second monitor), or maximized. Windows left open reopen next time.
 - **Dropdowns can be searched:** every dropdown opens with a search field. Start typing and the list narrows to what matches, best match first, even with letters left out ("wcipa" finds West Coast IPA); Enter picks the top match and Escape closes the list.
-- **Units:** the **Units** menu sets the units used everywhere (with US and metric presets).
+- **Units:** the **Units** menu sets the units used everywhere (with US and metric presets). Admins change them.
 
 ### Recipes
 - **Recipes > Recipe library** (or click a recipe station on the floor): create, open, duplicate and delete recipes, and import BeerJSON files exported from other brewing software, either with **Import BeerJSON...** or by dropping the files onto Ninkasi.
@@ -77,7 +84,7 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 
 ### Backups and export
 - **File > Back up now** saves a complete copy of the brewery's data in the backup folder ("backups" beside the database, unless you choose another). With **Every day** on (the default), a backup is also made the first time Ninkasi starts each day, and the newest 14 are kept.
-- **File > Backups and export** lists the backups. **Save a copy...** puts one anywhere (another drive, a shared folder). **Restore...** closes Ninkasi; the next time it starts, the backup replaces the current data, which is first saved as a backup of its own so nothing is lost.
+- **File > Backups and export** lists the backups. **Save a copy...** puts one anywhere (another drive, a shared folder). **Restore...** (admins) closes Ninkasi; the next time it starts, the backup replaces the current data, which is first saved as a backup of its own so nothing is lost.
 - **Export** saves the records as CSV files for a spreadsheet, one table at a time or all of them into a folder: batches, brews, ingredients used, readings, the volume ledger, inventory, stock in and out, invoices, packaged goods, the packaging and keg logs, tasks and the activity log.
 
 ## Project layout
@@ -85,7 +92,7 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 src/calc/     brewing math and unit conversions (pure, no DB/UI)
 src/domain/   plain data types and business rules
 src/data/     SQLite wrapper, schema migrations, repositories
-src/app/      services, session, file paths
+src/app/      services, session and signing in, file paths
 src/ui/       ImGui screens
 tests/        doctest unit tests (mirror src/)
 ```
@@ -99,4 +106,4 @@ Dependencies point downward only: `ui → app → domain/data → calc`. `calc` 
 - Source files are UTF-8 without a byte-order mark.
 
 ## Third-party
-Dear ImGui, ImPlot and GLFW (MIT/zlib-style licenses), SQLite (public domain), nlohmann/json and doctest (MIT), and the Roboto font (Apache License 2.0), which is compiled into the executable.
+Dear ImGui, ImPlot and GLFW (MIT/zlib-style licenses), SQLite (public domain), nlohmann/json and doctest (MIT), the Argon2 reference implementation (CC0 / Apache License 2.0), and the Roboto font (Apache License 2.0), which is compiled into the executable.

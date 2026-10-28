@@ -93,11 +93,13 @@ void TtbWindow::draw() {
 void TtbWindow::draw_toolbar() {
     domain::ReportCadence cadence = ttb_.cadence();
     ImGui::SetNextItemWidth(130.0f * ui_scale_);
+    ImGui::BeginDisabled(!ttb_.can_change_settings());  // the brewery's, set by an admin
     if (enum_combo("##cadence", cadence, domain::kReportCadences)) {
         ttb_.set_cadence(cadence);
         period_ = domain::period_containing(period_.first, cadence);
         stale_ = true;
     }
+    ImGui::EndDisabled();
     ImGui::SetItemTooltip("TTB F 5130.9 is filed monthly, or quarterly if the brewery owed no more than $50,000 in "
                           "beer tax last year and expects the same this year.");
     ImGui::SameLine();
@@ -255,6 +257,9 @@ void TtbWindow::draw_tax() {
 }
 
 void TtbWindow::draw_settings() {
+    const bool can_change = ttb_.can_change_settings();
+    if (!can_change) ImGui::TextDisabled("Only an admin can change the TTB settings.");
+    ImGui::BeginDisabled(!can_change);
     if (ImGui::BeginTable("##settings", 2, ImGuiTableFlags_SizingFixedFit)) {
         table_row("Brewery number");
         ImGui::SetNextItemWidth(200.0f * ui_scale_);
@@ -270,6 +275,7 @@ void TtbWindow::draw_settings() {
         ImGui::TextDisabled("For domestic brewers producing no more than 2,000,000 barrels a year.");
         ImGui::EndTable();
     }
+    ImGui::EndDisabled();
     ImGui::Spacing();
     wrapped_note("The report counts beer when it's knocked out into a fermenter as produced (line 2), packaging as "
                  "racked or bottled, and every way beer leaves packaged goods on its own line. Losses and dumps "

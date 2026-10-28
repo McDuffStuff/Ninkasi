@@ -28,6 +28,7 @@ public:
     TtbService(data::Database& db, Session session, data::SettingsRepository& settings);
 
     // --- Settings, saved as they change; admins only (NotAllowed otherwise) ----------
+    bool can_change_settings() const { return session_.is_admin(); }
     domain::ReportCadence cadence() const { return cadence_; }
     void set_cadence(domain::ReportCadence cadence);
     // Whether the brewery qualifies for the $3.50 rate: a domestic brewer

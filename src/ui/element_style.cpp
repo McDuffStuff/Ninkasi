@@ -16,4 +16,14 @@ ImVec4 element_accent(domain::ElementType type) {
     return {0.5f, 0.5f, 0.5f, 1.0f};
 }
 
+bool has_activity_log(domain::ElementType type) {
+    switch (type) {
+    case domain::ElementType::Inventory:
+    case domain::ElementType::PackagedGoods:
+    case domain::ElementType::KegCleaner:
+    case domain::ElementType::RecipeStation: return false;
+    default:                                 return true;
+    }
+}
+
 } // namespace ninkasi::ui

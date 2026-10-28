@@ -78,9 +78,6 @@ TEST_CASE("every change is saved and survives a reload") {
         floor.set_rect(id, {10.0, 20.0, 150.0, 200.0});
         floor.rename(id, "  Brite 1  ");
         floor.set_capacity(id, 1173.48);
-        floor.set_unit_override(id, calc::Measure::Volume, calc::Unit::Hectoliter);
-        floor.set_unit_override(id, calc::Measure::Temperature, calc::Unit::Celsius);
-        floor.set_unit_override(id, calc::Measure::Temperature, std::nullopt);  // cleared again
     }
 
     app::FloorService reloaded(brewery.db, brewery.session);
@@ -93,8 +90,6 @@ TEST_CASE("every change is saved and survives a reload") {
     CHECK(element.rect == expected_rect);
     REQUIRE(element.capacity_l.has_value());
     CHECK(*element.capacity_l == near(1173.48, 1e-9));
-    CHECK(element.unit_overrides[calc::index_of(calc::Measure::Volume)] == calc::Unit::Hectoliter);
-    CHECK_FALSE(element.unit_overrides[calc::index_of(calc::Measure::Temperature)].has_value());
 }
 
 TEST_CASE("elements can't shrink below the minimum size") {
@@ -113,23 +108,18 @@ TEST_CASE("invalid changes are rejected without saving anything") {
 
     CHECK_THROWS_AS(floor.rename(id, "   "), std::invalid_argument);
     CHECK_THROWS_AS(floor.set_capacity(id, -1.0), std::invalid_argument);
-    CHECK_THROWS_AS(floor.set_unit_override(id, calc::Measure::Volume, calc::Unit::Pound), std::invalid_argument);
     CHECK_THROWS_AS(floor.rename(id + 100, "Ghost"), std::invalid_argument);
     CHECK(floor.find(id)->name == "Fermenter 1");
     CHECK_FALSE(floor.find(id)->capacity_l.has_value());
 }
 
-TEST_CASE("removing an element removes its unit overrides too") {
+TEST_CASE("removing an element deletes it") {
     Brewery brewery;
     app::FloorService floor(brewery.db, brewery.session);
     const auto id = floor.add(ElementType::Fermenter, 0.0, 0.0);
-    floor.set_unit_override(id, calc::Measure::Volume, calc::Unit::UsGallon);
-    REQUIRE(brewery.count("SELECT COUNT(*) FROM element_unit_overrides;") == 1);
-
     floor.remove(id);
     CHECK(floor.find(id) == nullptr);
     CHECK(brewery.count("SELECT COUNT(*) FROM elements;") == 0);
-    CHECK(brewery.count("SELECT COUNT(*) FROM element_unit_overrides;") == 0);
 }
 
 TEST_CASE("changes are audited under the user who made them") {
@@ -153,12 +143,9 @@ TEST_CASE("rows this version doesn't understand are skipped when loading") {
     Brewery brewery;
     brewery.db.exec(
         "INSERT INTO elements (type, name, x, y, width, height) VALUES ('spaceship', 'USS Lager', 0, 0, 100, 100);"
-        "INSERT INTO elements (type, name, x, y, width, height) VALUES ('fermenter', 'FV1', 0, 0, 100, 100);"
-        "INSERT INTO element_unit_overrides VALUES (2, 'volume', 'furlong');"
-        "INSERT INTO element_unit_overrides VALUES (2, 'mass', 'us_gallon');");
+        "INSERT INTO elements (type, name, x, y, width, height) VALUES ('fermenter', 'FV1', 0, 0, 100, 100);");
 
     app::FloorService floor(brewery.db, brewery.session);
     REQUIRE(floor.elements().size() == 1);
     CHECK(floor.elements().front().name == "FV1");
-    for (const auto& unit : floor.elements().front().unit_overrides) CHECK_FALSE(unit.has_value());
 }

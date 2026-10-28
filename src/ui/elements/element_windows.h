@@ -78,7 +78,6 @@ private:
     void draw_vessel_status(const domain::Element& element, const calc::UnitPreferences& units);
     void draw_brewhouse_status(const domain::Element& element);
     void draw_history_tab(const Window& window, const calc::UnitPreferences& units);
-    void draw_units_tab(const domain::Element& element);
     void refresh(Window& window);
     void maximize(Window& window);
     void save_open_windows();

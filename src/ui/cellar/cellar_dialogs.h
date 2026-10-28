@@ -59,8 +59,6 @@ private:
 
     void open(Kind kind);
     void close();
-    // The brewery's units with an element's overrides.
-    calc::UnitPreferences units_for(std::optional<std::int64_t> element_id) const;
     // Runs a service call. On success the dialog closes; on failure it stays
     // open showing the error. Returns true on success.
     bool attempt(const std::function<void()>& action);

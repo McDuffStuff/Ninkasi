@@ -410,7 +410,7 @@ void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& elemen
     if (font_size < 7.0f) return;
 
     const domain::ElementTypeInfo& type = domain::info(element.type);
-    const calc::UnitPreferences units = units_.with_overrides(element.unit_overrides);
+    const calc::UnitPreferences& units = units_;
     ImFont* font = ImGui::GetFont();
     const ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
     const ImU32 muted = ImGui::GetColorU32(ImGuiCol_TextDisabled);
@@ -573,7 +573,7 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
     if (!element || ImGui::GetTime() - hover_since_ < kHoverDelay) return;
 
     const domain::ElementTypeInfo& type = domain::info(element->type);
-    const calc::UnitPreferences units = units_.with_overrides(element->unit_overrides);
+    const calc::UnitPreferences& units = units_;
     const calc::Unit volume = units.unit_for(Measure::Volume);
     const calc::Unit gravity = units.unit_for(Measure::Gravity);
     const std::optional<app::VesselContents> held = batches_.contents(element->id);
@@ -771,8 +771,8 @@ void FloorView::draw_element_actions(const domain::Element& element) {
         if (ImGui::MenuItem("Add kegs...")) packaging_views_.add_kegs();
     }
 
-    // Notes go on the equipment's log; a recipe station has none.
-    if (element.type == domain::ElementType::RecipeStation) return;
+    // Notes go on the equipment's log.
+    if (!has_activity_log(element.type)) return;
     const std::optional<app::VesselContents> held = batches_.contents(element.id);
     if (ImGui::MenuItem("Add note...")) {
         dialogs_.add_note(held ? std::optional<std::int64_t>(held->batch_id) : std::nullopt, element.id);

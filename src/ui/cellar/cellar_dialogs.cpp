@@ -281,7 +281,7 @@ void CellarDialogs::draw() {
 void CellarDialogs::draw_log_brew() {
     const domain::Element* brewhouse = floor_.find(element_id_);
     if (!brewhouse) return close();
-    const calc::UnitPreferences units = units_for(element_id_);
+    const calc::UnitPreferences& units = units_;
 
     // Batches another brew can be added to.
     std::vector<const domain::Batch*> open_batches;
@@ -415,7 +415,7 @@ void CellarDialogs::draw_log_brew() {
 void CellarDialogs::draw_knock_out() {
     const auto [batch, brew] = batches_.find_brew(brew_id_);
     if (!brew || !brew->in_progress()) return close();
-    const calc::UnitPreferences units = units_for(element_id_);
+    const calc::UnitPreferences& units = units_;
 
     ImGui::Text("%s", domain::label(*batch).c_str());
     ImGui::TextDisabled("Brewed %s on %s", time_text(brew->started_at).c_str(),
@@ -573,7 +573,7 @@ void CellarDialogs::draw_transfer() {
     const std::optional<app::VesselContents> held = batches_.contents(element_id_);
     const domain::Batch* batch = held ? batches_.find_active(held->batch_id) : nullptr;
     if (!source || !batch) return close();
-    const calc::UnitPreferences units = units_for(element_id_);
+    const calc::UnitPreferences& units = units_;
     const calc::Unit volume = units.unit_for(Measure::Volume);
 
     ImGui::Text("%s in %s: %s", domain::label(*batch).c_str(), source->name.c_str(),
@@ -614,7 +614,7 @@ void CellarDialogs::draw_package() {
     const std::optional<app::VesselContents> held = batches_.contents(element_id_);
     const domain::Batch* batch = held ? batches_.find_active(held->batch_id) : nullptr;
     if (!vessel || !batch) return close();
-    const calc::UnitPreferences units = units_for(element_id_);
+    const calc::UnitPreferences& units = units_;
     const calc::Unit volume = units.unit_for(Measure::Volume);
     const float count_width = 80.0f * ui_scale_;
 
@@ -754,7 +754,7 @@ void CellarDialogs::draw_dump() {
     const std::optional<app::VesselContents> held = batches_.contents(element_id_);
     const domain::Batch* batch = held ? batches_.find_active(held->batch_id) : nullptr;
     if (!vessel || !batch) return close();
-    const calc::UnitPreferences units = units_for(element_id_);
+    const calc::UnitPreferences& units = units_;
 
     ImGui::Text("Dump all %s of %s from %s?",
                 calc::format(held->volume_l, units.unit_for(Measure::Volume)).c_str(), domain::label(*batch).c_str(),
@@ -777,7 +777,7 @@ void CellarDialogs::draw_correct_volume() {
     const std::optional<app::VesselContents> held = batches_.contents(element_id_);
     const domain::Batch* batch = held ? batches_.find_active(held->batch_id) : nullptr;
     if (!vessel || !batch) return close();
-    const calc::UnitPreferences units = units_for(element_id_);
+    const calc::UnitPreferences& units = units_;
     const calc::Unit volume = units.unit_for(Measure::Volume);
 
     ImGui::Text("%s in %s", domain::label(*batch).c_str(), vessel->name.c_str());
@@ -805,7 +805,7 @@ void CellarDialogs::draw_reading() {
     const domain::Batch* batch = batches_.find_active(batch_id_);
     if (!batch) return close();
     const domain::Element* vessel = floor_.find(element_id_);
-    const calc::UnitPreferences units = units_for(vessel ? std::optional<std::int64_t>(element_id_) : std::nullopt);
+    const calc::UnitPreferences& units = units_;
     const calc::Unit gravity = units.unit_for(Measure::Gravity);
     const calc::Unit temperature = units.unit_for(Measure::Temperature);
     const float number_width = 100.0f * ui_scale_;
@@ -949,11 +949,6 @@ void CellarDialogs::draw_note() {
 }
 
 // --- Helpers ----------------------------------------------------------------
-
-calc::UnitPreferences CellarDialogs::units_for(std::optional<std::int64_t> element_id) const {
-    const domain::Element* element = element_id ? floor_.find(*element_id) : nullptr;
-    return element ? units_.with_overrides(element->unit_overrides) : units_;
-}
 
 bool CellarDialogs::attempt(const std::function<void()>& action) {
     try {

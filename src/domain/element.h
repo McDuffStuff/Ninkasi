@@ -54,7 +54,6 @@ struct Element {
     std::string name;
     Rect rect;
     std::optional<double> capacity_l;  // vessels only
-    calc::UnitOverrides unit_overrides{};
 };
 
 } // namespace ninkasi::domain

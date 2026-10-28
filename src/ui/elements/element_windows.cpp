@@ -150,7 +150,7 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
             window.task_revision != tasks_.revision()) {
             refresh(window);
         }
-        const calc::UnitPreferences units = units_.with_overrides(element.unit_overrides);
+        const calc::UnitPreferences& units = units_;
         draw_window_controls(window, element);
         if (element.type == domain::ElementType::RecipeStation) {
             // Just its name: the recipe library is what it's for.
@@ -230,13 +230,10 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
                 task_views_.draw_element_tasks(element.id);
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Log")) {
+            // Inventory, packaged goods and the keg cleaner have their own logs.
+            if (has_activity_log(element.type) && ImGui::BeginTabItem("Log")) {
                 if (ImGui::SmallButton("Add note")) dialogs_.add_note(std::nullopt, element.id);
                 draw_activity(window.log, units);
-                ImGui::EndTabItem();
-            }
-            if (ImGui::BeginTabItem("Units")) {
-                draw_units_tab(element);
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
@@ -300,7 +297,7 @@ void ElementWindows::draw_window_controls(Window& window, const domain::Element&
 // --- Overview ---------------------------------------------------------------
 
 void ElementWindows::draw_overview_tab(Window& window, const domain::Element& element) {
-    const calc::UnitPreferences units = units_.with_overrides(element.unit_overrides);
+    const calc::UnitPreferences& units = units_;
     switch (element.type) {
     case domain::ElementType::Brewhouse:
         draw_brewhouse_status(element);
@@ -323,7 +320,7 @@ void ElementWindows::draw_overview_tab(Window& window, const domain::Element& el
 
 void ElementWindows::draw_equipment_settings(Window& window, const domain::Element& element) {
     const domain::ElementTypeInfo& type = domain::info(element.type);
-    const calc::UnitPreferences units = units_.with_overrides(element.unit_overrides);
+    const calc::UnitPreferences& units = units_;
 
     if (!ImGui::BeginTable("##equipment", 2, ImGuiTableFlags_SizingStretchProp)) return;
     ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 100.0f * ui_scale_);
@@ -503,43 +500,6 @@ void ElementWindows::draw_history_tab(const Window& window, const calc::UnitPref
 }
 
 // --- Units ----------------------------------------------------------------------
-
-void ElementWindows::draw_units_tab(const domain::Element& element) {
-    wrapped_note("Units for this equipment only. \"Brewery default\" follows the Units menu.");
-    ImGui::Spacing();
-    if (!ImGui::BeginTable("##units", 2, ImGuiTableFlags_SizingStretchProp)) return;
-    ImGui::TableSetupColumn("##measure", ImGuiTableColumnFlags_WidthFixed, 120.0f * ui_scale_);
-    ImGui::TableSetupColumn("##unit", ImGuiTableColumnFlags_WidthStretch);
-
-    for (calc::Measure measure : calc::kAllMeasures) {
-        label_cell(calc::name(measure).data());
-
-        const std::optional<calc::Unit> chosen = element.unit_overrides[calc::index_of(measure)];
-        const std::string default_label =
-            "Brewery default (" + std::string(calc::symbol(units_.unit_for(measure))) + ")";
-        const std::string preview = chosen ? unit_label(*chosen) : default_label;
-
-        ImGui::PushID(static_cast<int>(calc::index_of(measure)));
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (begin_search_combo("##unit", preview.c_str())) {
-            // The brewery default first, then each unit.
-            std::vector<std::optional<calc::Unit>> options{std::nullopt};
-            std::vector<std::string> labels{default_label};
-            for (calc::Unit unit : calc::units_of(measure)) {
-                options.emplace_back(unit);
-                labels.push_back(unit_label(unit));
-            }
-            for (std::size_t i : search_order(labels)) {
-                if (search_item(labels[i].c_str(), chosen == options[i])) {
-                    floor_.set_unit_override(element.id, measure, options[i]);
-                }
-            }
-            end_search_combo();
-        }
-        ImGui::PopID();
-    }
-    ImGui::EndTable();
-}
 
 // --- Window management ------------------------------------------------------------
 

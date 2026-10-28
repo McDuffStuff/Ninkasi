@@ -104,15 +104,6 @@ void FloorService::set_capacity(std::int64_t id, std::optional<double> capacity_
     get(id) = std::move(updated);
 }
 
-void FloorService::set_unit_override(std::int64_t id, calc::Measure measure, std::optional<calc::Unit> unit) {
-    if (unit && calc::dimension_of(*unit) != calc::dimension_of(measure)) {
-        throw std::invalid_argument("that unit can't measure " + std::string(calc::name(measure)));
-    }
-    domain::Element& element = get(id);
-    repository_.set_unit_override(id, measure, unit);
-    element.unit_overrides[calc::index_of(measure)] = unit;
-}
-
 std::optional<std::string> FloorService::removal_blocker(std::int64_t id) {
     const domain::Element& element = get(id);
     if (!data::BatchRepository(db_).in_use(id)) return std::nullopt;

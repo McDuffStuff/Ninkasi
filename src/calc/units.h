@@ -7,8 +7,7 @@
 //
 // Each Unit belongs to a physical Dimension (volume, mass...). The brewer
 // chooses units per Measure, which is what is being measured: grain and hops
-// are both masses, but brewers weigh grain in pounds and salts in grams. An
-// element can override any of these choices.
+// are both masses, but brewers weigh grain in pounds and salts in grams.
 
 #include <array>
 #include <cstddef>
@@ -64,7 +63,7 @@ inline constexpr std::array kAllMeasures = {
 };
 inline constexpr std::size_t kMeasureCount = kAllMeasures.size();
 
-// Position of a measure in per-measure arrays such as UnitOverrides.
+// Position of a measure in per-measure arrays.
 inline constexpr std::size_t index_of(Measure measure) {
     return static_cast<std::size_t>(measure);
 }
@@ -102,10 +101,6 @@ std::string format(double canonical_value, Unit unit, bool with_symbol = true);
 
 // --- Preferences ------------------------------------------------------------
 
-// Unit choices for one element, indexed by index_of(Measure). An empty entry
-// follows the brewery-wide preference.
-using UnitOverrides = std::array<std::optional<Unit>, kMeasureCount>;
-
 // The unit the brewer has chosen for each measure.
 class UnitPreferences {
 public:
@@ -121,9 +116,6 @@ public:
     Unit unit_for(Measure measure) const;
     // Chooses `unit` for `measure`; ignored if the unit can't measure it.
     void set(Measure measure, Unit unit);
-
-    // These preferences with an element's overrides applied on top.
-    UnitPreferences with_overrides(const UnitOverrides& overrides) const;
 
     bool operator==(const UnitPreferences&) const = default;
 

@@ -39,7 +39,7 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 - **Editing:** tick **Edit layout**, then drag equipment to move it, drag its corner handle to resize, double-click for details, or press Delete to remove it. Add equipment from the toolbar or by right-clicking the floor.
 - **Details windows** can be docked, left floating, popped out into their own OS window (e.g. on a second monitor), or maximized. Windows left open reopen next time.
 - **Dropdowns can be searched:** every dropdown opens with a search field. Start typing and the list narrows to what matches, best match first, even with letters left out ("wcipa" finds West Coast IPA); Enter picks the top match and Escape closes the list.
-- **Units:** the **Units** menu sets the brewery-wide units (with US and metric presets). Each piece of equipment can override them in its **Units** tab.
+- **Units:** the **Units** menu sets the units used everywhere (with US and metric presets).
 
 ### Recipes
 - **Recipes > Recipe library** (or click a recipe station on the floor): create, open, duplicate and delete recipes, and import BeerJSON files exported from other brewing software, either with **Import BeerJSON...** or by dropping the files onto Ninkasi.

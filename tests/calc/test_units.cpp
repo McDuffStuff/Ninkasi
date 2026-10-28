@@ -127,16 +127,3 @@ TEST_CASE("unit preferences") {
     changed.set(Measure::Mass, Unit::Liter);
     CHECK(changed.unit_for(Measure::Mass) == Unit::Pound);
 }
-
-TEST_CASE("element overrides replace only the measures they set") {
-    const UnitPreferences us = UnitPreferences::us_brewery();
-    UnitOverrides overrides{};
-    overrides[index_of(Measure::Volume)] = Unit::UsGallon;
-    overrides[index_of(Measure::Mass)] = Unit::Celsius;  // can't measure mass: ignored
-
-    const UnitPreferences effective = us.with_overrides(overrides);
-    CHECK(effective.unit_for(Measure::Volume) == Unit::UsGallon);
-    CHECK(effective.unit_for(Measure::Mass) == Unit::Pound);
-    CHECK(effective.unit_for(Measure::Temperature) == Unit::Fahrenheit);
-    CHECK(us.with_overrides(UnitOverrides{}) == us);
-}

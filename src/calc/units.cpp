@@ -248,13 +248,4 @@ void UnitPreferences::set(Measure measure, Unit unit) {
     if (dimension_of(unit) == dimension_of(measure)) units_[index_of(measure)] = unit;
 }
 
-UnitPreferences UnitPreferences::with_overrides(const UnitOverrides& overrides) const {
-    UnitPreferences effective = *this;
-    for (Measure measure : kAllMeasures) {
-        // set() ignores an override that can't measure this (e.g. a bad saved value).
-        if (const std::optional<Unit>& unit = overrides[index_of(measure)]) effective.set(measure, *unit);
-    }
-    return effective;
-}
-
 } // namespace ninkasi::calc

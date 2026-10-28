@@ -6,13 +6,15 @@
 
 #include <imgui.h>
 
+#include <algorithm>
+#include <cmath>
 #include <exception>
 #include <utility>
 
 namespace ninkasi::ui {
 
 AppShell::AppShell(data::Database& db, app::UserService& users, app::Session session, std::string db_path,
-                   float ui_scale, std::string startup_notice)
+                   float ui_scale, std::string startup_notice, bool greet)
     : settings_(db),
       session_(std::move(session)),
       personal_(db, session_.user_id),
@@ -49,6 +51,7 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       ingredient_window_(library_, units_, ui_scale_),
       brewing_settings_(session_, calc_settings_, settings_, recipes_, library_, formulas_, units_, ui_scale_) {
     theme_ = theme_from_name(personal_.get_or(kThemeKey, "dark"));
+    text_size_ = text_size_from_setting(personal_.get_or(kTextSizeKey, "1"));
     apply_theme(theme_, ui_scale_);
 
     recipe_editors_.on_saved = [this] { recipe_library_.refresh(); };
@@ -61,12 +64,12 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
     // The day's backup, before anything changes.
     notice_ = std::move(startup_notice);
     // Adjusted formulas that can't be used any more.
-    for (const std::string& problem : formulas_.problems()) {
+    for (const std::string& problem : greet ? formulas_.problems() : std::vector<std::string>{}) {
         notice_ += std::string(notice_.empty() ? "" : "\n\n") + problem;
     }
     // An admin who forgets their password needs a recovery code to get back in.
     const std::optional<domain::User> me = users_.person(session_.user_id);
-    if (session_.is_admin() && me && me->has_password && !me->has_recovery_code) {
+    if (greet && session_.is_admin() && me && me->has_password && !me->has_recovery_code) {
         notice_ += std::string(notice_.empty() ? "" : "\n\n") +
                    "You have no recovery code, so only another admin could replace a password you forget. Make one "
                    "from your name in the top right corner: New recovery code.";
@@ -84,6 +87,20 @@ void AppShell::files_dropped(std::vector<std::filesystem::path> files) {
 }
 
 void AppShell::draw() {
+    // Ctrl + and Ctrl - step through the text sizes; Ctrl 0 goes back to normal.
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Equal) ||
+        ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_KeypadAdd)) {
+        step_text_size(+1);
+    }
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Minus) ||
+        ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_KeypadSubtract)) {
+        step_text_size(-1);
+    }
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_0) ||
+        ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Keypad0)) {
+        set_text_size(1.0f);
+    }
+
     if (!dropped_files_.empty()) {
         recipe_library_.import_files(dropped_files_);
         dropped_files_.clear();
@@ -144,6 +161,7 @@ void AppShell::draw_menu_bar() {
             if (ImGui::MenuItem("Light", nullptr, theme_ == Theme::Light)) set_theme(Theme::Light);
             ImGui::EndMenu();
         }
+        draw_text_size_menu();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Recipes")) {
@@ -234,6 +252,38 @@ void AppShell::draw_about_window() {
         ImGui::TextDisabled("Font: Roboto, Apache License 2.0");
     }
     ImGui::End();
+}
+
+void AppShell::draw_text_size_menu() {
+    if (!ImGui::BeginMenu("Text size")) return;
+    for (float size : kTextSizes) {
+        const std::string label =
+            std::to_string(std::lround(size * 100.0f)) + " %" + (size == 1.0f ? " (normal)" : "");
+        if (ImGui::MenuItem(label.c_str(), nullptr, size == text_size_)) set_text_size(size);
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem("Bigger", "Ctrl +")) step_text_size(+1);
+    if (ImGui::MenuItem("Smaller", "Ctrl -")) step_text_size(-1);
+    if (ImGui::MenuItem("Normal", "Ctrl 0")) set_text_size(1.0f);
+    ImGui::EndMenu();
+}
+
+void AppShell::set_text_size(float size) {
+    if (size == text_size_) return;
+    text_size_ = size;
+    personal_.set(kTextSizeKey, text_size_setting(size));
+    rebuild_requested_ = true;
+}
+
+void AppShell::step_text_size(int steps) {
+    // Where the current size is in the list, then that many steps along it.
+    std::size_t index = 0;
+    for (std::size_t i = 0; i < kTextSizes.size(); ++i) {
+        if (kTextSizes[i] == text_size_) index = i;
+    }
+    const auto last = static_cast<long long>(kTextSizes.size()) - 1;
+    const long long next = std::clamp(static_cast<long long>(index) + steps, 0LL, last);
+    set_text_size(kTextSizes[static_cast<std::size_t>(next)]);
 }
 
 void AppShell::set_theme(Theme theme) {

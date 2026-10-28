@@ -44,10 +44,13 @@ class AppShell {
 public:
     // Requires an ImGui context; applies the person's theme immediately.
     // `session` is whoever signed in. `ui_scale` is the monitor's content
-    // scale (1.0 at 96 DPI). A `startup_notice` (a backup restored, say) is
-    // shown when it opens. Makes the day's automatic backup if one is due.
+    // scale (1.0 at 96 DPI) times the person's text size. A `startup_notice`
+    // (a backup restored, say) is shown when it opens, and with `greet` so are
+    // reminders for the person (an admin without a recovery code...); without
+    // it, the shell is being built again after a change of text size. Makes
+    // the day's automatic backup if one is due.
     AppShell(data::Database& db, app::UserService& users, app::Session session, std::string db_path,
-             float ui_scale, std::string startup_notice = {});
+             float ui_scale, std::string startup_notice = {}, bool greet = true);
 
     AppShell(const AppShell&) = delete;
     AppShell& operator=(const AppShell&) = delete;
@@ -62,6 +65,8 @@ public:
     bool quit_requested() const { return quit_requested_; }
     // The person chose Sign out: close the shell and show the sign-in screen.
     bool sign_out_requested() const { return sign_out_requested_; }
+    // The person changed their text size: build the interface again at the new size.
+    bool rebuild_requested() const { return rebuild_requested_; }
 
 private:
     void draw_menu_bar();
@@ -70,6 +75,11 @@ private:
     void draw_about_window();
     void draw_notice();
     void set_theme(Theme theme);
+    void draw_text_size_menu();
+    // Saves the person's text size; the interface is built again at it.
+    void set_text_size(float size);
+    // One step bigger (+1) or smaller (-1).
+    void step_text_size(int steps);
     void set_units(const calc::UnitPreferences& units);
 
     // Declaration order matters: later members are built from earlier ones,
@@ -81,6 +91,7 @@ private:
     std::string db_path_;
     float ui_scale_;
     Theme theme_ = Theme::Dark;
+    float text_size_ = 1.0f;
     calc::UnitPreferences units_;
     domain::CalcSettings calc_settings_;
     app::FormulaService formulas_;  // first, so adjusted formulas are in place before anything calculates
@@ -115,6 +126,7 @@ private:
     bool show_imgui_demo_ = false;
     bool quit_requested_ = false;
     bool sign_out_requested_ = false;
+    bool rebuild_requested_ = false;
     std::string notice_;  // shown once, then cleared
 };
 

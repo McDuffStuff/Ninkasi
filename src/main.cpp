@@ -149,18 +149,20 @@ void run_frames(GLFWwindow* window, const std::function<bool()>& frame) {
 }
 
 // Shows the sign-in screen until someone signs in, or nullopt if the window
-// is closed first. It wears the theme of whoever signed in last.
+// is closed first. It wears the theme and text size of whoever signed in last.
 std::optional<app::Session> sign_in(GLFWwindow* window, data::Database& db, app::UserService& users,
                                     float ui_scale) {
-    UiContext ui(window, ui_scale, "");
     ui::Theme theme = ui::Theme::Dark;
+    float text_size = 1.0f;
     if (const std::optional<std::int64_t> last = users.last_signed_in()) {
         data::SettingsRepository theirs(db, *last);
         theme = ui::theme_from_name(theirs.get_or(ui::kThemeKey, "dark"));
+        text_size = ui::text_size_from_setting(theirs.get_or(ui::kTextSizeKey, "1"));
     }
-    ui::apply_theme(theme, ui_scale);
+    UiContext ui(window, ui_scale * text_size, "");
+    ui::apply_theme(theme, ui_scale * text_size);
 
-    ui::SignInScreen screen(users, ui_scale);
+    ui::SignInScreen screen(users, ui_scale * text_size);
     std::optional<app::Session> session;
     run_frames(window, [&] {
         session = screen.draw();
@@ -226,35 +228,49 @@ int run(const Options& options) {
         if (!session) break;  // the window was closed at the sign-in screen
 
         data::SettingsRepository personal(db, session->user_id);
-        UiContext ui(window, ui_scale, starting_layout(personal, options.db_path));
-        ui::AppShell shell(db, users, *session, db_path, ui_scale, std::exchange(startup_notice, {}));
+        // The interface is built again, without signing in, when the person
+        // changes their text size: everything is sized from it.
+        bool greet = true;
+        bool signed_out = false;
+        while (true) {
+            const float scale = ui_scale * ui::text_size_from_setting(personal.get_or(ui::kTextSizeKey, "1"));
+            UiContext ui(window, scale, starting_layout(personal, options.db_path));
+            ui::AppShell shell(db, users, *session, db_path, scale,
+                               greet ? std::exchange(startup_notice, {}) : std::string(), greet);
 
-        // Files dropped onto the window go to the shell (e.g. BeerJSON recipes).
-        glfwSetWindowUserPointer(window, &shell);
-        glfwSetDropCallback(window, [](GLFWwindow* dropped_on, int count, const char** paths) {
-            std::vector<std::filesystem::path> files;
-            for (int i = 0; i < count; ++i) {
-                files.emplace_back(reinterpret_cast<const char8_t*>(paths[i]));  // GLFW paths are UTF-8
+            // Files dropped onto the window go to the shell (e.g. BeerJSON recipes).
+            glfwSetWindowUserPointer(window, &shell);
+            glfwSetDropCallback(window, [](GLFWwindow* dropped_on, int count, const char** paths) {
+                std::vector<std::filesystem::path> files;
+                for (int i = 0; i < count; ++i) {
+                    files.emplace_back(reinterpret_cast<const char8_t*>(paths[i]));  // GLFW paths are UTF-8
+                }
+                static_cast<ui::AppShell*>(glfwGetWindowUserPointer(dropped_on))->files_dropped(std::move(files));
+            });
+
+            ImGuiIO& io = ImGui::GetIO();
+            run_frames(window, [&] {
+                shell.draw();
+                // ImGui asks for the layout to be saved a few seconds after windows move.
+                if (io.WantSaveIniSettings) {
+                    personal.set(kLayoutKey, UiContext::layout());
+                    io.WantSaveIniSettings = false;
+                }
+                return !shell.quit_requested() && !shell.sign_out_requested() && !shell.rebuild_requested();
+            });
+            personal.set(kLayoutKey, UiContext::layout());
+
+            // The shell is about to go away; stop routing drops to it.
+            glfwSetDropCallback(window, nullptr);
+            glfwSetWindowUserPointer(window, nullptr);
+            if (shell.rebuild_requested() && !glfwWindowShouldClose(window)) {
+                greet = false;
+                continue;
             }
-            static_cast<ui::AppShell*>(glfwGetWindowUserPointer(dropped_on))->files_dropped(std::move(files));
-        });
-
-        ImGuiIO& io = ImGui::GetIO();
-        run_frames(window, [&] {
-            shell.draw();
-            // ImGui asks for the layout to be saved a few seconds after windows move.
-            if (io.WantSaveIniSettings) {
-                personal.set(kLayoutKey, UiContext::layout());
-                io.WantSaveIniSettings = false;
-            }
-            return !shell.quit_requested() && !shell.sign_out_requested();
-        });
-        personal.set(kLayoutKey, UiContext::layout());
-
-        // The shell is about to go away; stop routing drops to it.
-        glfwSetDropCallback(window, nullptr);
-        glfwSetWindowUserPointer(window, nullptr);
-        if (!shell.sign_out_requested()) break;
+            signed_out = shell.sign_out_requested();
+            break;
+        }
+        if (!signed_out) break;
     }
 
     glfwDestroyWindow(window);

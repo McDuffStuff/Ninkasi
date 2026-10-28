@@ -1,5 +1,9 @@
 #include "ui/theme.h"
 
+#include <charconv>
+#include <cmath>
+#include <cstdio>
+
 #include <imgui.h>
 
 namespace ninkasi::ui {
@@ -91,6 +95,23 @@ std::string_view theme_name(Theme theme) {
 
 Theme theme_from_name(std::string_view name) {
     return name == "light" ? Theme::Light : Theme::Dark;
+}
+
+float text_size_from_setting(std::string_view saved) {
+    float value = 0.0f;
+    const auto [end, error] = std::from_chars(saved.data(), saved.data() + saved.size(), value);
+    if (error != std::errc() || !(value > 0.0f)) return 1.0f;
+    float nearest = 1.0f;
+    for (float size : kTextSizes) {
+        if (std::abs(size - value) < std::abs(nearest - value)) nearest = size;
+    }
+    return nearest;
+}
+
+std::string text_size_setting(float size) {
+    char text[16];
+    std::snprintf(text, sizeof text, "%.2f", size);
+    return text;
 }
 
 } // namespace ninkasi::ui

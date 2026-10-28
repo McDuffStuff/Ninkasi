@@ -48,6 +48,7 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 - **Details windows** can be docked, left floating, popped out into their own OS window (e.g. on a second monitor), or maximized. Windows left open reopen next time.
 - **Dropdowns can be searched:** every dropdown opens with a search field. Start typing and the list narrows to what matches, best match first, even with letters left out ("wcipa" finds West Coast IPA); Enter picks the top match and Escape closes the list.
 - **Units:** the **Units** menu sets the units used everywhere (with US and metric presets). Admins change them.
+- **Text size:** **View > Text size** (or Ctrl + and Ctrl -, Ctrl 0 for normal) makes everything bigger or smaller, from 85 % to 175 %. Each person keeps their own, like their theme.
 
 ### Recipes
 - **Recipes > Recipe library** (or click a recipe station on the floor): create, open, duplicate and delete recipes, and import BeerJSON files exported from other brewing software, either with **Import BeerJSON...** or by dropping the files onto Ninkasi.

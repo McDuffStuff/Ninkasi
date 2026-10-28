@@ -49,6 +49,7 @@ add_library(ninkasi_core STATIC
     src/domain/batch.cpp
     src/domain/element.cpp
     src/domain/inventory.cpp
+    src/domain/packaging.cpp
     src/domain/recipe.cpp
     src/domain/recipe_math.cpp
     src/domain/timestamp.cpp
@@ -60,6 +61,7 @@ add_library(ninkasi_core STATIC
     src/data/ingredient_repository.cpp
     src/data/inventory_repository.cpp
     src/data/migrations.cpp
+    src/data/packaging_repository.cpp
     src/data/recipe_json.cpp
     src/data/recipe_repository.cpp
     src/data/settings_repository.cpp
@@ -70,6 +72,7 @@ add_library(ninkasi_core STATIC
     src/app/floor_service.cpp
     src/app/ingredient_library.cpp
     src/app/inventory_service.cpp
+    src/app/packaged_goods_service.cpp
     src/app/paths.cpp
     src/app/recipe_service.cpp
     src/app/session.cpp
@@ -138,6 +141,7 @@ if(NINKASI_BUILD_TESTS)
         tests/app/test_beerjson_import.cpp
         tests/app/test_floor_service.cpp
         tests/app/test_inventory_service.cpp
+        tests/app/test_packaged_goods_service.cpp
         tests/app/test_recipe_service.cpp
         tests/app/test_task_service.cpp
         tests/app/test_unit_settings.cpp
@@ -157,6 +161,7 @@ if(NINKASI_BUILD_TESTS)
         tests/domain/test_batch.cpp
         tests/domain/test_element.cpp
         tests/domain/test_inventory.cpp
+        tests/domain/test_packaging.cpp
         tests/domain/test_recipe_math.cpp
         tests/domain/test_timestamp.cpp
     )

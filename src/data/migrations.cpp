@@ -285,6 +285,24 @@ constexpr Migration kMigrations[] = {
         -- Cans: what one holds, in liters.
         ALTER TABLE inventory_items ADD COLUMN fill_volume_l REAL;
     )sql"},
+    {8, R"sql(
+        -- Empty kegs in the keg cleaner: every change in how many of each
+        -- size are dirty or clean, positive in and negative out. The counts
+        -- are the sums. Append-only.
+        CREATE TABLE keg_movements (
+            id          INTEGER PRIMARY KEY,
+            at          TEXT NOT NULL,
+            keg_type    TEXT NOT NULL,                 -- 'half_barrel' or 'sixtel'
+            state       TEXT NOT NULL,                 -- 'dirty' or 'clean'
+            quantity    INTEGER NOT NULL,
+            reason      TEXT NOT NULL,                 -- see KegReason in domain/packaging.h
+            batch_id    INTEGER REFERENCES batches(id) ON DELETE SET NULL,  -- filled with
+            note        TEXT NOT NULL DEFAULT '',
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE INDEX kegs_by_type ON keg_movements (keg_type, state);
+    )sql"},
 };
 
 } // namespace

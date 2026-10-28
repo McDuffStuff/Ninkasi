@@ -79,6 +79,7 @@ add_library(ninkasi_core STATIC
     src/app/ingredient_library.cpp
     src/app/inventory_service.cpp
     src/app/packaged_goods_service.cpp
+    src/app/password.cpp
     src/app/paths.cpp
     src/app/recipe_service.cpp
     src/app/session.cpp
@@ -86,7 +87,10 @@ add_library(ninkasi_core STATIC
     src/app/ttb_service.cpp
     src/app/unit_settings.cpp
 )
-target_link_libraries(ninkasi_core PUBLIC ninkasi_calc sqlite3 PRIVATE nlohmann_json)
+target_link_libraries(ninkasi_core PUBLIC ninkasi_calc sqlite3 PRIVATE nlohmann_json argon2)
+if(WIN32)
+    target_link_libraries(ninkasi_core PRIVATE bcrypt)  # random salts for passwords
+endif()
 
 # ---------------------------------------------------------------------------
 # ninkasi: the desktop application.
@@ -155,6 +159,7 @@ if(NINKASI_BUILD_TESTS)
         tests/app/test_floor_service.cpp
         tests/app/test_inventory_service.cpp
         tests/app/test_packaged_goods_service.cpp
+        tests/app/test_password.cpp
         tests/app/test_recipe_service.cpp
         tests/app/test_task_service.cpp
         tests/app/test_ttb_service.cpp

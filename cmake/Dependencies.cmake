@@ -56,7 +56,16 @@ FetchContent_Declare(json
     SOURCE_SUBDIR  do-not-build
 )
 
-FetchContent_MakeAvailable(glfw imgui implot sqlite doctest json)
+# --- Argon2 reference implementation: password hashing ------------------------
+# CC0 / Apache 2.0. No CMake build of its own, so it's built below.
+FetchContent_Declare(argon2
+    GIT_REPOSITORY https://github.com/P-H-C/phc-winner-argon2.git
+    GIT_TAG        20190702
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  do-not-build
+)
+
+FetchContent_MakeAvailable(glfw imgui implot sqlite doctest json argon2)
 
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
@@ -91,6 +100,18 @@ target_compile_definitions(sqlite3 PRIVATE
     SQLITE_OMIT_LOAD_EXTENSION
 )
 target_link_libraries(sqlite3 PUBLIC Threads::Threads)
+
+# The portable reference code (not the SSE one), single-threaded: Ninkasi
+# hashes in one lane, so it needs no thread library.
+add_library(argon2 STATIC
+    ${argon2_SOURCE_DIR}/src/argon2.c
+    ${argon2_SOURCE_DIR}/src/core.c
+    ${argon2_SOURCE_DIR}/src/encoding.c
+    ${argon2_SOURCE_DIR}/src/ref.c
+    ${argon2_SOURCE_DIR}/src/blake2/blake2b.c
+)
+target_include_directories(argon2 PUBLIC ${argon2_SOURCE_DIR}/include PRIVATE ${argon2_SOURCE_DIR}/src)
+target_compile_definitions(argon2 PRIVATE ARGON2_NO_THREADS)
 
 add_library(nlohmann_json INTERFACE)
 target_include_directories(nlohmann_json INTERFACE ${json_SOURCE_DIR}/include)

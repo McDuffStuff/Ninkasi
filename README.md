@@ -56,10 +56,11 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 - Every change in the volume of beer in a tank is recorded in a ledger that TTB reports will be built from. History is never edited: mistakes are fixed with corrections.
 
 ### Inventory
-- **View > Inventory** lists everything you stock with what's on hand: amber when it's below its reorder level, red when more was used than was recorded. **New item** adds one (grain, hops, yeast, adjuncts, chemicals, packaging...), measured by weight, volume or count, and kept in a dry or cold storage area. Linking an item to an ingredient library entry lets brews draw on it even when the names differ; otherwise they draw on the item with the ingredient's name.
-- **Receive** logs a delivery as a lot (supplier, lot number, cost, best-before). **Count** replaces the recorded stock with a stock count, and **Use or discard** takes stock out for anything other than a brew. Each is saved with Enter.
+- **View > Inventory**, or an **Inventory** element on the floor, lists everything you stock with what's on hand: amber when it's below its reorder level, red when more was used than was recorded. **New item** adds one (grain, hops, yeast, adjuncts, chemicals, cans, packaging...), measured by weight, volume or count. Cans are counted and say what each holds. Linking an item to an ingredient library entry lets brews draw on it even when the names differ; otherwise they draw on the item with the ingredient's name.
+- **Receive** logs a delivery as an invoice: the supplier, invoice number and date, then a line for each item with how much came in, what it cost, and its lot number and best-before date if you have them. Picking an item on the last line adds another, and **New item...** at the bottom of the item list adds an item you don't stock yet. **Submit** saves the whole invoice, each line as a lot; the **Invoices** tab lists past invoices with their lines.
+- **Count** replaces the recorded stock with a stock count, and **Use or discard** takes stock out for anything other than a brew. Each is saved with Enter.
 - **Brews take what they used** at knock-out: the confirmed ingredient amounts come out of stock, oldest lot first, in the same step as the knock-out. The knock-out list shows what's on hand of each ingredient. Nothing is refused for lack of stock: if a brew uses more than was recorded, the item goes negative until the delivery it came from is logged, which settles it.
-- **Storage areas** on the floor show how many items they keep and how many are low; their window opens on their stock and has an **In and out** log of everything received, used and counted.
+- **Inventory elements** on the floor show how many items are stocked and how many are low; their window opens on the stock and has the **Invoices** and an **In and out** log of everything received, used and counted.
 
 ## Project layout
 ```

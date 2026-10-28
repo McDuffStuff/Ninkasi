@@ -161,6 +161,14 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
                 inventory_views_.draw_stock();
                 ImGui::EndTabItem();
             }
+            if (inventory && ImGui::BeginTabItem("Invoices")) {
+                inventory_views_.draw_invoices();
+                ImGui::EndTabItem();
+            }
+            if (inventory && ImGui::BeginTabItem("In and out")) {
+                inventory_views_.draw_log();
+                ImGui::EndTabItem();
+            }
             if (ImGui::BeginTabItem("Overview")) {
                 draw_overview_tab(window, element);
                 ImGui::EndTabItem();
@@ -189,11 +197,6 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
                 }
             }
 
-            // Inventory: what came in and went out.
-            if (inventory && ImGui::BeginTabItem("In and out")) {
-                inventory_views_.draw_log();
-                ImGui::EndTabItem();
-            }
             if (ImGui::BeginTabItem("Tasks")) {
                 task_views_.draw_element_tasks(element.id);
                 ImGui::EndTabItem();

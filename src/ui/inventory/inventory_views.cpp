@@ -20,6 +20,7 @@ using domain::ItemCategory;
 using domain::StockUnit;
 
 constexpr const char* kPopupId = "###inventory_dialog";
+constexpr const char* kNewItemPopup = "New item###invoice_new_item";
 
 constexpr ImGuiTableFlags kListFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                                        ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX;
@@ -31,6 +32,13 @@ std::string lowercase(std::string text) {
 
 bool is_blank(const std::string& text) {
     return text.find_first_not_of(" \t\r\n") == std::string::npos;
+}
+
+// A label cell of a form table, muted like table_row's.
+void label_cell(const char* label) {
+    ImGui::TableNextColumn();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("%s", label);
 }
 
 // "+50.0 lb" / "-12.5 lb": a change in stock.
@@ -60,7 +68,17 @@ std::optional<calc::Unit> stock_display_unit(const domain::InventoryItem& item, 
 std::string stock_text(const domain::InventoryItem& item, double quantity, const calc::UnitPreferences& units) {
     if (const std::optional<calc::Unit> unit = stock_display_unit(item, units)) return calc::format(quantity, *unit);
     const bool whole = std::abs(quantity - std::round(quantity)) < 1e-9;
-    return number_text(quantity, whole ? 0 : 1, " ea");
+    return number_text(quantity, whole ? 0 : 1, item.category == ItemCategory::Can ? " cans" : " ea");
+}
+
+calc::Unit fill_volume_unit(const calc::UnitPreferences& units) {
+    switch (units.unit_for(Measure::Volume)) {
+    case calc::Unit::UsBarrel:
+    case calc::Unit::UsGallon:
+    case calc::Unit::UsQuart:
+    case calc::Unit::UsFluidOunce: return calc::Unit::UsFluidOunce;
+    default:                       return calc::Unit::Milliliter;
+    }
 }
 
 InventoryViews::InventoryViews(app::InventoryService& inventory, const app::FloorService& floor,
@@ -92,6 +110,10 @@ void InventoryViews::draw_window() {
     if (expanded && ImGui::BeginTabBar("##inventory_tabs")) {
         if (ImGui::BeginTabItem("Stock")) {
             draw_stock();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Invoices")) {
+            draw_invoices();
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("In and out")) {
@@ -136,6 +158,96 @@ void InventoryViews::draw_log() {
         log_revision_ = inventory_.revision();
     }
     draw_movements("##log", log_, true);
+}
+
+void InventoryViews::draw_invoices() {
+    if (ImGui::Button("Receive...")) receive(std::nullopt);
+    ImGui::Spacing();
+    if (invoices_revision_ != inventory_.revision()) {
+        invoices_ = inventory_.invoices();
+        invoices_revision_ = inventory_.revision();
+    }
+    if (invoices_.empty()) {
+        wrapped_note("No deliveries yet. Receive logs a delivery as an invoice: each item that came in, how much "
+                     "and what it cost.");
+        return;
+    }
+
+    // The invoices on top, the selected one's lines below.
+    const auto selected = std::find_if(invoices_.begin(), invoices_.end(), [this](const data::InvoiceRow& row) {
+        return selected_invoice_ == row.id;
+    });
+    const float list_height = selected != invoices_.end() ? ImGui::GetContentRegionAvail().y * 0.45f : 0.0f;
+    if (ImGui::BeginChild("##invoice_list", ImVec2(0.0f, list_height)) &&
+        ImGui::BeginTable("##invoices", 6, kListFlags | ImGuiTableFlags_ScrollY)) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("Received");
+        ImGui::TableSetupColumn("Supplier", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Invoice");
+        ImGui::TableSetupColumn("Items");
+        ImGui::TableSetupColumn("Total");
+        ImGui::TableSetupColumn("Logged by");
+        ImGui::TableHeadersRow();
+        for (const data::InvoiceRow& row : invoices_) {
+            ImGui::PushID(static_cast<int>(row.id));
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (ImGui::Selectable(date_text(domain::local_date(row.received_at)).c_str(), selected_invoice_ == row.id,
+                                  ImGuiSelectableFlags_SpanAllColumns)) {
+                selected_invoice_ = row.id;
+            }
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(row.supplier.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(row.number.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%d", row.lines);
+            ImGui::TableNextColumn();
+            if (row.total) ImGui::TextUnformatted(number_text(*row.total, 2).c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", row.user.c_str());
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndChild();
+    if (selected == invoices_.end()) return;
+
+    if (loaded_invoice_ != selected->id || lines_revision_ != inventory_.revision()) {
+        invoice_lines_ = inventory_.invoice_lines(selected->id);
+        loaded_invoice_ = selected->id;
+        lines_revision_ = inventory_.revision();
+    }
+    ImGui::Separator();
+    std::string heading = selected->supplier.empty() ? std::string("Invoice") : selected->supplier;
+    if (!selected->number.empty()) heading += ", invoice " + selected->number;
+    ImGui::TextUnformatted(heading.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("received %s", time_text(selected->received_at).c_str());
+    if (!selected->note.empty()) ImGui::TextWrapped("%s", selected->note.c_str());
+    if (!ImGui::BeginTable("##invoice_lines", 5, kListFlags | ImGuiTableFlags_ScrollY)) return;
+    ImGui::TableSetupScrollFreeze(0, 1);
+    ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
+    for (const char* column : {"Quantity", "Cost", "Lot", "Best before"}) ImGui::TableSetupColumn(column);
+    ImGui::TableHeadersRow();
+    for (const data::InvoiceLineRow& line : invoice_lines_) {
+        // Enough of the item to format its quantities.
+        domain::InventoryItem item;
+        item.category = line.category;
+        item.unit = line.unit;
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(line.item_name.c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(stock_text(item, line.lot.quantity, units_).c_str());
+        ImGui::TableNextColumn();
+        if (line.lot.cost) ImGui::TextUnformatted(number_text(*line.lot.cost, 2).c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(line.lot.lot_code.c_str());
+        ImGui::TableNextColumn();
+        if (line.lot.best_before) ImGui::TextUnformatted(date_text(*line.lot.best_before).c_str());
+    }
+    ImGui::EndTable();
 }
 
 void InventoryViews::draw_items() {
@@ -288,6 +400,10 @@ void InventoryViews::draw_movements(const char* id, const std::vector<data::Move
                            change_text(item, movement.quantity, units_).c_str());
         ImGui::TableNextColumn();
         std::string what(domain::name(movement.reason));
+        if (movement.reason == domain::StockReason::Received) {
+            if (!row.supplier.empty()) what += " from " + row.supplier;
+            if (!row.invoice_number.empty()) what += ", invoice " + row.invoice_number;
+        }
         if (!row.batch_code.empty()) what += " " + domain::batch_label(row.batch_code, "");
         if (!row.lot_code.empty()) what += ", lot " + row.lot_code;
         ImGui::TextUnformatted(what.c_str());
@@ -328,17 +444,13 @@ void InventoryViews::edit_item(std::optional<std::int64_t> item_id) {
 }
 
 void InventoryViews::receive(std::optional<std::int64_t> item_id) {
-    item_id_ = item_id.value_or(0);
     at_ = domain::now();
-    quantity_ = 0.0;
     supplier_.clear();
-    lot_code_.clear();
-    has_cost_ = false;
-    cost_ = 0.0;
-    has_best_before_ = false;
-    best_before_ = domain::add_days(domain::today(), 365);
+    invoice_number_.clear();
     note_.clear();
-    open(Kind::Receive);
+    lines_.clear();
+    if (item_id && inventory_.find(*item_id)) lines_.push_back({.item_id = *item_id});
+    open(Kind::Invoice);
 }
 
 void InventoryViews::count(std::int64_t item_id) {
@@ -370,21 +482,22 @@ void InventoryViews::draw_dialog() {
     const char* title = "";
     switch (kind_) {
     case Kind::EditItem: title = item_.id == 0 ? "New item" : "Edit item"; break;
-    case Kind::Receive:  title = "Receive a delivery"; break;
+    case Kind::Invoice:  title = "Receive a delivery"; break;
     case Kind::Count:    title = "Count stock"; break;
     case Kind::Take:     title = "Use or discard stock"; break;
     case Kind::None:     break;
     }
     ImGui::SetNextWindowPos(center_, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    // An invoice can take a while to enter, so it closes only with its Cancel button.
     bool keep_open = true;
-    if (!ImGui::BeginPopupModal((std::string(title) + kPopupId).c_str(), &keep_open,
-                                ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (!ImGui::BeginPopupModal((std::string(title) + kPopupId).c_str(),
+                                kind_ == Kind::Invoice ? nullptr : &keep_open, ImGuiWindowFlags_AlwaysAutoResize)) {
         kind_ = Kind::None;
         return;
     }
     switch (kind_) {
     case Kind::EditItem: draw_item_editor(); break;
-    case Kind::Receive:  draw_receive(); break;
+    case Kind::Invoice:  draw_invoice(); break;
     case Kind::Count:    draw_count(); break;
     case Kind::Take:     draw_take(); break;
     case Kind::None:     break;
@@ -392,7 +505,7 @@ void InventoryViews::draw_dialog() {
     ImGui::EndPopup();
 }
 
-void InventoryViews::draw_item_editor() {
+void InventoryViews::draw_item_fields() {
     const float field = 280.0f * ui_scale_;
     if (ImGui::BeginTable("##item", 2, ImGuiTableFlags_SizingFixedFit)) {
         table_row("Name");
@@ -435,11 +548,23 @@ void InventoryViews::draw_item_editor() {
                                   "with the ingredient's name.");
         }
 
+        // Cans are counted, and packaging needs to know what each holds.
+        const bool can = item_.category == ItemCategory::Can;
+        if (can && item_.id == 0) item_.unit = StockUnit::Count;
         table_row("Measured");
-        ImGui::BeginDisabled(item_.id != 0);  // its history is in this unit
+        ImGui::BeginDisabled(item_.id != 0 || can);  // an item's history is in its unit
         ImGui::SetNextItemWidth(field);
         enum_combo("##unit", item_.unit, domain::kStockUnits);
         ImGui::EndDisabled();
+        if (can) {
+            const calc::Unit unit = fill_volume_unit(units_);
+            if (!item_.fill_volume_l) {
+                item_.fill_volume_l = unit == calc::Unit::UsFluidOunce ? calc::to_canonical(16.0, unit) : 0.5;
+            }
+            table_row("Each holds");
+            ImGui::SetNextItemWidth(120.0f * ui_scale_);
+            edit_quantity("##fill", *item_.fill_volume_l, unit);
+        }
 
         table_row("Reorder below");
         ImGui::Checkbox("##has_reorder", &has_reorder_);
@@ -454,73 +579,173 @@ void InventoryViews::draw_item_editor() {
         ImGui::InputText("##notes", &item_.notes);
         ImGui::EndTable();
     }
+}
 
-    if (!buttons(item_.id == 0 ? "Add item" : "Save", !is_blank(item_.name))) return;
+std::optional<std::int64_t> InventoryViews::save_item(std::string& error) {
     item_.reorder_level = has_reorder_ ? std::optional<double>(reorder_) : std::nullopt;
     try {
-        if (item_.id == 0) {
-            selected_ = inventory_.add_item(item_);
-        } else {
-            inventory_.update_item(item_);
+        if (item_.id == 0) return inventory_.add_item(item_);
+        inventory_.update_item(item_);
+        return item_.id;
+    } catch (const std::exception& e) {
+        error = e.what();
+        return std::nullopt;
+    }
+}
+
+void InventoryViews::draw_item_editor() {
+    draw_item_fields();
+    if (!buttons(item_.id == 0 ? "Add item" : "Save", !is_blank(item_.name))) return;
+    if (const std::optional<std::int64_t> id = save_item(error_)) {
+        selected_ = *id;
+        close();
+    }
+}
+
+void InventoryViews::draw_invoice() {
+    // The delivery: who it came from and when.
+    const float field = 220.0f * ui_scale_;
+    if (ImGui::BeginTable("##invoice", 4, ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableNextRow();
+        label_cell("Supplier");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(field);
+        ImGui::InputText("##supplier", &supplier_);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere(-1);
+        label_cell("Invoice number");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(field);
+        ImGui::InputText("##number", &invoice_number_);
+        ImGui::TableNextRow();
+        label_cell("Received");
+        ImGui::TableNextColumn();
+        time_picker("##received", at_);
+        label_cell("Note");
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(field);
+        ImGui::InputText("##note", &note_);
+        ImGui::EndTable();
+    }
+
+    // What came in. Picking an item on the blank last line adds another.
+    if (lines_.empty() || lines_.back().item_id != 0) {
+        lines_.push_back({.best_before = domain::add_days(domain::today(), 365)});
+    }
+    ImGui::SeparatorText("Items");
+    std::optional<std::size_t> remove;
+    if (ImGui::BeginTable("##lines", 6, kListFlags)) {
+        ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthFixed, 260.0f * ui_scale_);
+        ImGui::TableSetupColumn("Quantity", ImGuiTableColumnFlags_WidthFixed, 150.0f * ui_scale_);
+        ImGui::TableSetupColumn("Cost", ImGuiTableColumnFlags_WidthFixed, 100.0f * ui_scale_);
+        ImGui::TableSetupColumn("Lot", ImGuiTableColumnFlags_WidthFixed, 130.0f * ui_scale_);
+        ImGui::TableSetupColumn("Best before", ImGuiTableColumnFlags_WidthFixed, 170.0f * ui_scale_);
+        ImGui::TableSetupColumn("##remove", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight());
+        ImGui::TableHeadersRow();
+        for (std::size_t i = 0; i < lines_.size(); ++i) {
+            DraftLine& line = lines_[i];
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            bool new_item = false;
+            item_combo("##item", line.item_id, new_item);
+            if (new_item) {
+                open_new_item_ = true;
+                new_item_line_ = i;
+            }
+            const app::ItemStock* entry = inventory_.find(line.item_id);
+            ImGui::BeginDisabled(!entry);
+            ImGui::TableNextColumn();
+            if (entry) {
+                quantity_field("##quantity", entry->item, line.quantity);
+            } else {
+                ImGui::Dummy({0.0f, ImGui::GetFrameHeight()});
+            }
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            edit_number("##cost", line.cost, 2);
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint("##lot", "Lot number", &line.lot_code);
+            ImGui::TableNextColumn();
+            ImGui::Checkbox("##has_best_before", &line.has_best_before);
+            ImGui::SetItemTooltip("Best before");
+            if (line.has_best_before) {
+                ImGui::SameLine();
+                date_picker("##best_before", line.best_before);
+            }
+            ImGui::EndDisabled();
+            ImGui::TableNextColumn();
+            if (entry) {
+                if (ImGui::SmallButton("×")) remove = i;
+                ImGui::SetItemTooltip("Take this line off the invoice");
+            }
+            ImGui::PopID();
         }
+        ImGui::EndTable();
+    }
+    if (remove) lines_.erase(lines_.begin() + static_cast<std::ptrdiff_t>(*remove));
+
+    // The new item dialog opens over this one, from outside the item picker.
+    if (open_new_item_) {
+        item_ = {};
+        has_reorder_ = false;
+        reorder_ = 0.0;
+        new_item_error_.clear();
+        ImGui::OpenPopup(kNewItemPopup);
+        open_new_item_ = false;
+    }
+    draw_invoice_new_item();
+
+    int items = 0;
+    double total = 0.0;
+    for (const DraftLine& line : lines_) {
+        if (line.item_id == 0) continue;
+        ++items;
+        total += line.cost;
+    }
+    ImGui::Spacing();
+    ImGui::TextDisabled("%d %s", items, items == 1 ? "item" : "items");
+    if (total > 0.0) {
+        ImGui::SameLine();
+        ImGui::Text("Total %s", number_text(total, 2).c_str());
+    }
+
+    const Choice choice = dialog_buttons("Submit", items > 0, error_, false);
+    if (choice == Choice::Cancel) return close();
+    if (choice != Choice::Confirm) return;
+    domain::Invoice invoice{.received_at = at_, .supplier = supplier_, .number = invoice_number_, .note = note_};
+    for (const DraftLine& line : lines_) {
+        if (line.item_id == 0) continue;
+        invoice.lines.push_back(
+            {.item_id = line.item_id,
+             .quantity = line.quantity,
+             .cost = line.cost > 0.0 ? std::optional<double>(line.cost) : std::nullopt,
+             .lot_code = line.lot_code,
+             .best_before = line.has_best_before ? std::optional<domain::Date>(line.best_before) : std::nullopt});
+    }
+    try {
+        selected_invoice_ = inventory_.receive(invoice);
         close();
     } catch (const std::exception& e) {
         error_ = e.what();
     }
 }
 
-void InventoryViews::draw_receive() {
-    const app::ItemStock* entry = inventory_.find(item_id_);
-    if (ImGui::BeginTable("##receive", 2, ImGuiTableFlags_SizingFixedFit)) {
-        table_row("Item");
-        item_combo("##item", item_id_);
-        entry = inventory_.find(item_id_);
-        if (entry) {
-            table_row("Quantity");
-            quantity_field("##quantity", entry->item, quantity_);
+void InventoryViews::draw_invoice_new_item() {
+    ImGui::SetNextWindowPos(center_, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::BeginPopupModal(kNewItemPopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    draw_item_fields();
+    const Choice choice = dialog_buttons("Add item", !is_blank(item_.name), new_item_error_, true);
+    if (choice == Choice::Confirm) {
+        if (const std::optional<std::int64_t> id = save_item(new_item_error_)) {
+            if (new_item_line_ < lines_.size()) lines_[new_item_line_].item_id = *id;
+            ImGui::CloseCurrentPopup();
         }
-        table_row("Received");
-        time_picker("##received", at_);
-        table_row("Supplier");
-        ImGui::SetNextItemWidth(220.0f * ui_scale_);
-        ImGui::InputText("##supplier", &supplier_);
-        table_row("Lot");
-        ImGui::SetNextItemWidth(220.0f * ui_scale_);
-        ImGui::InputTextWithHint("##lot", "The supplier's lot number", &lot_code_);
-        table_row("Cost");
-        ImGui::Checkbox("##has_cost", &has_cost_);
-        if (has_cost_) {
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(120.0f * ui_scale_);
-            edit_number("##cost", cost_, 2);
-        }
-        table_row("Best before");
-        ImGui::Checkbox("##has_best_before", &has_best_before_);
-        if (has_best_before_) {
-            ImGui::SameLine();
-            date_picker("##best_before", best_before_);
-        }
-        table_row("Note");
-        ImGui::SetNextItemWidth(220.0f * ui_scale_);
-        ImGui::InputText("##note", &note_);
-        ImGui::EndTable();
+    } else if (choice == Choice::Cancel) {
+        ImGui::CloseCurrentPopup();
     }
-    if (inventory_.stock().empty()) wrapped_note("Add the item first with New item.");
-
-    if (!buttons("Receive", entry && quantity_ > 0.0)) return;
-    try {
-        domain::InvoiceLine line{.item_id = item_id_,
-                                 .quantity = quantity_,
-                                 .cost = has_cost_ ? std::optional<double>(cost_) : std::nullopt,
-                                 .lot_code = lot_code_,
-                                 .best_before = has_best_before_ ? std::optional<domain::Date>(best_before_)
-                                                                 : std::nullopt};
-        inventory_.receive({.received_at = at_, .supplier = supplier_, .note = note_, .lines = {line}});
-        selected_ = item_id_;
-        close();
-    } catch (const std::exception& e) {
-        error_ = e.what();
-    }
+    ImGui::EndPopup();
 }
 
 void InventoryViews::draw_count() {
@@ -580,28 +805,36 @@ void InventoryViews::draw_take() {
 
 // --- Helpers ----------------------------------------------------------------------
 
-bool InventoryViews::buttons(const char* confirm, bool enabled) {
-    if (!error_.empty()) ImGui::TextColored(kErrorColor, "%s", error_.c_str());
+InventoryViews::Choice InventoryViews::dialog_buttons(const char* confirm, bool enabled, const std::string& error,
+                                                     bool keys) {
+    if (!error.empty()) ImGui::TextColored(kErrorColor, "%s", error.c_str());
     ImGui::Spacing();
+    Choice choice = Choice::None;
     ImGui::BeginDisabled(!enabled);
-    bool pressed = ImGui::Button(confirm);
+    if (ImGui::Button(confirm)) choice = Choice::Confirm;
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) close();
-    // Enter saves; a field being typed in has already taken its value.
-    const bool enter = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
-    if (enabled && enter && !ImGui::IsAnyItemActive()) pressed = true;
-    if (enabled) {
+    if (ImGui::Button("Cancel") || (keys && ImGui::IsKeyPressed(ImGuiKey_Escape))) choice = Choice::Cancel;
+    if (keys && enabled) {
+        // Enter saves; a field being typed in has already taken its value.
+        const bool enter =
+            ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+        if (enter && !ImGui::IsAnyItemActive()) choice = Choice::Confirm;
         ImGui::SameLine();
         ImGui::TextDisabled("Enter saves");
     }
-    return pressed;
+    return choice;
 }
 
-bool InventoryViews::item_combo(const char* label, std::int64_t& item_id) {
+bool InventoryViews::buttons(const char* confirm, bool enabled) {
+    const Choice choice = dialog_buttons(confirm, enabled, error_, true);
+    if (choice == Choice::Cancel) close();
+    return choice == Choice::Confirm;
+}
+
+bool InventoryViews::item_combo(const char* label, std::int64_t& item_id, bool& new_item) {
     const app::ItemStock* chosen = inventory_.find(item_id);
     bool changed = false;
-    ImGui::SetNextItemWidth(280.0f * ui_scale_);
     if (ImGui::BeginCombo(label, chosen ? chosen->item.name.c_str() : "Choose an item")) {
         for (const app::ItemStock& entry : inventory_.stock()) {
             ImGui::PushID(static_cast<int>(entry.item.id));
@@ -613,6 +846,8 @@ bool InventoryViews::item_combo(const char* label, std::int64_t& item_id) {
             ImGui::TextDisabled("%s on hand", stock_text(entry.item, entry.on_hand, units_).c_str());
             ImGui::PopID();
         }
+        ImGui::Separator();
+        if (ImGui::Selectable("New item...")) new_item = true;
         ImGui::EndCombo();
     }
     return changed;

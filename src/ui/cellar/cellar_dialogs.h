@@ -107,6 +107,7 @@ private:
     bool open_requested_ = false;
     ImVec2 center_{};
     ImVec2 shown_size_{};    // the dialog's size last frame
+    int settled_frames_ = 0; // frames since it appeared, up to 2
     bool recenter_ = false;  // its size changed: center it again
     std::string error_;
 

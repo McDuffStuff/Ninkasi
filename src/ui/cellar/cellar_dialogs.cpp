@@ -238,8 +238,14 @@ void CellarDialogs::draw() {
         kind_ = Kind::None;  // closed with the title bar's button
         return;
     }
+    // ImGui sizes a new dialog over its first two frames; after that, a size
+    // change means its contents changed.
     const ImVec2 size = ImGui::GetWindowSize();
-    if (!ImGui::IsWindowAppearing() && (size.x != shown_size_.x || size.y != shown_size_.y)) {
+    if (ImGui::IsWindowAppearing()) {
+        settled_frames_ = 0;
+    } else if (settled_frames_ < 2) {
+        ++settled_frames_;
+    } else if (size.x != shown_size_.x || size.y != shown_size_.y) {
         center_ = ImGui::GetWindowPos() + shown_size_ * 0.5f;  // where it is now, wherever it was moved
         recenter_ = true;
     }

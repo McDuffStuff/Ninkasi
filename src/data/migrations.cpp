@@ -303,6 +303,25 @@ constexpr Migration kMigrations[] = {
         );
         CREATE INDEX kegs_by_type ON keg_movements (keg_type, state);
     )sql"},
+    {9, R"sql(
+        -- Packaged beer: every change in how many packages of each batch
+        -- there are, by kind and size of package, positive in and negative
+        -- out. What's on hand is the sums. Append-only.
+        CREATE TABLE packaged_movements (
+            id            INTEGER PRIMARY KEY,
+            at            TEXT NOT NULL,
+            batch_id      INTEGER NOT NULL REFERENCES batches(id),
+            package       TEXT NOT NULL,               -- 'half_barrel', 'sixtel' or 'can'
+            unit_volume_l REAL NOT NULL,               -- what each package holds
+            quantity      INTEGER NOT NULL,
+            reason        TEXT NOT NULL,               -- see PackagedReason in domain/packaging.h
+            vessel_id     INTEGER REFERENCES elements(id) ON DELETE SET NULL,  -- packaged from
+            note          TEXT NOT NULL DEFAULT '',
+            user_id       INTEGER NOT NULL REFERENCES users(id),
+            recorded_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE INDEX packaged_by_batch ON packaged_movements (batch_id, package);
+    )sql"},
 };
 
 } // namespace

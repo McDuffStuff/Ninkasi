@@ -1,6 +1,10 @@
 #pragma once
 // Packaged beer and the brewery's kegs.
 //
+// Packaged beer is counted in packages (half-barrels, sixtels, cans) by
+// batch, in the packaged goods ledger (packaged_movements). Packaging (see
+// BatchService) adds to it.
+//
 // Empty kegs are kept in the keg cleaner, counted by size: kegs arrive dirty
 // (new, or back from customers), are cleaned, and are filled when beer is
 // packaged. Every change is a row in the keg ledger (keg_movements); the
@@ -35,12 +39,15 @@ public:
 
     // Empty kegs of one size.
     domain::KegCounts kegs(domain::PackageType type) const;
+    // Packaged beer on hand, oldest first.
+    const std::vector<domain::PackagedStock>& packaged() const { return packaged_; }
     // Grows with every change, so windows know when to re-read the database.
     std::uint64_t revision() const { return revision_; }
 
     // --- From the database ----------------------------------------------------
 
     std::vector<data::KegMovementRow> keg_history(int limit = 500);
+    std::vector<data::PackagedMovementRow> packaged_history(int limit = 500);
 
     // --- Kegs -----------------------------------------------------------------
     // Each throws std::invalid_argument, saving nothing, if no kegs are given,
@@ -60,6 +67,11 @@ public:
     // first (see domain::plan_keg_draw). Call inside the caller's
     // transaction, and refresh() once it's committed.
     void write_fill(domain::PackageType type, int count, std::int64_t batch_id, domain::Timestamp at);
+    // For packaging: adds `count` packages of a batch, each holding
+    // `unit_volume_l`, filled from `vessel_id`. Call inside the caller's
+    // transaction, and refresh() once it's committed.
+    void write_packaged(std::int64_t batch_id, std::optional<std::int64_t> vessel_id, domain::PackageType type,
+                        double unit_volume_l, int count, domain::Timestamp at, std::string_view note);
 
     // Re-reads what's on hand.
     void refresh();
@@ -75,6 +87,7 @@ private:
     Session session_;
     data::PackagingRepository repository_;
     std::array<domain::KegCounts, domain::kPackageTypes.size()> kegs_{};  // by PackageType
+    std::vector<domain::PackagedStock> packaged_;
     std::uint64_t revision_ = 0;
 };
 

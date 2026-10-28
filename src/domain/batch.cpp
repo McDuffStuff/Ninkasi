@@ -47,11 +47,6 @@ constexpr EnumText<VesselCondition> kVesselConditions[] = {
     {VesselCondition::OutOfService, "out_of_service", "Out of service"},
 };
 
-constexpr EnumText<PackageFormat> kPackageFormatTexts[] = {
-    {PackageFormat::Kegs,          "kegs",         "Kegs"},
-    {PackageFormat::CansOrBottles, "cans_bottles", "Cans or bottles"},
-};
-
 constexpr EnumText<VolumeReason> kVolumeReasons[] = {
     {VolumeReason::Brewed,      "brewed",       "Brewed"},
     {VolumeReason::TransferIn,  "transfer_in",  "Transferred in"},
@@ -220,7 +215,6 @@ bool holds_beer(ElementType type) {
 std::string_view name(BatchStatus status) { return lookup(status, kBatchStatuses).name; }
 std::string_view name(ReadingMethod method) { return lookup(method, kReadingMethodTexts).name; }
 std::string_view name(VesselCondition condition) { return lookup(condition, kVesselConditions).name; }
-std::string_view name(PackageFormat format) { return lookup(format, kPackageFormatTexts).name; }
 std::string_view name(VolumeReason reason) { return lookup(reason, kVolumeReasons).name; }
 
 std::string_view key(BatchStatus status) { return lookup(status, kBatchStatuses).key; }

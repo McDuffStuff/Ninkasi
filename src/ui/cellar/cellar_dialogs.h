@@ -12,6 +12,7 @@
 #include "app/batch_service.h"
 #include "app/floor_service.h"
 #include "app/inventory_service.h"
+#include "app/packaged_goods_service.h"
 #include "app/recipe_service.h"
 #include "calc/units.h"
 #include "data/recipe_repository.h"
@@ -31,8 +32,8 @@ namespace ninkasi::ui {
 class CellarDialogs {
 public:
     CellarDialogs(app::BatchService& batches, const app::FloorService& floor, app::RecipeService& recipes,
-                  const app::InventoryService& inventory, const calc::UnitPreferences& units,
-                  const domain::CalcSettings& calc_settings, float ui_scale);
+                  const app::InventoryService& inventory, const app::PackagedGoodsService& goods,
+                  const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings, float ui_scale);
 
     // A brew on the brewhouse, with or without its knock-out.
     void log_brew(std::int64_t brewhouse_id);
@@ -99,6 +100,7 @@ private:
     const app::FloorService& floor_;
     app::RecipeService& recipes_;
     const app::InventoryService& inventory_;
+    const app::PackagedGoodsService& goods_;
     const calc::UnitPreferences& units_;
     const domain::CalcSettings& calc_settings_;
     float ui_scale_;
@@ -137,8 +139,11 @@ private:
     double og_ = 1.050;
     std::vector<domain::IngredientUse> ingredients_;
 
-    // Package.
-    domain::PackageFormat format_ = domain::PackageFormat::Kegs;
+    // Package. The cans chosen are remembered between runs.
+    int half_barrels_ = 0;
+    int sixtels_ = 0;
+    int cans_ = 0;
+    std::int64_t can_item_id_ = 0;
 
     // Reading. The method, calibration and correction factor are remembered
     // between readings.

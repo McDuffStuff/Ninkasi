@@ -13,7 +13,9 @@
 // of its rows. Mistakes are corrected with new rows, never by editing old ones.
 //
 // Knock-outs draw the confirmed ingredients from inventory in the same
-// transaction (see InventoryService).
+// transaction (see InventoryService). Packaging fills kegs from the keg
+// cleaner and cans from inventory, and adds the packages to packaged goods
+// (see PackagedGoodsService), also in one transaction.
 //
 // The rules, each enforced by throwing std::invalid_argument with a message
 // for the brewer:
@@ -31,6 +33,7 @@
 
 #include "app/floor_service.h"
 #include "app/inventory_service.h"
+#include "app/packaged_goods_service.h"
 #include "app/session.h"
 #include "data/batch_repository.h"
 #include "data/database.h"
@@ -94,18 +97,23 @@ struct Transfer {
     std::string note;
 };
 
+// Beer packaged from a vessel, counted in packages. Its volume is what the
+// packages hold, and anything left behind in an emptied vessel is the loss.
 struct Packaging {
     std::int64_t vessel_id = 0;
-    domain::PackageFormat format = domain::PackageFormat::Kegs;
     domain::Timestamp at{};
-    double volume_l = 0.0;
-    bool empties_vessel = true;  // anything left behind is recorded as a loss
+    int half_barrels = 0;
+    int sixtels = 0;
+    int cans = 0;
+    std::int64_t can_item_id = 0;  // the cans filled: an inventory item
+    bool empties_vessel = true;    // anything left behind is recorded as a loss
     std::string note;
 };
 
 class BatchService {
 public:
-    BatchService(data::Database& db, Session session, const FloorService& floor, InventoryService& inventory);
+    BatchService(data::Database& db, Session session, const FloorService& floor, InventoryService& inventory,
+                 PackagedGoodsService& goods);
 
     // --- In memory: cheap enough to call every frame --------------------------
 
@@ -159,6 +167,11 @@ public:
     Availability can_transfer(std::int64_t from_vessel_id, std::int64_t to_vessel_id, double volume_l) const;
     // Moving beer into a brite tank starts conditioning.
     void transfer(const Transfer& request);
+    // The volume a packaging run fills: each package's count times what it
+    // holds. Cans hold what their inventory item says.
+    double packaged_volume_l(const Packaging& request) const;
+    // Kegs come from the keg cleaner, clean ones first, and cans from
+    // inventory; neither is refused for want of stock.
     void package(const Packaging& request);
     // Dumps everything in the vessel.
     void dump(std::int64_t vessel_id, domain::Timestamp at, std::string_view reason);
@@ -203,6 +216,7 @@ private:
     Session session_;
     const FloorService& floor_;
     InventoryService& inventory_;
+    PackagedGoodsService& goods_;
     data::BatchRepository repository_;
 
     std::vector<domain::Batch> active_;

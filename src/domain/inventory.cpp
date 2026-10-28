@@ -37,6 +37,7 @@ constexpr EnumText<StockUnit> kUnitTexts[] = {
 constexpr EnumText<StockReason> kReasonTexts[] = {
     {StockReason::Received,  "received",  "Received"},
     {StockReason::Brewed,    "brewed",    "Brewed"},
+    {StockReason::Packaged,  "packaged",  "Packaged"},
     {StockReason::Counted,   "counted",   "Stock count"},
     {StockReason::Used,      "used",      "Used"},
     {StockReason::Discarded, "discarded", "Discarded"},

@@ -1,6 +1,7 @@
 #include "app/batch_service.h"
 #include "app/floor_service.h"
 #include "app/inventory_service.h"
+#include "app/packaged_goods_service.h"
 #include "app/session.h"
 #include "data/database.h"
 #include "data/migrations.h"
@@ -29,6 +30,7 @@ struct Stores {
     app::Session session = migrated_session(db);
     app::FloorService floor{db, session};
     app::InventoryService inventory{db, session};
+    app::PackagedGoodsService goods{db, session};
 
     std::int64_t item(const std::string& name, domain::StockUnit unit = domain::StockUnit::Mass) {
         domain::InventoryItem item;
@@ -191,7 +193,7 @@ TEST_CASE("items need distinct names, and items with history are archived") {
 
 TEST_CASE("a knock-out draws the confirmed ingredients from stock") {
     Stores stores;
-    app::BatchService batches{stores.db, stores.session, stores.floor, stores.inventory};
+    app::BatchService batches{stores.db, stores.session, stores.floor, stores.inventory, stores.goods};
     const std::int64_t brewhouse = stores.floor.add(domain::ElementType::Brewhouse, 0.0, 0.0);
     const std::int64_t fermenter = stores.floor.add(domain::ElementType::Fermenter, 0.0, 0.0);
     const std::int64_t malt = stores.item("Pale malt");
@@ -219,7 +221,7 @@ TEST_CASE("a knock-out draws the confirmed ingredients from stock") {
 
 TEST_CASE("a knock-out that fails takes nothing from stock") {
     Stores stores;
-    app::BatchService batches{stores.db, stores.session, stores.floor, stores.inventory};
+    app::BatchService batches{stores.db, stores.session, stores.floor, stores.inventory, stores.goods};
     const std::int64_t brewhouse = stores.floor.add(domain::ElementType::Brewhouse, 0.0, 0.0);
     const std::int64_t fermenter = stores.floor.add(domain::ElementType::Fermenter, 0.0, 0.0);
     const std::int64_t malt = stores.item("Pale malt");

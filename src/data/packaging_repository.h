@@ -1,6 +1,6 @@
 #pragma once
-// Reads and writes the keg ledger. PackagedGoodsService decides what may be
-// written; this only stores it.
+// Reads and writes the keg and packaged goods ledgers. PackagedGoodsService
+// decides what may be written; this only stores it.
 
 #include "data/database.h"
 #include "domain/packaging.h"
@@ -17,6 +17,14 @@ struct KegMovementRow {
     std::string batch_code;
 };
 
+// A packaged goods ledger row with its beer and the tank it came from.
+struct PackagedMovementRow {
+    domain::PackagedMovement movement;
+    std::string batch_code;
+    std::string beer;
+    std::string vessel_name;
+};
+
 class PackagingRepository {
 public:
     explicit PackagingRepository(Database& db) : db_(db) {}
@@ -27,6 +35,13 @@ public:
     domain::KegCounts keg_counts(domain::PackageType type);
     // Newest first.
     std::vector<KegMovementRow> keg_movements(int limit);
+
+    // --- Packaged beer ------------------------------------------------------
+    void insert_packaged_movement(const domain::PackagedMovement& movement, std::int64_t user_id);
+    // What's on hand, oldest first.
+    std::vector<domain::PackagedStock> packaged_stock();
+    // Newest first.
+    std::vector<PackagedMovementRow> packaged_movements(int limit);
 
 private:
     Database& db_;

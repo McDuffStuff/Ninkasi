@@ -82,17 +82,54 @@ struct KegDraw {
 };
 KegDraw plan_keg_draw(KegCounts empty, int count);
 
+// --- Packaged beer ------------------------------------------------------------
+
+// Why the number of packages of beer changed.
+enum class PackagedReason {
+    Packaged,  // filled from a tank
+};
+
+// One row of the packaged goods ledger.
+struct PackagedMovement {
+    std::int64_t id = 0;
+    Timestamp at{};
+    std::int64_t batch_id = 0;
+    PackageType type = PackageType::HalfBarrel;
+    double unit_volume_l = 0.0;             // what each package holds
+    int quantity = 0;                       // packages: positive in, negative out
+    PackagedReason reason = PackagedReason::Packaged;
+    std::optional<std::int64_t> vessel_id;  // packaged from
+    std::string note;
+    std::string user;                       // who recorded it, when read back
+};
+
+// Packaged beer on hand: one batch in one kind and size of package.
+struct PackagedStock {
+    std::int64_t batch_id = 0;
+    std::string batch_code;
+    std::string beer;
+    PackageType type = PackageType::HalfBarrel;
+    double unit_volume_l = 0.0;
+    int count = 0;
+    Timestamp packaged_at{};  // when the first of them was packaged
+
+    double volume_l() const { return unit_volume_l * count; }
+};
+
 // --- Names and stored keys ----------------------------------------------------
 // Keys are stored in the database: never change one once shipped.
 
 std::string_view name(PackageType type);  // "Half-barrels", "Sixtels", "Cans"
 std::string_view name(KegState state);
 std::string_view name(KegReason reason);
+std::string_view name(PackagedReason reason);
 std::string_view key(PackageType type);
 std::string_view key(KegState state);
 std::string_view key(KegReason reason);
+std::string_view key(PackagedReason reason);
 std::optional<PackageType> package_type_from_key(std::string_view text);
 std::optional<KegState> keg_state_from_key(std::string_view text);
 std::optional<KegReason> keg_reason_from_key(std::string_view text);
+std::optional<PackagedReason> packaged_reason_from_key(std::string_view text);
 
 } // namespace ninkasi::domain

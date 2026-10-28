@@ -217,6 +217,11 @@ void InventoryService::write_brew_usage(std::int64_t batch_id,
     }
 }
 
+void InventoryService::write_packaging_usage(std::int64_t item_id, double quantity, std::int64_t batch_id,
+                                             domain::Timestamp at) {
+    if (quantity > 0.0) draw(item_id, quantity, domain::StockReason::Packaged, at, batch_id, std::nullopt, {});
+}
+
 void InventoryService::draw(std::int64_t item_id, double quantity, domain::StockReason reason, domain::Timestamp at,
                             std::optional<std::int64_t> batch_id, std::optional<std::int64_t> brew_ingredient_id,
                             std::string_view note) {

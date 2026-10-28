@@ -13,6 +13,7 @@
 using namespace ninkasi;
 using domain::BatchStatus;
 using domain::ElementType;
+using domain::PackageType;
 using domain::VesselCondition;
 
 namespace {
@@ -44,12 +45,13 @@ struct Cellar {
     app::Session session = migrated_session(db);
     app::FloorService floor{db, session};
     app::InventoryService inventory{db, session};
+    app::PackagedGoodsService goods{db, session};
     std::int64_t brewhouse = floor.add(ElementType::Brewhouse, 0.0, 0.0);
     std::int64_t fv1 = add_vessel(ElementType::Fermenter, 2000.0);
     std::int64_t fv2 = add_vessel(ElementType::Fermenter, 2000.0);
     std::int64_t small = add_vessel(ElementType::Fermenter, 500.0);
     std::int64_t brite = add_vessel(ElementType::BriteTank, 2000.0);
-    app::BatchService batches{db, session, floor, inventory};
+    app::BatchService batches{db, session, floor, inventory, goods};
 
     std::int64_t add_vessel(ElementType type, double capacity_l) {
         const std::int64_t id = floor.add(type, 0.0, 0.0);
@@ -294,27 +296,90 @@ TEST_CASE("splitting a batch leaves the rest in the source vessel") {
                     std::invalid_argument);
 }
 
-TEST_CASE("packaging the last of a batch finishes it") {
+TEST_CASE("packaging fills kegs and cans, works out the loss and finishes the batch") {
     Cellar cellar;
     const std::int64_t batch_id = cellar.brew(cellar.fv1, 1000.0);
+    const double half_barrel = domain::keg_volume_l(PackageType::HalfBarrel);
+    const double sixtel = domain::keg_volume_l(PackageType::Sixtel);
 
-    cellar.batches.package({.vessel_id = cellar.fv1, .at = at(100), .volume_l = 400.0, .empties_vessel = false});
-    CHECK(cellar.held(cellar.fv1) == 600.0);
+    // 1000 16-oz cans in stock; 10 half-barrels in the keg cleaner, 6 of them clean.
+    domain::InventoryItem cans;
+    cans.name = "16 oz cans";
+    cans.category = domain::ItemCategory::Can;
+    cans.unit = domain::StockUnit::Count;
+    cans.fill_volume_l = 0.473;
+    const std::int64_t can_item = cellar.inventory.add_item(cans);
+    cellar.inventory.receive({.received_at = at(1), .lines = {{.item_id = can_item, .quantity = 1000.0}}});
+    const std::vector<domain::KegCount> kegs{{PackageType::HalfBarrel, 10}};
+    cellar.goods.add_kegs(kegs, at(1), "");
+    const std::vector<domain::KegCount> cleaned{{PackageType::HalfBarrel, 6}};
+    cellar.goods.clean_kegs(cleaned, at(2));
+
+    // Some of it into 8 half-barrels: the 6 clean ones, and 2 dirty ones
+    // that must have been cleaned. The rest stays in the tank.
+    cellar.batches.package({.vessel_id = cellar.fv1, .at = at(100), .half_barrels = 8, .empties_vessel = false});
+    CHECK(cellar.held(cellar.fv1) == near(1000.0 - 8 * half_barrel, 1e-9));
+    CHECK(cellar.goods.kegs(PackageType::HalfBarrel).clean == 0);
+    CHECK(cellar.goods.kegs(PackageType::HalfBarrel).dirty == 2);
     CHECK(cellar.batches.find_active(batch_id));
 
-    cellar.batches.package({.vessel_id = cellar.fv1, .format = domain::PackageFormat::CansOrBottles, .at = at(101),
-                            .volume_l = 590.0});
+    // The rest into sixtels the keg cleaner didn't know about, and cans.
+    cellar.batches.package({.vessel_id = cellar.fv1, .at = at(101), .sixtels = 10, .cans = 600,
+                            .can_item_id = can_item});
     CHECK_FALSE(cellar.batches.contents(cellar.fv1));
-    CHECK_FALSE(cellar.batches.find_active(batch_id));
     CHECK(cellar.batches.condition(cellar.fv1) == VesselCondition::Dirty);
+    CHECK(cellar.goods.kegs(PackageType::Sixtel).clean == 0);
+    CHECK(cellar.inventory.find(can_item)->on_hand == near(400.0, 1e-9));
+    CHECK(cellar.number("SELECT COUNT(*) FROM stock_movements WHERE reason = 'packaged' AND batch_id = " +
+                        std::to_string(batch_id)) == 1.0);
+
+    // The loss is what the packages don't account for.
+    const double packaged = 8 * half_barrel + 10 * sixtel + 600 * 0.473;
+    CHECK(cellar.number("SELECT SUM(volume_l) FROM volume_events WHERE reason = 'kegged'") ==
+          near(-(8 * half_barrel + 10 * sixtel), 1e-9));
+    CHECK(cellar.number("SELECT SUM(volume_l) FROM volume_events WHERE reason = 'bottled'") ==
+          near(-600 * 0.473, 1e-9));
+    CHECK(cellar.number("SELECT SUM(volume_l) FROM volume_events WHERE reason = 'loss'") ==
+          near(-(1000.0 - packaged), 1e-9));
+
+    // The packages are in packaged goods.
+    const std::vector<domain::PackagedStock>& goods = cellar.goods.packaged();
+    REQUIRE(goods.size() == 3);
+    CHECK(goods[0].type == PackageType::HalfBarrel);
+    CHECK(goods[0].count == 8);
+    CHECK(goods[0].batch_id == batch_id);
+    int canned = 0;
+    for (const domain::PackagedStock& entry : goods) {
+        if (entry.type == PackageType::Can) canned = entry.count;
+    }
+    CHECK(canned == 600);
 
     const std::optional<domain::Batch> finished = cellar.batches.load(batch_id);
     REQUIRE(finished);
     CHECK(finished->status == BatchStatus::Packaged);
     CHECK(finished->finished_at == at(101));
-    CHECK(cellar.number("SELECT SUM(volume_l) FROM volume_events WHERE reason = 'kegged'") == -400.0);
-    CHECK(cellar.number("SELECT SUM(volume_l) FROM volume_events WHERE reason = 'bottled'") == -590.0);
-    CHECK(cellar.number("SELECT SUM(volume_l) FROM volume_events WHERE reason = 'loss'") == -10.0);
+}
+
+TEST_CASE("packaging needs packages, and cans that say what they hold") {
+    Cellar cellar;
+    cellar.brew(cellar.fv1, 1000.0);
+    CHECK_THROWS_AS(cellar.batches.package({.vessel_id = cellar.fv1, .at = at(100)}), std::invalid_argument);
+    CHECK_THROWS_AS(cellar.batches.package({.vessel_id = cellar.fv1, .at = at(100), .sixtels = -1}),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(cellar.batches.package({.vessel_id = cellar.fv1, .at = at(100), .cans = 24}),
+                    std::invalid_argument);
+    // 20 half-barrels is more than the tank holds, so it must empty it.
+    CHECK_THROWS_AS(cellar.batches.package({.vessel_id = cellar.fv1, .at = at(100), .half_barrels = 20,
+                                            .empties_vessel = false}),
+                    std::invalid_argument);
+    CHECK(cellar.held(cellar.fv1) == 1000.0);
+    CHECK(cellar.goods.packaged().empty());
+
+    // Packaging more than was recorded corrects the tank's volume.
+    cellar.batches.package({.vessel_id = cellar.fv1, .at = at(100), .half_barrels = 20});
+    CHECK(cellar.number("SELECT SUM(volume_l) FROM volume_events WHERE reason = 'adjusted'") ==
+          near(20 * domain::keg_volume_l(PackageType::HalfBarrel) - 1000.0, 1e-9));
+    CHECK_FALSE(cellar.batches.contents(cellar.fv1));
 }
 
 TEST_CASE("dumping a batch finishes it as dumped") {
@@ -385,7 +450,7 @@ TEST_CASE("the ledger reconciles with what the vessels hold") {
     cellar.batches.transfer({.from_vessel_id = cellar.fv2, .to_vessel_id = cellar.small, .at = at(41),
                              .volume_l = 300.0, .empties_source = false});
     cellar.batches.correct_volume(cellar.fv2, 905.0, at(42), "");
-    cellar.batches.package({.vessel_id = cellar.brite, .at = at(43), .volume_l = 500.0, .empties_vessel = false});
+    cellar.batches.package({.vessel_id = cellar.brite, .at = at(43), .half_barrels = 8, .empties_vessel = false});
     // More came out than was recorded: the shortfall is booked as a gain first.
     cellar.batches.transfer({.from_vessel_id = cellar.small, .to_vessel_id = cellar.fv1, .at = at(44),
                              .volume_l = 310.0});
@@ -397,7 +462,7 @@ TEST_CASE("the ledger reconciles with what the vessels hold") {
         CHECK(ledger == near(cellar.held(vessel), 1e-6));
     }
     // Each batch's volume is what was brewed, less what left, plus corrections.
-    CHECK(cellar.batches.volume(a) == near(1000.0 - 20.0 - 500.0, 1e-6));
+    CHECK(cellar.batches.volume(a) == near(1000.0 - 20.0 - 8 * domain::keg_volume_l(PackageType::HalfBarrel), 1e-6));
     CHECK(cellar.batches.volume(b) == near(1200.0 + 5.0 + 10.0, 1e-6));
     // Transfers only move beer.
     CHECK(cellar.number("SELECT SUM(volume_l) FROM volume_events WHERE reason IN ('transfer_in', 'transfer_out')") ==

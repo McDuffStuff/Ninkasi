@@ -91,6 +91,10 @@ public:
                           std::span<const std::pair<std::int64_t, domain::IngredientUse>> uses,
                           domain::Timestamp at);
 
+    // For packaging: draws `quantity` of an item (cans) filled with a batch.
+    // Call inside the caller's transaction, and refresh() once it's committed.
+    void write_packaging_usage(std::int64_t item_id, double quantity, std::int64_t batch_id, domain::Timestamp at);
+
     // Re-reads what's on hand.
     void refresh();
 

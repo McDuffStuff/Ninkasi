@@ -33,6 +33,10 @@ constexpr EnumText<KegReason> kReasonTexts[] = {
     {KegReason::Removed, "removed", "Removed"},
 };
 
+constexpr EnumText<PackagedReason> kPackagedTexts[] = {
+    {PackagedReason::Packaged, "packaged", "Packaged"},
+};
+
 template <typename E, std::size_t N>
 const EnumText<E>& lookup(E value, const EnumText<E> (&table)[N]) {
     for (const EnumText<E>& entry : table) {
@@ -86,12 +90,17 @@ KegDraw plan_keg_draw(KegCounts empty, int count) {
 std::string_view name(PackageType type) { return lookup(type, kPackageTexts).name; }
 std::string_view name(KegState state) { return lookup(state, kStateTexts).name; }
 std::string_view name(KegReason reason) { return lookup(reason, kReasonTexts).name; }
+std::string_view name(PackagedReason reason) { return lookup(reason, kPackagedTexts).name; }
 std::string_view key(PackageType type) { return lookup(type, kPackageTexts).key; }
 std::string_view key(KegState state) { return lookup(state, kStateTexts).key; }
 std::string_view key(KegReason reason) { return lookup(reason, kReasonTexts).key; }
+std::string_view key(PackagedReason reason) { return lookup(reason, kPackagedTexts).key; }
 
 std::optional<PackageType> package_type_from_key(std::string_view text) { return from_key(text, kPackageTexts); }
 std::optional<KegState> keg_state_from_key(std::string_view text) { return from_key(text, kStateTexts); }
 std::optional<KegReason> keg_reason_from_key(std::string_view text) { return from_key(text, kReasonTexts); }
+std::optional<PackagedReason> packaged_reason_from_key(std::string_view text) {
+    return from_key(text, kPackagedTexts);
+}
 
 } // namespace ninkasi::domain

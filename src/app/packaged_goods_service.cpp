@@ -39,6 +39,10 @@ std::vector<data::KegMovementRow> PackagedGoodsService::keg_history(int limit) {
     return repository_.keg_movements(limit);
 }
 
+std::vector<data::PackagedMovementRow> PackagedGoodsService::packaged_history(int limit) {
+    return repository_.packaged_movements(limit);
+}
+
 // --- Kegs -----------------------------------------------------------------------
 
 void PackagedGoodsService::check(std::span<const domain::KegCount> kegs) {
@@ -122,8 +126,24 @@ void PackagedGoodsService::write_fill(domain::PackageType type, int count, std::
     }
 }
 
+void PackagedGoodsService::write_packaged(std::int64_t batch_id, std::optional<std::int64_t> vessel_id,
+                                          domain::PackageType type, double unit_volume_l, int count,
+                                          domain::Timestamp at, std::string_view note) {
+    domain::PackagedMovement movement;
+    movement.at = at;
+    movement.batch_id = batch_id;
+    movement.type = type;
+    movement.unit_volume_l = unit_volume_l;
+    movement.quantity = count;
+    movement.reason = domain::PackagedReason::Packaged;
+    movement.vessel_id = vessel_id;
+    movement.note = std::string(note);
+    repository_.insert_packaged_movement(movement, session_.user_id);
+}
+
 void PackagedGoodsService::refresh() {
     for (domain::PackageType type : domain::kKegTypes) kegs_[index_of(type)] = repository_.keg_counts(type);
+    packaged_ = repository_.packaged_stock();
     ++revision_;
 }
 

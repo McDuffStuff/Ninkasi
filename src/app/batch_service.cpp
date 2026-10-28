@@ -56,8 +56,8 @@ std::string describe(const domain::Reading& reading) {
 } // namespace
 
 BatchService::BatchService(data::Database& db, Session session, const FloorService& floor,
-                           InventoryService& inventory)
-    : db_(db), session_(std::move(session)), floor_(floor), inventory_(inventory), repository_(db) {
+                           InventoryService& inventory, PackagedGoodsService& goods)
+    : db_(db), session_(std::move(session)), floor_(floor), inventory_(inventory), goods_(goods), repository_(db) {
     reload();
 }
 
@@ -286,31 +286,85 @@ void BatchService::transfer(const Transfer& request) {
     reload();
 }
 
+double BatchService::packaged_volume_l(const Packaging& request) const {
+    double volume_l = request.half_barrels * domain::keg_volume_l(domain::PackageType::HalfBarrel) +
+                      request.sixtels * domain::keg_volume_l(domain::PackageType::Sixtel);
+    const ItemStock* cans = inventory_.find(request.can_item_id);
+    if (cans && cans->item.fill_volume_l) volume_l += request.cans * *cans->item.fill_volume_l;
+    return volume_l;
+}
+
 void BatchService::package(const Packaging& request) {
     const auto [vessel, held] = occupied_vessel(request.vessel_id);
-    if (!(request.volume_l > 0.0)) fail("Enter the volume packaged.");
-    if (!request.empties_vessel && request.volume_l >= held.volume_l - kEmptyVolumeL) {
+    if (request.half_barrels < 0 || request.sixtels < 0 || request.cans < 0) fail("Counts can't be negative.");
+    if (request.half_barrels + request.sixtels + request.cans == 0) fail("Enter how many kegs or cans were filled.");
+    const ItemStock* cans = inventory_.find(request.can_item_id);
+    if (request.cans > 0 && !(cans && cans->item.category == domain::ItemCategory::Can && cans->item.fill_volume_l)) {
+        fail("Choose the cans that were filled.");
+    }
+    const double volume_l = packaged_volume_l(request);
+    if (!request.empties_vessel && volume_l >= held.volume_l - kEmptyVolumeL) {
         fail("That's everything in " + vessel->name + ". To leave some behind, package less.");
     }
     const domain::Batch& batch = active_batch(held.batch_id);
-    const bool kegs = request.format == domain::PackageFormat::Kegs;
 
-    std::string text = std::string(kegs ? "Kegged " : "Canned/bottled ") + domain::volume_token(request.volume_l) +
-                       " of " + domain::label(batch) + " from " + vessel->name;
+    // What was filled, and what each holds.
+    struct Filled {
+        domain::PackageType type;
+        int count;
+        double unit_volume_l;
+    };
+    std::vector<Filled> filled;
+    for (const auto& [type, count] : {std::pair{domain::PackageType::HalfBarrel, request.half_barrels},
+                                      std::pair{domain::PackageType::Sixtel, request.sixtels}}) {
+        if (count > 0) filled.push_back({type, count, domain::keg_volume_l(type)});
+    }
+    if (request.cans > 0) filled.push_back({domain::PackageType::Can, request.cans, *cans->item.fill_volume_l});
+
+    // "Packaged 10 half-barrels, 20 sixtels and 480 cans of #42 Hazy IPA from BBT1 (8.27 bbl)"
+    std::string what;
+    for (std::size_t i = 0; i < filled.size(); ++i) {
+        if (i > 0) what += i + 1 == filled.size() ? " and " : ", ";
+        what += domain::count_text(filled[i].type, filled[i].count);
+    }
+    std::string text = "Packaged " + what + " of " + domain::label(batch) + " from " + vessel->name + " (" +
+                       domain::volume_token(volume_l) + ")";
 
     data::Transaction tx(db_);
-    record({0, request.at, batch.id, request.vessel_id, -request.volume_l,
-            kegs ? VolumeReason::Kegged : VolumeReason::Bottled});
+    double kegged_l = 0.0;
+    double canned_l = 0.0;
+    for (const Filled& entry : filled) {
+        if (domain::is_keg(entry.type)) {
+            kegged_l += entry.count * entry.unit_volume_l;
+            goods_.write_fill(entry.type, entry.count, batch.id, request.at);
+        } else {
+            canned_l += entry.count * entry.unit_volume_l;
+            inventory_.write_packaging_usage(request.can_item_id, entry.count, batch.id, request.at);
+        }
+        goods_.write_packaged(batch.id, request.vessel_id, entry.type, entry.unit_volume_l, entry.count, request.at,
+                              request.note);
+    }
+    if (kegged_l > 0.0) record({0, request.at, batch.id, request.vessel_id, -kegged_l, VolumeReason::Kegged});
+    if (canned_l > 0.0) record({0, request.at, batch.id, request.vessel_id, -canned_l, VolumeReason::Bottled});
     if (request.empties_vessel) {
-        const double left_l = empty_vessel(batch, request.vessel_id, held.volume_l - request.volume_l, request.at);
-        if (left_l > kEmptyVolumeL) text += ", leaving " + domain::volume_token(left_l) + " behind";
+        // What the packages don't account for was lost.
+        const double left_l = empty_vessel(batch, request.vessel_id, held.volume_l - volume_l, request.at);
+        if (left_l > kEmptyVolumeL) {
+            char percent[32];
+            std::snprintf(percent, sizeof percent, " (%.1f %%)", 100.0 * left_l / held.volume_l);
+            text += "; " + domain::volume_token(left_l) + " lost" + percent;
+        } else if (left_l < -kEmptyVolumeL) {
+            text += "; " + domain::volume_token(-left_l) + " more than was recorded";
+        }
     } else {
-        text += "; " + domain::volume_token(held.volume_l - request.volume_l) + " stays in " + vessel->name;
+        text += "; " + domain::volume_token(held.volume_l - volume_l) + " stays in " + vessel->name;
     }
     log("package", batch.id, request.vessel_id, std::nullopt, with_note(text, request.note), request.at);
     finish_if_empty(batch, request.at);
     tx.commit();
     reload();
+    goods_.refresh();
+    if (canned_l > 0.0) inventory_.refresh();
 }
 
 void BatchService::dump(std::int64_t vessel_id, domain::Timestamp at, std::string_view reason) {

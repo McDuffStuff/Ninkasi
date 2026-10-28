@@ -47,12 +47,14 @@ std::string where_text(const app::BatchService& batches, const app::FloorService
 } // namespace
 
 CellarDialogs::CellarDialogs(app::BatchService& batches, const app::FloorService& floor, app::RecipeService& recipes,
-                             const app::InventoryService& inventory, const calc::UnitPreferences& units,
-                             const domain::CalcSettings& calc_settings, float ui_scale)
+                             const app::InventoryService& inventory, const app::PackagedGoodsService& goods,
+                             const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings,
+                             float ui_scale)
     : batches_(batches),
       floor_(floor),
       recipes_(recipes),
       inventory_(inventory),
+      goods_(goods),
       units_(units),
       calc_settings_(calc_settings),
       ui_scale_(ui_scale) {}
@@ -132,10 +134,21 @@ void CellarDialogs::package(std::int64_t vessel_id) {
     if (!held) return;
     element_id_ = vessel_id;
     batch_id_ = held->batch_id;
-    volume_l_ = held->volume_l;
+    half_barrels_ = sixtels_ = cans_ = 0;
     empties_ = true;
     text_.clear();
     at_ = domain::now();
+    // The cans used last time, or the first cans in inventory.
+    const app::ItemStock* cans = inventory_.find(can_item_id_);
+    if (!cans || cans->item.category != domain::ItemCategory::Can) {
+        can_item_id_ = 0;
+        for (const app::ItemStock& entry : inventory_.stock()) {
+            if (entry.item.category == domain::ItemCategory::Can) {
+                can_item_id_ = entry.item.id;
+                break;
+            }
+        }
+    }
     open(Kind::Package);
 }
 
@@ -593,39 +606,132 @@ void CellarDialogs::draw_package() {
     if (!vessel || !batch) return close();
     const calc::UnitPreferences units = units_for(element_id_);
     const calc::Unit volume = units.unit_for(Measure::Volume);
+    const float count_width = 80.0f * ui_scale_;
 
     ImGui::Text("%s in %s: %s", domain::label(*batch).c_str(), vessel->name.c_str(),
                 calc::format(held->volume_l, volume).c_str());
     ImGui::Spacing();
-    if (ImGui::BeginTable("##package", 2, ImGuiTableFlags_SizingFixedFit)) {
-        table_row("Into");
-        for (domain::PackageFormat format : domain::kPackageFormats) {
-            if (ImGui::RadioButton(domain::name(format).data(), format_ == format)) format_ = format;
+
+    // A count of kegs of one size, with how many the keg cleaner has.
+    const auto keg_row = [&](domain::PackageType type, int& count) {
+        table_row(domain::name(type).data());
+        ImGui::PushID(static_cast<int>(type));
+        ImGui::SetNextItemWidth(count_width);
+        if (type == domain::PackageType::HalfBarrel && ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputInt("##count", &count, 0, 0, ImGuiInputTextFlags_AutoSelectAll);
+        count = std::max(count, 0);
+        const domain::KegCounts kegs = goods_.kegs(type);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%d clean · %d dirty", kegs.clean, kegs.dirty);
+        // More than are clean: they come from the dirty kegs, then from kegs
+        // the keg cleaner didn't know about.
+        const domain::KegDraw draw = domain::plan_keg_draw(kegs, count);
+        if (draw.dirty > 0 || draw.unrecorded > 0) {
+            std::string shortfall;
+            if (draw.dirty > 0) shortfall = std::to_string(draw.dirty) + " from the dirty kegs";
+            if (draw.unrecorded > 0) {
+                if (!shortfall.empty()) shortfall += ", ";
+                shortfall += std::to_string(draw.unrecorded) + " not in the keg cleaner";
+            }
             ImGui::SameLine();
+            ImGui::TextColored(kWarningColor, "%s", shortfall.c_str());
+            ImGui::SetItemTooltip("Kegs taken from the dirty ones were cleaned without it being logged. Kegs not "
+                                  "in the keg cleaner are added to it as they're filled.");
         }
-        ImGui::NewLine();
-        table_row("Volume packaged");
-        ImGui::SetNextItemWidth(120.0f * ui_scale_);
-        edit_quantity("##volume", volume_l_, volume);
+        ImGui::PopID();
+    };
+
+    const app::Packaging request{.vessel_id = element_id_,
+                                 .at = at_,
+                                 .half_barrels = half_barrels_,
+                                 .sixtels = sixtels_,
+                                 .cans = cans_,
+                                 .can_item_id = can_item_id_,
+                                 .empties_vessel = empties_,
+                                 .note = text_};
+    const double packaged_l = batches_.packaged_volume_l(request);
+    const app::ItemStock* can_stock = inventory_.find(can_item_id_);
+    if (ImGui::BeginTable("##package", 2, ImGuiTableFlags_SizingFixedFit)) {
+        keg_row(domain::PackageType::HalfBarrel, half_barrels_);
+        keg_row(domain::PackageType::Sixtel, sixtels_);
+
+        // Cans: how many, and which cans from inventory.
+        table_row("Cans");
+        const bool any_cans = std::any_of(inventory_.stock().begin(), inventory_.stock().end(),
+                                          [](const app::ItemStock& entry) {
+                                              return entry.item.category == domain::ItemCategory::Can;
+                                          });
+        if (any_cans) {
+            ImGui::SetNextItemWidth(count_width);
+            ImGui::InputInt("##cans", &cans_, 0, 0, ImGuiInputTextFlags_AutoSelectAll);
+            cans_ = std::max(cans_, 0);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(200.0f * ui_scale_);
+            if (ImGui::BeginCombo("##can_item", can_stock ? can_stock->item.name.c_str() : "Choose the cans")) {
+                for (const app::ItemStock& entry : inventory_.stock()) {
+                    if (entry.item.category != domain::ItemCategory::Can) continue;
+                    ImGui::PushID(static_cast<int>(entry.item.id));
+                    if (ImGui::Selectable(entry.item.name.c_str(), entry.item.id == can_item_id_)) {
+                        can_item_id_ = entry.item.id;
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+            if (can_stock) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s each · %s on hand",
+                                    calc::format(can_stock->item.fill_volume_l.value_or(0.0),
+                                                 fill_volume_unit(units)).c_str(),
+                                    stock_text(can_stock->item, can_stock->on_hand, units).c_str());
+            }
+        } else {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("Add your cans to inventory (category Cans) to package into cans.");
+        }
+
+        table_row("Packaged");
+        ImGui::TextUnformatted(packaged_l > 0.0 ? calc::format(packaged_l, volume).c_str() : "--");
+
         table_row("");
         ImGui::Checkbox(("Empties " + vessel->name).c_str(), &empties_);
-        leftover_note(held->volume_l, vessel->name, units);
+
+        // What the packages don't account for.
+        const double left_l = held->volume_l - packaged_l;
+        if (empties_) {
+            table_row("Loss");
+            if (packaged_l <= 0.0) {
+                ImGui::TextDisabled("--");
+            } else if (left_l >= -kEmptyVolumeL) {
+                ImGui::Text("%s (%.1f %%)", calc::format(std::max(left_l, 0.0), volume).c_str(),
+                            100.0 * std::max(left_l, 0.0) / held->volume_l);
+            } else {
+                ImGui::TextColored(kWarningColor, "None: %s more than was recorded",
+                                   calc::format(-left_l, volume).c_str());
+                ImGui::SetItemTooltip("The tank held more than its recorded volume; the difference is recorded "
+                                      "as a correction.");
+            }
+        } else {
+            table_row("Left in tank");
+            if (left_l > kEmptyVolumeL) {
+                ImGui::TextUnformatted(calc::format(left_l, volume).c_str());
+            } else {
+                ImGui::TextColored(kWarningColor, "That's all of it: tick \"Empties %s\".", vessel->name.c_str());
+            }
+        }
+
         table_row("When");
         time_picker("##at", at_);
         table_row("Note");
         ImGui::SetNextItemWidth(280.0f * ui_scale_);
-        ImGui::InputTextWithHint("##note", "Keg or can counts, lot codes...", &text_);
+        ImGui::InputTextWithHint("##note", "Lot codes, date codes...", &text_);
         ImGui::EndTable();
     }
 
-    const bool ready = volume_l_ > 0.0 && (empties_ || volume_l_ < held->volume_l - kEmptyVolumeL);
+    const bool counted = half_barrels_ + sixtels_ + cans_ > 0;
+    const bool cans_chosen = cans_ == 0 || can_stock;
+    const bool ready = counted && cans_chosen && (empties_ || packaged_l < held->volume_l - kEmptyVolumeL);
     if (!buttons("Package", ready)) return;
-    const app::Packaging request{.vessel_id = element_id_,
-                                 .format = format_,
-                                 .at = at_,
-                                 .volume_l = volume_l_,
-                                 .empties_vessel = empties_,
-                                 .note = text_};
     attempt([&] { batches_.package(request); });
 }
 

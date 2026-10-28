@@ -94,6 +94,7 @@ struct Invoice {
 enum class StockReason {
     Received,
     Brewed,     // used in a brew, at knock-out
+    Packaged,   // filled with beer (cans), at packaging
     Counted,    // a stock count replaced the recorded quantity
     Used,       // used for something other than a brew
     Discarded,  // spoiled, expired, spilled...

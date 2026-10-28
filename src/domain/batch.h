@@ -130,8 +130,6 @@ bool holds_beer(ElementType type);
 
 enum class VesselCondition { Clean, Dirty, OutOfService };
 
-enum class PackageFormat { Kegs, CansOrBottles };
-
 // Why the volume of beer in a vessel changed. These are the ledger's reason
 // codes, which TTB reports will be built from.
 enum class VolumeReason {
@@ -164,12 +162,10 @@ inline constexpr double kEmptyVolumeL = 0.001;
 
 inline constexpr std::array kReadingMethods = {ReadingMethod::Hydrometer, ReadingMethod::Refractometer,
                                                ReadingMethod::Digital};
-inline constexpr std::array kPackageFormats = {PackageFormat::Kegs, PackageFormat::CansOrBottles};
 
 std::string_view name(BatchStatus status);
 std::string_view name(ReadingMethod method);
 std::string_view name(VesselCondition condition);
-std::string_view name(PackageFormat format);
 std::string_view name(VolumeReason reason);
 
 std::string_view key(BatchStatus status);

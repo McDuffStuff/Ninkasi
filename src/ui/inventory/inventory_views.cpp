@@ -192,7 +192,8 @@ void InventoryViews::draw_item_details(std::int64_t item_id) {
     ImGui::TextUnformatted(item.name.c_str());
     ImGui::SameLine();
     ImGui::TextDisabled("%s on hand", stock_text(item, entry.on_hand, units_).c_str());
-    if (ImGui::Button("Receive...")) receive(item_id);
+    // "##item": the window's toolbar has a Receive button too.
+    if (ImGui::Button("Receive...##item")) receive(item_id);
     ImGui::SameLine();
     if (ImGui::Button("Count...")) count(item_id);
     ImGui::SameLine();

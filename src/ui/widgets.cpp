@@ -9,6 +9,9 @@ namespace ninkasi::ui {
 
 namespace {
 
+// Clicking a number selects it, so typing replaces it: quicker data entry.
+constexpr ImGuiInputTextFlags kNumberFlags = ImGuiInputTextFlags_AutoSelectAll;
+
 void format_for(char (&buffer)[16], int decimals) {
     std::snprintf(buffer, sizeof buffer, "%%.%df", decimals);
 }
@@ -44,7 +47,7 @@ bool input_quantity(const char* label, double& canonical_value, calc::Unit unit)
     char format[16];
     format_for(format, calc::display_decimals(unit));
 
-    if (ImGui::InputDouble(label, &shown, 0.0, 0.0, format)) typed[id] = shown;
+    if (ImGui::InputDouble(label, &shown, 0.0, 0.0, format, kNumberFlags)) typed[id] = shown;
 
     bool committed = false;
     if (ImGui::IsItemDeactivatedAfterEdit()) {
@@ -66,7 +69,7 @@ bool edit_quantity(const char* label, double& canonical_value, calc::Unit unit, 
     char format[16];
     format_for(format, calc::display_decimals(unit));
 
-    const bool changed = ImGui::InputDouble(label, &shown, 0.0, 0.0, format);
+    const bool changed = ImGui::InputDouble(label, &shown, 0.0, 0.0, format, kNumberFlags);
     if (changed) canonical_value = calc::to_canonical(shown, unit);
     if (show_symbol) {
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
@@ -78,7 +81,7 @@ bool edit_quantity(const char* label, double& canonical_value, calc::Unit unit, 
 bool edit_number(const char* label, double& value, int decimals, const char* suffix) {
     char format[16];
     format_for(format, decimals);
-    const bool changed = ImGui::InputDouble(label, &value, 0.0, 0.0, format);
+    const bool changed = ImGui::InputDouble(label, &value, 0.0, 0.0, format, kNumberFlags);
     if (suffix) {
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         ImGui::TextUnformatted(suffix);
@@ -90,7 +93,7 @@ bool edit_percent(const char* label, double& fraction, int decimals) {
     double percent = fraction * 100.0;
     char format[16];
     std::snprintf(format, sizeof format, "%%.%df %%%%", decimals);  // e.g. "%.1f %%"
-    const bool changed = ImGui::InputDouble(label, &percent, 0.0, 0.0, format);
+    const bool changed = ImGui::InputDouble(label, &percent, 0.0, 0.0, format, kNumberFlags);
     if (changed) fraction = percent / 100.0;
     return changed;
 }
@@ -102,7 +105,7 @@ bool edit_volume_per_mass(const char* label, double& l_per_kg, calc::Unit mass_u
                                                calc::from_canonical(1.0, calc::Unit::Pound)
                                          : 1.0;
     double shown = l_per_kg * per_l_per_kg;
-    const bool changed = ImGui::InputDouble(label, &shown, 0.0, 0.0, "%.2f");
+    const bool changed = ImGui::InputDouble(label, &shown, 0.0, 0.0, "%.2f", kNumberFlags);
     if (changed) l_per_kg = shown / per_l_per_kg;
     ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
     ImGui::TextUnformatted(imperial ? "qt/lb" : "L/kg");

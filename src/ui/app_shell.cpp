@@ -28,6 +28,7 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
       packaged_goods_(db, session_),
       batches_(db, session_, floor_, inventory_, packaged_goods_),
       tasks_(db, session_),
+      ttb_(db, settings_),
       dialogs_(batches_, floor_, recipes_, inventory_, packaged_goods_, units_, calc_settings_, ui_scale_),
       task_views_(tasks_, floor_, batches_, ui_scale_),
       inventory_views_(inventory_, floor_, library_, units_, ui_scale_),
@@ -35,6 +36,7 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
       element_windows_(floor_, batches_, tasks_, dialogs_, task_views_, inventory_views_, packaging_views_,
                        settings_, units_, calc_settings_, ui_scale_),
       batch_windows_(batches_, floor_, dialogs_, settings_, units_, calc_settings_, ui_scale_),
+      ttb_window_(ttb_, batches_, packaged_goods_, ui_scale_),
       floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
                   packaging_views_, settings_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, settings_, units_, calc_settings_, ui_scale_),
@@ -70,6 +72,7 @@ void AppShell::draw() {
     if (show_floor_) floor_view_.draw(dockspace_id, &show_floor_);
     element_windows_.draw();
     batch_windows_.draw();
+    ttb_window_.draw();
     task_views_.draw();
     inventory_views_.draw();
     packaging_views_.draw();
@@ -94,6 +97,7 @@ void AppShell::draw_menu_bar() {
         ImGui::MenuItem("Batches", nullptr, batch_windows_.list_visible());
         ImGui::MenuItem("Tasks", nullptr, task_views_.window_visible());
         ImGui::MenuItem("Inventory", nullptr, inventory_views_.window_visible());
+        ImGui::MenuItem("TTB reports", nullptr, ttb_window_.visible());
         ImGui::Separator();
         if (ImGui::BeginMenu("Theme")) {
             if (ImGui::MenuItem("Dark", nullptr, theme_ == Theme::Dark)) set_theme(Theme::Dark);

@@ -1,5 +1,6 @@
 #include "ui/file_dialog.h"
 
+#include <algorithm>
 #include <string>
 
 #ifdef _WIN32
@@ -65,6 +66,31 @@ std::vector<std::filesystem::path> open_files_dialog(const char* title, const ch
     return files;
 }
 
+std::optional<std::filesystem::path> save_file_dialog(const char* title, const char* filter_name, const char* pattern,
+                                                      const char* extension, const char* suggested_name) {
+    std::wstring filter = widen(filter_name);
+    filter.push_back(L'\0');
+    filter += widen(pattern);
+    filter.push_back(L'\0');
+    filter.push_back(L'\0');
+    const std::wstring wide_title = widen(title);
+    const std::wstring wide_extension = widen(extension);
+
+    std::wstring buffer(32768, L'\0');
+    const std::wstring suggested = widen(suggested_name);
+    suggested.copy(buffer.data(), std::min(suggested.size(), buffer.size() - 1));
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof dialog;
+    dialog.lpstrFilter = filter.c_str();
+    dialog.lpstrFile = buffer.data();
+    dialog.nMaxFile = static_cast<DWORD>(buffer.size());
+    dialog.lpstrTitle = wide_title.c_str();
+    dialog.lpstrDefExt = wide_extension.c_str();
+    dialog.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetSaveFileNameW(&dialog)) return std::nullopt;
+    return std::filesystem::path(buffer.c_str());
+}
+
 #else
 
 std::vector<std::filesystem::path> open_files_dialog(const char* title, const char* filter_name, const char* pattern) {
@@ -95,6 +121,32 @@ std::vector<std::filesystem::path> open_files_dialog(const char* title, const ch
         return files;
     }
     return {};
+}
+
+std::optional<std::filesystem::path> save_file_dialog(const char* title, const char* /*filter_name*/,
+                                                      const char* pattern, const char* extension,
+                                                      const char* suggested_name) {
+    const std::string commands[] = {
+        std::string("zenity --file-selection --save --confirm-overwrite --title='") + title + "' --filename='" +
+            suggested_name + "' 2>/dev/null",
+        std::string("kdialog --getsavefilename '") + suggested_name + "' '" + pattern + "' 2>/dev/null",
+    };
+    for (const std::string& command : commands) {
+        FILE* pipe = popen(command.c_str(), "r");
+        if (!pipe) continue;
+        std::string output;
+        std::array<char, 4096> chunk{};
+        while (fgets(chunk.data(), static_cast<int>(chunk.size()), pipe)) output += chunk.data();
+        const int status = pclose(pipe);
+        constexpr int kCommandNotFound = 127;
+        if (WIFEXITED(status) && WEXITSTATUS(status) == kCommandNotFound) continue;  // try the next tool
+        while (!output.empty() && (output.back() == '\n' || output.back() == '\r')) output.pop_back();
+        if (output.empty()) return std::nullopt;
+        std::filesystem::path path(output);
+        if (!path.has_extension()) path += std::string(".") + extension;
+        return path;
+    }
+    return std::nullopt;
 }
 
 #endif

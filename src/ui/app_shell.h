@@ -9,6 +9,7 @@
 #include "app/recipe_service.h"
 #include "app/session.h"
 #include "app/task_service.h"
+#include "app/ttb_service.h"
 #include "calc/units.h"
 #include "data/database.h"
 #include "data/settings_repository.h"
@@ -25,6 +26,7 @@
 #include "ui/recipes/recipe_library_window.h"
 #include "ui/tasks/task_views.h"
 #include "ui/theme.h"
+#include "ui/ttb/ttb_window.h"
 
 #include <filesystem>
 #include <string>
@@ -73,12 +75,14 @@ private:
     app::PackagedGoodsService packaged_goods_;
     app::BatchService batches_;
     app::TaskService tasks_;
+    app::TtbService ttb_;
     CellarDialogs dialogs_;
     TaskViews task_views_;
     InventoryViews inventory_views_;
     PackagingViews packaging_views_;
     ElementWindows element_windows_;
     BatchWindows batch_windows_;
+    TtbWindow ttb_window_;
     FloorView floor_view_;
     RecipeEditors recipe_editors_;
     RecipeLibraryWindow recipe_library_;

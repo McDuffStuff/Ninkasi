@@ -113,6 +113,7 @@ add_executable(ninkasi
     src/ui/recipes/recipe_sections.cpp
     src/ui/tasks/task_views.cpp
     src/ui/theme.cpp
+    src/ui/ttb/ttb_window.cpp
     src/ui/widgets.cpp
     ${NINKASI_FONT_SOURCE}
 )

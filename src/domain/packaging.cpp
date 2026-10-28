@@ -3,6 +3,8 @@
 #include "calc/units.h"
 
 #include <algorithm>
+#include <cctype>
+#include <tuple>
 
 namespace ninkasi::domain {
 
@@ -36,6 +38,11 @@ constexpr EnumText<KegReason> kReasonTexts[] = {
 constexpr EnumText<PackagedReason> kPackagedTexts[] = {
     {PackagedReason::Packaged, "packaged", "Packaged"},
 };
+
+std::string lowercase(std::string text) {
+    for (char& c : text) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return text;
+}
 
 template <typename E, std::size_t N>
 const EnumText<E>& lookup(E value, const EnumText<E> (&table)[N]) {
@@ -85,6 +92,33 @@ KegDraw plan_keg_draw(KegCounts empty, int count) {
     draw.dirty = std::clamp(empty.dirty, 0, count - draw.clean);
     draw.unrecorded = count - draw.clean - draw.dirty;
     return draw;
+}
+
+std::vector<PackagedProduct> combine_by_beer(std::span<const PackagedStock> stock) {
+    std::vector<PackagedProduct> products;
+    for (const PackagedStock& entry : stock) {
+        const auto same = std::find_if(products.begin(), products.end(), [&](const PackagedProduct& product) {
+            return product.type == entry.type && product.unit_volume_l == entry.unit_volume_l &&
+                   lowercase(product.beer) == lowercase(entry.beer);
+        });
+        PackagedProduct& product = same != products.end() ? *same : products.emplace_back();
+        if (product.batches.empty()) {
+            product.beer = entry.beer;
+            product.type = entry.type;
+            product.unit_volume_l = entry.unit_volume_l;
+        }
+        product.count += entry.count;
+        product.batches.push_back(entry);
+    }
+    for (PackagedProduct& product : products) {
+        std::stable_sort(product.batches.begin(), product.batches.end(),
+                         [](const PackagedStock& a, const PackagedStock& b) { return a.packaged_at < b.packaged_at; });
+    }
+    std::stable_sort(products.begin(), products.end(), [](const PackagedProduct& a, const PackagedProduct& b) {
+        return std::tuple(lowercase(a.beer), a.type, a.unit_volume_l) <
+               std::tuple(lowercase(b.beer), b.type, b.unit_volume_l);
+    });
+    return products;
 }
 
 std::string_view name(PackageType type) { return lookup(type, kPackageTexts).name; }

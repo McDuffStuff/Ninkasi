@@ -64,7 +64,7 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 
 ### Packaging, packaged goods and kegs
 - **Package** (on a tank) counts what was filled: half-barrels (15.5 gal), sixtels (5.17 gal) and cans, in any mix. The packaged volume is what the packages hold, and when the run empties the tank, whatever the packages don't account for is the loss, shown with its percentage as you type. Cans are drawn from inventory (choose which cans; each says what it holds), and kegs from the keg cleaner.
-- **Packaged goods** is where packaged beer goes. Its window lists each beer by package, with the count, volume and packaging date, and a **Packaging log**; on the floor it shows how many half-barrels, sixtels and cans are on hand.
+- **Packaged goods** is where packaged beer goes. Its window lists each beer by package (half-barrels of Red Ale, say) with the count and volume, combining every batch of that beer; click one to see which batches make up the total. It also has a **Packaging log**. On the floor it shows how many half-barrels, sixtels and cans are on hand.
 - **The keg cleaner** keeps the empty kegs. **Add kegs** (new kegs, or kegs back from customers) puts them on its **Dirty kegs** tab; **Clean kegs** asks how many of each size were cleaned, and **Clean all** cleans every dirty keg. Packaging takes clean kegs first. If more were filled than are clean, the rest come from the dirty kegs (cleaned without it being logged), then from kegs the cleaner didn't know about, which are added as they're filled: packaging is never refused for want of kegs. The **Keg log** shows every change.
 
 ## Project layout

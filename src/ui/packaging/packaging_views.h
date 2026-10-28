@@ -63,6 +63,14 @@ private:
     app::PackagedGoodsService& goods_;
     float ui_scale_;
 
+    // The packaged product whose batches are shown.
+    struct Selection {
+        std::string beer;
+        domain::PackageType type = domain::PackageType::HalfBarrel;
+        double unit_volume_l = 0.0;
+    };
+    std::optional<Selection> selected_;
+
     // The keg and packaging logs, re-read when they change.
     std::uint64_t history_revision_ = 0;
     std::vector<data::KegMovementRow> history_;

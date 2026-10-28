@@ -627,18 +627,17 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
     // Packaged goods: each beer and its packages.
     if (element->type == domain::ElementType::PackagedGoods && !goods_.packaged().empty()) {
         ImGui::Separator();
-        const std::vector<domain::PackagedStock>& stock = goods_.packaged();
-        for (std::size_t i = 0; i < stock.size(); ++i) {
-            // One line per beer, at its first row.
-            const auto same_beer = [&](const domain::PackagedStock& entry) { return entry.batch_id == stock[i].batch_id; };
-            if (std::any_of(stock.begin(), stock.begin() + static_cast<std::ptrdiff_t>(i), same_beer)) continue;
+        // One line per beer: products come sorted by beer.
+        const std::vector<domain::PackagedProduct> products = domain::combine_by_beer(goods_.packaged());
+        for (std::size_t i = 0; i < products.size();) {
             std::string packages;
-            for (std::size_t j = i; j < stock.size(); ++j) {
-                if (stock[j].batch_id != stock[i].batch_id) continue;
+            std::size_t j = i;
+            for (; j < products.size() && products[j].beer == products[i].beer; ++j) {
                 if (!packages.empty()) packages += ", ";
-                packages += domain::count_text(stock[j].type, stock[j].count);
+                packages += domain::count_text(products[j].type, products[j].count);
             }
-            ImGui::Text("%s: %s", domain::batch_label(stock[i].batch_code, stock[i].beer).c_str(), packages.c_str());
+            ImGui::Text("%s: %s", products[i].beer.c_str(), packages.c_str());
+            i = j;
         }
     }
 

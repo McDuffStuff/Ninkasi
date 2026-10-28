@@ -71,20 +71,64 @@ void PackagingViews::draw_packaged_stock(const calc::UnitPreferences& units) {
     ImGui::TextDisabled("%s in all", calc::format(total_l, volume).c_str());
     ImGui::Spacing();
 
-    if (!ImGui::BeginTable("##packaged", 5, kListFlags | ImGuiTableFlags_ScrollY)) return;
+    // Each beer in each package, whatever batches it came from; clicking one
+    // shows its batches below.
+    const std::vector<domain::PackagedProduct> products = domain::combine_by_beer(stock);
+    const auto is_selected = [this](const domain::PackagedProduct& product) {
+        return selected_ && selected_->beer == product.beer && selected_->type == product.type &&
+               selected_->unit_volume_l == product.unit_volume_l;
+    };
+    const auto selected = std::find_if(products.begin(), products.end(), is_selected);
+    const float list_height = selected != products.end() ? ImGui::GetContentRegionAvail().y * 0.5f : 0.0f;
+    if (ImGui::BeginChild("##products", ImVec2(0.0f, list_height)) &&
+        ImGui::BeginTable("##packaged", 5, kListFlags | ImGuiTableFlags_ScrollY)) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("Beer", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Package");
+        ImGui::TableSetupColumn("Count");
+        ImGui::TableSetupColumn("Volume");
+        ImGui::TableSetupColumn("Batches");
+        ImGui::TableHeadersRow();
+        for (std::size_t i = 0; i < products.size(); ++i) {
+            const domain::PackagedProduct& product = products[i];
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (ImGui::Selectable(product.beer.c_str(), is_selected(product), ImGuiSelectableFlags_SpanAllColumns)) {
+                selected_ = Selection{product.beer, product.type, product.unit_volume_l};
+            }
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(package_text(product.type, product.unit_volume_l, units).c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%d", product.count);
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", calc::format(product.volume_l(), volume).c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%zu", product.batches.size());
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndChild();
+    if (selected == products.end()) return;
+
+    // The selected product's batches.
+    ImGui::Separator();
+    ImGui::Text("%s, %s", selected->beer.c_str(), package_text(selected->type, selected->unit_volume_l, units).c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s from %zu %s", domain::count_text(selected->type, selected->count).c_str(),
+                        selected->batches.size(), selected->batches.size() == 1 ? "batch" : "batches");
+    if (!ImGui::BeginTable("##batches", 4, kListFlags | ImGuiTableFlags_ScrollY)) return;
     ImGui::TableSetupScrollFreeze(0, 1);
-    ImGui::TableSetupColumn("Beer", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("Package");
+    ImGui::TableSetupColumn("Batch", ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupColumn("Count");
     ImGui::TableSetupColumn("Volume");
     ImGui::TableSetupColumn("Packaged");
     ImGui::TableHeadersRow();
-    for (const domain::PackagedStock& entry : stock) {
+    for (const domain::PackagedStock& entry : selected->batches) {
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         ImGui::TextUnformatted(domain::batch_label(entry.batch_code, entry.beer).c_str());
-        ImGui::TableNextColumn();
-        ImGui::TextUnformatted(package_text(entry.type, entry.unit_volume_l, units).c_str());
         ImGui::TableNextColumn();
         ImGui::Text("%d", entry.count);
         ImGui::TableNextColumn();

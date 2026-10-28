@@ -12,8 +12,10 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace ninkasi::domain {
 
@@ -115,6 +117,21 @@ struct PackagedStock {
 
     double volume_l() const { return unit_volume_l * count; }
 };
+
+// One beer in one kind and size of package, from however many batches.
+struct PackagedProduct {
+    std::string beer;
+    PackageType type = PackageType::HalfBarrel;
+    double unit_volume_l = 0.0;
+    int count = 0;                       // of all its batches
+    std::vector<PackagedStock> batches;  // oldest first
+
+    double volume_l() const { return unit_volume_l * count; }
+};
+
+// Packaged beer combined by beer (by name, ignoring case) and package (kind
+// and size), by beer name and then kegs before cans.
+std::vector<PackagedProduct> combine_by_beer(std::span<const PackagedStock> stock);
 
 // --- Names and stored keys ----------------------------------------------------
 // Keys are stored in the database: never change one once shipped.

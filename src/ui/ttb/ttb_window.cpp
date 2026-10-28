@@ -1,5 +1,6 @@
 #include "ui/ttb/ttb_window.h"
 
+#include "app/csv.h"
 #include "ui/display.h"
 #include "ui/file_dialog.h"
 #include "ui/widgets.h"
@@ -7,7 +8,7 @@
 #include <imgui.h>
 #include <imgui_stdlib.h>
 
-#include <fstream>
+#include <exception>
 
 namespace ninkasi::ui {
 
@@ -287,11 +288,13 @@ void TtbWindow::export_csv() {
     const std::optional<std::filesystem::path> path =
         save_file_dialog("Export TTB report", "CSV files", "*.csv", "csv", name.c_str());
     if (!path) return;
-    std::ofstream file(*path, std::ios::binary);
-    // A byte order mark, so spreadsheets read the file as UTF-8.
-    file << "\xEF\xBB\xBF" << ttb_.csv(report_);
-    const std::u8string where = path->filename().u8string();
-    status_ = (file ? "Saved " : "Couldn't write ") + std::string(where.begin(), where.end());
+    try {
+        app::write_csv_file(*path, ttb_.csv(report_));
+        const std::u8string saved = path->filename().u8string();
+        status_ = "Saved " + std::string(saved.begin(), saved.end());
+    } catch (const std::exception& e) {
+        status_ = e.what();
+    }
 }
 
 } // namespace ninkasi::ui

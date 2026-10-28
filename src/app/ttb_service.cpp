@@ -1,5 +1,7 @@
 #include "app/ttb_service.h"
 
+#include "app/csv.h"
+
 #include <cstdio>
 
 namespace ninkasi::app {
@@ -9,17 +11,6 @@ namespace {
 constexpr const char* kCadenceKey = "ttb.cadence";
 constexpr const char* kSmallBrewerKey = "ttb.small_brewer";
 constexpr const char* kBreweryNumberKey = "ttb.brewery_number";
-
-// A CSV field, quoted when it holds a comma or a quote.
-std::string field(std::string_view text) {
-    if (text.find_first_of(",\"\n") == std::string_view::npos) return std::string(text);
-    std::string quoted = "\"";
-    for (char c : text) {
-        if (c == '"') quoted += '"';
-        quoted += c;
-    }
-    return quoted + "\"";
-}
 
 std::string number(double value, int decimals) {
     char text[64];
@@ -88,29 +79,29 @@ std::string TtbService::csv(const TtbReport& report) const {
         text += "\r\n";
     };
 
-    row({field("TTB F 5130.9 Brewer's Report of Operations"), field(domain::period_label(report.period, report.cadence))});
-    row({"Brewery number", field(brewery_number_)});
+    row({csv_field("TTB F 5130.9 Brewer's Report of Operations"), csv_field(domain::period_label(report.period, report.cadence))});
+    row({"Brewery number", csv_field(brewery_number_)});
     row({"Period", domain::to_iso8601(report.period.first), domain::to_iso8601(report.period.last)});
     row({});
     row({"Part 1 - Beer Summary (barrels)"});
-    row({"Line", "Operations", field("(b) Cellar, bulk"), field("(c) Racking, bulk"), field("(d) Racking, keg"),
-         field("(e) Bottling, bulk"), field("(f) Bottling, case"), field("(g) Totals")});
+    row({"Line", "Operations", csv_field("(b) Cellar, bulk"), csv_field("(c) Racking, bulk"), csv_field("(d) Racking, keg"),
+         csv_field("(e) Bottling, bulk"), csv_field("(f) Bottling, case"), csv_field("(g) Totals")});
     for (int line = 1; line <= domain::kReportLines; ++line) {
         const auto cell = [&](ReportColumn column) {
             return number(domain::to_barrels(report.operations.at(line, column)), 2);
         };
-        row({std::to_string(line), field(domain::report_line_text(line)), cell(ReportColumn::Cellar),
+        row({std::to_string(line), csv_field(domain::report_line_text(line)), cell(ReportColumn::Cellar),
              cell(ReportColumn::RackingBulk), cell(ReportColumn::Kegs), cell(ReportColumn::BottlingBulk),
              cell(ReportColumn::Cases), cell(ReportColumn::Total)});
     }
     row({});
     row({"Excise tax"});
-    row({field("Taxable removals, lines 14 and 15 (barrels)"), number(report.tax.barrels, 2)});
-    row({field("Removed earlier this calendar year (barrels)"), number(report.earlier_taxable_barrels, 2)});
-    row({field("Barrels at $3.50"), number(report.tax.at_reduced, 2)});
-    row({field("Barrels at $16.00"), number(report.tax.at_middle, 2)});
-    row({field("Barrels at $18.00"), number(report.tax.at_full, 2)});
-    row({field("Tax ($)"), number(report.tax.tax, 2)});
+    row({csv_field("Taxable removals, lines 14 and 15 (barrels)"), number(report.tax.barrels, 2)});
+    row({csv_field("Removed earlier this calendar year (barrels)"), number(report.earlier_taxable_barrels, 2)});
+    row({csv_field("Barrels at $3.50"), number(report.tax.at_reduced, 2)});
+    row({csv_field("Barrels at $16.00"), number(report.tax.at_middle, 2)});
+    row({csv_field("Barrels at $18.00"), number(report.tax.at_full, 2)});
+    row({csv_field("Tax ($)"), number(report.tax.tax, 2)});
     return text;
 }
 

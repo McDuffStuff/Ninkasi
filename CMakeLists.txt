@@ -67,6 +67,7 @@ add_library(ninkasi_core STATIC
     src/data/recipe_repository.cpp
     src/data/settings_repository.cpp
     src/data/task_repository.cpp
+    src/data/ttb_repository.cpp
     src/app/batch_service.cpp
     src/app/beerjson_import.cpp
     src/app/calc_settings.cpp
@@ -78,6 +79,7 @@ add_library(ninkasi_core STATIC
     src/app/recipe_service.cpp
     src/app/session.cpp
     src/app/task_service.cpp
+    src/app/ttb_service.cpp
     src/app/unit_settings.cpp
 )
 target_link_libraries(ninkasi_core PUBLIC ninkasi_calc sqlite3 PRIVATE nlohmann_json)
@@ -146,6 +148,7 @@ if(NINKASI_BUILD_TESTS)
         tests/app/test_packaged_goods_service.cpp
         tests/app/test_recipe_service.cpp
         tests/app/test_task_service.cpp
+        tests/app/test_ttb_service.cpp
         tests/app/test_unit_settings.cpp
         tests/calc/test_alcohol.cpp
         tests/calc/test_bitterness.cpp

@@ -98,6 +98,7 @@ ninkasi_embed_file(${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf ${NINKASI_FO
 add_executable(ninkasi
     src/main.cpp
     src/ui/app_shell.cpp
+    src/ui/backup_window.cpp
     src/ui/cellar/batch_views.cpp
     src/ui/cellar/batch_windows.cpp
     src/ui/cellar/cellar_dialogs.cpp

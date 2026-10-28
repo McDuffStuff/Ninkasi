@@ -1,5 +1,6 @@
 #pragma once
-// The operating system's "open file" and "save file" dialogs.
+// The operating system's "open file", "save file" and "choose folder"
+// dialogs, and showing a folder in its file browser.
 
 #include <filesystem>
 #include <optional>
@@ -18,5 +19,12 @@ std::vector<std::filesystem::path> open_files_dialog(const char* title, const ch
 // Linux, if neither zenity nor kdialog is installed).
 std::optional<std::filesystem::path> save_file_dialog(const char* title, const char* filter_name, const char* pattern,
                                                       const char* extension, const char* suggested_name);
+
+// Lets the brewer choose a folder, starting in `start` if it exists. nullopt
+// if they cancel (or, on Linux, if neither zenity nor kdialog is installed).
+std::optional<std::filesystem::path> choose_folder_dialog(const char* title, const std::filesystem::path& start);
+
+// Opens `folder` in Explorer (or the desktop's file manager on Linux).
+void show_folder(const std::filesystem::path& folder);
 
 } // namespace ninkasi::ui

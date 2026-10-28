@@ -75,6 +75,11 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 - **Settings:** the reporting period, whether the brewery pays the small brewer rate, and its TTB brewery number. **Export CSV...** saves the report and the tax for a spreadsheet or for entering on Pay.gov.
 - Not covered yet: lines 35 and 36 (adjustments to earlier reports), the cereal beverage part, and the remarks.
 
+### Backups and export
+- **File > Back up now** saves a complete copy of the brewery's data in the backup folder ("backups" beside the database, unless you choose another). With **Every day** on (the default), a backup is also made the first time Ninkasi starts each day, and the newest 14 are kept.
+- **File > Backups and export** lists the backups. **Save a copy...** puts one anywhere (another drive, a shared folder). **Restore...** closes Ninkasi; the next time it starts, the backup replaces the current data, which is first saved as a backup of its own so nothing is lost.
+- **Export** saves the records as CSV files for a spreadsheet, one table at a time or all of them into a folder: batches, brews, ingredients used, readings, the volume ledger, inventory, stock in and out, invoices, packaged goods, the packaging and keg logs, tasks and the activity log.
+
 ## Project layout
 ```
 src/calc/     brewing math and unit conversions (pure, no DB/UI)

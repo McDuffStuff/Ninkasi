@@ -1,7 +1,9 @@
 #pragma once
 // The top-level UI: main menu bar, dockspace, and the windows docked into it.
 
+#include "app/backup_service.h"
 #include "app/batch_service.h"
+#include "app/export_service.h"
 #include "app/floor_service.h"
 #include "app/ingredient_library.h"
 #include "app/inventory_service.h"
@@ -14,6 +16,7 @@
 #include "data/database.h"
 #include "data/settings_repository.h"
 #include "domain/recipe_math.h"
+#include "ui/backup_window.h"
 #include "ui/cellar/batch_windows.h"
 #include "ui/cellar/cellar_dialogs.h"
 #include "ui/elements/element_windows.h"
@@ -37,8 +40,11 @@ namespace ninkasi::ui {
 class AppShell {
 public:
     // Requires an ImGui context; applies the saved theme immediately.
-    // `ui_scale` is the monitor's content scale (1.0 at 96 DPI).
-    AppShell(data::Database& db, app::Session session, std::string db_path, float ui_scale);
+    // `ui_scale` is the monitor's content scale (1.0 at 96 DPI). A
+    // `startup_notice` (a backup restored, say) is shown when it opens.
+    // Makes the day's automatic backup if one is due.
+    AppShell(data::Database& db, app::Session session, std::string db_path, float ui_scale,
+             std::string startup_notice = {});
 
     AppShell(const AppShell&) = delete;
     AppShell& operator=(const AppShell&) = delete;
@@ -56,6 +62,7 @@ private:
     void draw_menu_bar();
     void draw_units_menu();
     void draw_about_window();
+    void draw_notice();
     void set_theme(Theme theme);
     void set_units(const calc::UnitPreferences& units);
 
@@ -76,6 +83,8 @@ private:
     app::BatchService batches_;
     app::TaskService tasks_;
     app::TtbService ttb_;
+    app::BackupService backups_;
+    app::ExportService exports_;
     CellarDialogs dialogs_;
     TaskViews task_views_;
     InventoryViews inventory_views_;
@@ -83,6 +92,7 @@ private:
     ElementWindows element_windows_;
     BatchWindows batch_windows_;
     TtbWindow ttb_window_;
+    BackupWindow backup_window_;
     FloorView floor_view_;
     RecipeEditors recipe_editors_;
     RecipeLibraryWindow recipe_library_;
@@ -94,6 +104,7 @@ private:
     bool show_about_ = false;
     bool show_imgui_demo_ = false;
     bool quit_requested_ = false;
+    std::string notice_;  // shown once, then cleared
 };
 
 } // namespace ninkasi::ui

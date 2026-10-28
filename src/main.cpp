@@ -5,6 +5,7 @@
 //   --db  use a specific database file instead of the default one in the
 //         user data directory (handy for testing with a scratch brewery).
 
+#include "app/backup_service.h"
 #include "app/paths.h"
 #include "app/session.h"
 #include "data/database.h"
@@ -52,6 +53,16 @@ void glfw_error_callback(int error, const char* description) {
 
 int run(const Options& options) {
     using namespace ninkasi;
+
+    // A backup the brewer asked to restore replaces the data before it's opened.
+    std::string startup_notice;
+    try {
+        if (const std::optional<std::string> restored = app::restore_pending_backup(options.db_path)) {
+            startup_notice = *restored;
+        }
+    } catch (const std::exception& e) {
+        startup_notice = std::string("The backup couldn't be restored, so nothing has changed. ") + e.what();
+    }
 
     const std::string db_path = options.db_path.string();
     data::Database db(db_path);
@@ -106,7 +117,7 @@ int run(const Options& options) {
     ImGui_ImplOpenGL3_Init("#version 130");
 
     {
-        ui::AppShell shell(db, session, db_path, ui_scale);
+        ui::AppShell shell(db, session, db_path, ui_scale, startup_notice);
 
         // Files dropped onto the window go to the shell (e.g. BeerJSON recipes).
         glfwSetWindowUserPointer(window, &shell);

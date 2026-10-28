@@ -12,8 +12,12 @@
 #endif
 #include <windows.h>
 #include <commdlg.h>
+#include <shellapi.h>
+#include <shobjidl.h>
 #else
 #include <sys/wait.h>
+
+#include <cstdlib>
 
 #include <array>
 #include <cstdio>
@@ -91,6 +95,41 @@ std::optional<std::filesystem::path> save_file_dialog(const char* title, const c
     return std::filesystem::path(buffer.c_str());
 }
 
+std::optional<std::filesystem::path> choose_folder_dialog(const char* title, const std::filesystem::path& start) {
+    // The modern folder picker is a COM object.
+    const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    std::optional<std::filesystem::path> chosen;
+    IFileOpenDialog* dialog = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
+        DWORD options = 0;
+        dialog->GetOptions(&options);
+        dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR);
+        dialog->SetTitle(widen(title).c_str());
+        IShellItem* folder = nullptr;
+        if (std::filesystem::exists(start) &&
+            SUCCEEDED(SHCreateItemFromParsingName(start.wstring().c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
+            dialog->SetFolder(folder);
+            folder->Release();
+        }
+        IShellItem* result = nullptr;
+        if (SUCCEEDED(dialog->Show(nullptr)) && SUCCEEDED(dialog->GetResult(&result))) {
+            PWSTR path = nullptr;
+            if (SUCCEEDED(result->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+                chosen = std::filesystem::path(path);
+                CoTaskMemFree(path);
+            }
+            result->Release();
+        }
+        dialog->Release();
+    }
+    if (SUCCEEDED(com)) CoUninitialize();
+    return chosen;
+}
+
+void show_folder(const std::filesystem::path& folder) {
+    ShellExecuteW(nullptr, L"open", folder.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
 #else
 
 std::vector<std::filesystem::path> open_files_dialog(const char* title, const char* filter_name, const char* pattern) {
@@ -147,6 +186,33 @@ std::optional<std::filesystem::path> save_file_dialog(const char* title, const c
         return path;
     }
     return std::nullopt;
+}
+
+std::optional<std::filesystem::path> choose_folder_dialog(const char* title, const std::filesystem::path& start) {
+    const std::string commands[] = {
+        std::string("zenity --file-selection --directory --title='") + title + "' --filename='" + start.string() +
+            "/' 2>/dev/null",
+        std::string("kdialog --getexistingdirectory '") + start.string() + "' 2>/dev/null",
+    };
+    for (const std::string& command : commands) {
+        FILE* pipe = popen(command.c_str(), "r");
+        if (!pipe) continue;
+        std::string output;
+        std::array<char, 4096> chunk{};
+        while (fgets(chunk.data(), static_cast<int>(chunk.size()), pipe)) output += chunk.data();
+        const int status = pclose(pipe);
+        constexpr int kCommandNotFound = 127;
+        if (WIFEXITED(status) && WEXITSTATUS(status) == kCommandNotFound) continue;  // try the next tool
+        while (!output.empty() && (output.back() == '\n' || output.back() == '\r')) output.pop_back();
+        if (output.empty()) return std::nullopt;
+        return std::filesystem::path(output);
+    }
+    return std::nullopt;
+}
+
+void show_folder(const std::filesystem::path& folder) {
+    const std::string command = "xdg-open '" + folder.string() + "' >/dev/null 2>&1 &";
+    [[maybe_unused]] const int ignored = std::system(command.c_str());
 }
 
 #endif

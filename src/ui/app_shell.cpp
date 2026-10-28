@@ -6,6 +6,7 @@
 
 #include <imgui.h>
 
+#include <exception>
 #include <utility>
 
 namespace ninkasi::ui {
@@ -14,7 +15,8 @@ namespace {
 constexpr const char* kThemeKey = "ui.theme";
 }
 
-AppShell::AppShell(data::Database& db, app::Session session, std::string db_path, float ui_scale)
+AppShell::AppShell(data::Database& db, app::Session session, std::string db_path, float ui_scale,
+                   std::string startup_notice)
     : settings_(db),
       session_(std::move(session)),
       db_path_(std::move(db_path)),
@@ -29,6 +31,8 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
       batches_(db, session_, floor_, inventory_, packaged_goods_),
       tasks_(db, session_),
       ttb_(db, settings_),
+      backups_(db, settings_, std::filesystem::path(db_path_)),
+      exports_(db, units_),
       dialogs_(batches_, floor_, recipes_, inventory_, packaged_goods_, units_, calc_settings_, ui_scale_),
       task_views_(tasks_, floor_, batches_, ui_scale_),
       inventory_views_(inventory_, floor_, library_, units_, ui_scale_),
@@ -37,6 +41,7 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
                        settings_, units_, calc_settings_, ui_scale_),
       batch_windows_(batches_, floor_, dialogs_, settings_, units_, calc_settings_, ui_scale_),
       ttb_window_(ttb_, batches_, packaged_goods_, ui_scale_),
+      backup_window_(backups_, exports_, ui_scale_),
       floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
                   packaging_views_, settings_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, settings_, units_, calc_settings_, ui_scale_),
@@ -51,6 +56,16 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
     element_windows_.on_open_batch = [this](std::int64_t batch_id) { batch_windows_.open(batch_id); };
     floor_view_.on_open_batch = [this](std::int64_t batch_id) { batch_windows_.open(batch_id); };
     floor_view_.on_open_recipes = [this] { recipe_library_.show(); };
+    backup_window_.on_quit = [this] { quit_requested_ = true; };
+
+    // The day's backup, before anything changes.
+    notice_ = std::move(startup_notice);
+    try {
+        backups_.back_up_if_due();
+    } catch (const std::exception& e) {
+        if (!notice_.empty()) notice_ += "\n\n";
+        notice_ += std::string("Today's automatic backup couldn't be made. ") + e.what();
+    }
 }
 
 void AppShell::files_dropped(std::vector<std::filesystem::path> files) {
@@ -73,6 +88,7 @@ void AppShell::draw() {
     element_windows_.draw();
     batch_windows_.draw();
     ttb_window_.draw();
+    backup_window_.draw();
     task_views_.draw();
     inventory_views_.draw();
     packaging_views_.draw();
@@ -82,6 +98,7 @@ void AppShell::draw() {
     brewing_settings_.draw();
     dialogs_.draw();  // last: dialogs open over whatever asked for them
     if (show_about_) draw_about_window();
+    draw_notice();
     if (show_imgui_demo_) ImGui::ShowDemoWindow(&show_imgui_demo_);
 }
 
@@ -89,6 +106,12 @@ void AppShell::draw_menu_bar() {
     if (!ImGui::BeginMainMenuBar()) return;
 
     if (ImGui::BeginMenu("File")) {
+        if (ImGui::MenuItem("Back up now")) {
+            backup_window_.back_up_now();
+            backup_window_.show();
+        }
+        if (ImGui::MenuItem("Backups and export...")) backup_window_.show();
+        ImGui::Separator();
         if (ImGui::MenuItem("Quit", "Alt+F4")) quit_requested_ = true;
         ImGui::EndMenu();
     }
@@ -181,6 +204,23 @@ void AppShell::set_theme(Theme theme) {
 void AppShell::set_units(const calc::UnitPreferences& units) {
     units_ = units;  // the floor, element windows and recipes hold a reference to units_
     app::save_unit_preferences(settings_, units_);
+}
+
+void AppShell::draw_notice() {
+    constexpr const char* kPopup = "Ninkasi###notice";
+    if (notice_.empty()) return;
+    if (!ImGui::IsPopupOpen(kPopup)) ImGui::OpenPopup(kPopup);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::BeginPopupModal(kPopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 460.0f * ui_scale_);
+    ImGui::TextUnformatted(notice_.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    if (ImGui::Button("OK") || dialog_enter_pressed() || dialog_escape_pressed()) {
+        notice_.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }
 
 } // namespace ninkasi::ui

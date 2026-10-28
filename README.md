@@ -49,7 +49,7 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 ### Brewing and the cellar
 - **Log a brew** (on a brewhouse) is data entry after the fact: pick the recipe, check the batch code (the next number is suggested) and the brew date, then the knock-out: the tank, volume, OG and the ingredients actually used, which start at the recipe's amounts. Press Enter to save. To fill a big fermenter with several brews, choose **Another brew for a batch**.
 - **Knock-out later:** untick *Log the knock-out now* to save just the brew. The brewhouse then shows *Knock-out to log*; log it from the brewhouse (or the batch) whenever you get to it. The batch keeps its own copy of the recipe as brewed.
-- **In the cellar**, a tank's window or right-click menu has **Log reading** (hydrometer with temperature correction, refractometer with Terrill's correction, or a digital meter), **Transfer**, **Package**, **Correct volume** and **Dump**. Beer only goes into tanks that are empty, big enough and in service; moving it into a brite tank starts conditioning. A batch is finished when the last of it is packaged or dumped.
+- **In the cellar**, a tank's window or right-click menu has **Log reading** (hydrometer with temperature correction, refractometer with Terrill's correction, or a digital meter), **Transfer**, **Package** (see below), **Correct volume** and **Dump**. Beer only goes into tanks that are empty, big enough and in service; moving it into a brite tank starts conditioning. A batch is finished when the last of it is packaged or dumped.
 - **Tanks** that have been emptied are marked *Needs cleaning*; mark them clean, or out of service, from their window.
 - **View > Batches** lists every batch. A batch's window has its fermentation chart, readings, brews, the ingredients used, its volume history, its recipe and its log.
 - **View > Tasks** lists open tasks by due date; each piece of equipment also has its own **Tasks** tab, and a **Log** of everything that happened to it.
@@ -61,6 +61,11 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 - **Count** replaces the recorded stock with a stock count, and **Use or discard** takes stock out for anything other than a brew. Each is saved with Enter.
 - **Brews take what they used** at knock-out: the confirmed ingredient amounts come out of stock, oldest lot first, in the same step as the knock-out. The knock-out list shows what's on hand of each ingredient. Nothing is refused for lack of stock: if a brew uses more than was recorded, the item goes negative until the delivery it came from is logged, which settles it.
 - **Inventory elements** on the floor show how many items are stocked and how many are low; their window opens on the stock and has the **Invoices** and an **In and out** log of everything received, used and counted.
+
+### Packaging, packaged goods and kegs
+- **Package** (on a tank) counts what was filled: half-barrels (15.5 gal), sixtels (5.17 gal) and cans, in any mix. The packaged volume is what the packages hold, and when the run empties the tank, whatever the packages don't account for is the loss, shown with its percentage as you type. Cans are drawn from inventory (choose which cans; each says what it holds), and kegs from the keg cleaner.
+- **Packaged goods** is where packaged beer goes. Its window lists each beer by package, with the count, volume and packaging date, and a **Packaging log**; on the floor it shows how many half-barrels, sixtels and cans are on hand.
+- **The keg cleaner** keeps the empty kegs. **Add kegs** (new kegs, or kegs back from customers) puts them on its **Dirty kegs** tab; **Clean kegs** asks how many of each size were cleaned, and **Clean all** cleans every dirty keg. Packaging takes clean kegs first. If more were filled than are clean, the rest come from the dirty kegs (cleaned without it being logged), then from kegs the cleaner didn't know about, which are added as they're filled: packaging is never refused for want of kegs. The **Keg log** shows every change.
 
 ## Project layout
 ```

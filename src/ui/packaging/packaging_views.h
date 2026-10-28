@@ -1,10 +1,12 @@
 #pragma once
-// Kegs on screen: the keg cleaner's window (dirty kegs, clean kegs and the
-// keg log) and its dialogs for cleaning kegs, adding kegs and removing them.
-// Like the other dialogs, these log what already happened: fill them in and
-// press Enter.
+// Packaged beer and kegs on screen: the packaged goods window (what's on
+// hand and the packaging log), the keg cleaner's window (dirty kegs, clean
+// kegs and the keg log) and the keg cleaner's dialogs for cleaning kegs,
+// adding kegs and removing them. Like the other dialogs, these log what
+// already happened: fill them in and press Enter.
 
 #include "app/packaged_goods_service.h"
+#include "calc/units.h"
 #include "domain/packaging.h"
 #include "domain/timestamp.h"
 
@@ -21,6 +23,10 @@ namespace ninkasi::ui {
 class PackagingViews {
 public:
     PackagingViews(app::PackagedGoodsService& goods, float ui_scale);
+
+    // The packaged goods tabs.
+    void draw_packaged_stock(const calc::UnitPreferences& units);
+    void draw_packaging_log(const calc::UnitPreferences& units);
 
     // The keg cleaner's tabs.
     void draw_dirty_kegs();
@@ -57,9 +63,11 @@ private:
     app::PackagedGoodsService& goods_;
     float ui_scale_;
 
-    // The keg log, re-read when kegs change.
+    // The keg and packaging logs, re-read when they change.
     std::uint64_t history_revision_ = 0;
     std::vector<data::KegMovementRow> history_;
+    std::uint64_t packaging_revision_ = 0;
+    std::vector<data::PackagedMovementRow> packaging_log_;
 
     // The open dialog and its form.
     Kind kind_ = Kind::None;

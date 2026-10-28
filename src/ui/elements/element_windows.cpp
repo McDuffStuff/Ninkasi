@@ -171,6 +171,18 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
                 ImGui::EndTabItem();
             }
 
+            // Packaged goods opens on what's on hand.
+            if (element.type == domain::ElementType::PackagedGoods) {
+                if (ImGui::BeginTabItem("Stock")) {
+                    packaging_views_.draw_packaged_stock(units);
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Packaging log")) {
+                    packaging_views_.draw_packaging_log(units);
+                    ImGui::EndTabItem();
+                }
+            }
+
             // The keg cleaner opens on its dirty kegs.
             if (element.type == domain::ElementType::KegCleaner) {
                 if (ImGui::BeginTabItem("Dirty kegs")) {

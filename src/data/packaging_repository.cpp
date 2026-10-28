@@ -76,7 +76,10 @@ std::vector<domain::PackagedStock> PackagingRepository::packaged_stock() {
         "SELECT p.batch_id, b.code, b.name, p.package, p.unit_volume_l, SUM(p.quantity), MIN(p.at) "
         "FROM packaged_movements p JOIN batches b ON b.id = p.batch_id "
         "GROUP BY p.batch_id, p.package, p.unit_volume_l HAVING SUM(p.quantity) <> 0 "
-        "ORDER BY MIN(p.at), p.batch_id, p.package;");
+        // Each beer's packages together, beers in the order they were first
+        // packaged; kegs, then cans.
+        "ORDER BY (SELECT MIN(at) FROM packaged_movements WHERE batch_id = p.batch_id), p.batch_id, "
+        "CASE p.package WHEN 'half_barrel' THEN 0 WHEN 'sixtel' THEN 1 ELSE 2 END, p.unit_volume_l;");
     std::vector<domain::PackagedStock> stock;
     while (stmt.step()) {
         domain::PackagedStock entry;

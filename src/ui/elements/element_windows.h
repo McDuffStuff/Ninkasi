@@ -4,8 +4,9 @@
 // once), or maximized. The open windows are remembered between runs.
 //
 // Tanks show the batch they hold with its readings, a brewhouse logs brews
-// and lists those waiting for their knock-out, Inventory shows the stock, the
-// keg cleaner its kegs, and every piece of equipment has its tasks and log.
+// and lists those waiting for their knock-out, Inventory shows the stock,
+// Packaged goods the packaged beer, the keg cleaner its kegs, and every piece
+// of equipment has its tasks and log.
 
 #include "app/batch_service.h"
 #include "app/floor_service.h"

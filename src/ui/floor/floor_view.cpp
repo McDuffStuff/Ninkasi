@@ -465,6 +465,16 @@ void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& elemen
             if (kept > 0) lines.push_back({std::to_string(kept) + (kept == 1 ? " item" : " items"), small, muted});
             if (low > 0) lines.push_back({std::to_string(low) + " low", small, to_u32(kWarningColor)});
         }
+        if (element.type == domain::ElementType::PackagedGoods) {
+            // How many of each package are on hand.
+            for (domain::PackageType package : domain::kPackageTypes) {
+                int count = 0;
+                for (const domain::PackagedStock& entry : goods_.packaged()) {
+                    if (entry.type == package) count += entry.count;
+                }
+                if (count > 0) lines.push_back({domain::count_text(package, count), small, muted});
+            }
+        }
         if (element.type == domain::ElementType::KegCleaner) {
             // Empty kegs: dirty ones are waiting to be cleaned.
             int dirty = 0;
@@ -611,6 +621,24 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
                 ImGui::SameLine();
                 ImGui::Text("%s, brewed %s", domain::label(*waiting).c_str(), time_text(brew.started_at).c_str());
             }
+        }
+    }
+
+    // Packaged goods: each beer and its packages.
+    if (element->type == domain::ElementType::PackagedGoods && !goods_.packaged().empty()) {
+        ImGui::Separator();
+        const std::vector<domain::PackagedStock>& stock = goods_.packaged();
+        for (std::size_t i = 0; i < stock.size(); ++i) {
+            // One line per beer, at its first row.
+            const auto same_beer = [&](const domain::PackagedStock& entry) { return entry.batch_id == stock[i].batch_id; };
+            if (std::any_of(stock.begin(), stock.begin() + static_cast<std::ptrdiff_t>(i), same_beer)) continue;
+            std::string packages;
+            for (std::size_t j = i; j < stock.size(); ++j) {
+                if (stock[j].batch_id != stock[i].batch_id) continue;
+                if (!packages.empty()) packages += ", ";
+                packages += domain::count_text(stock[j].type, stock[j].count);
+            }
+            ImGui::Text("%s: %s", domain::batch_label(stock[i].batch_code, stock[i].beer).c_str(), packages.c_str());
         }
     }
 

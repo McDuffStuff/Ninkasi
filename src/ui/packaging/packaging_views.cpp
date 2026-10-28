@@ -2,6 +2,7 @@
 
 #include "ui/date_widgets.h"
 #include "ui/display.h"
+#include "ui/inventory/inventory_views.h"
 #include "ui/widgets.h"
 
 #include <imgui_stdlib.h>
@@ -30,10 +31,114 @@ const char* state_word(KegState state) {
     return state == KegState::Dirty ? "dirty" : "clean";
 }
 
+// "Half-barrels", or "Cans, 16.0 fl oz": the package and, for cans, their size.
+std::string package_text(PackageType type, double unit_volume_l, const calc::UnitPreferences& units) {
+    std::string text(domain::name(type));
+    if (!domain::is_keg(type)) text += ", " + calc::format(unit_volume_l, fill_volume_unit(units));
+    return text;
+}
+
 } // namespace
 
 PackagingViews::PackagingViews(app::PackagedGoodsService& goods, float ui_scale)
     : goods_(goods), ui_scale_(ui_scale) {}
+
+// --- Packaged goods -----------------------------------------------------------------
+
+void PackagingViews::draw_packaged_stock(const calc::UnitPreferences& units) {
+    const std::vector<domain::PackagedStock>& stock = goods_.packaged();
+    if (stock.empty()) {
+        wrapped_note("No packaged beer yet. Packaging a tank (its Package... button) puts the kegs and cans here.");
+        return;
+    }
+
+    // Totals of each package, then each beer's.
+    const calc::Unit volume = units.unit_for(calc::Measure::Volume);
+    std::string totals;
+    double total_l = 0.0;
+    for (PackageType type : domain::kPackageTypes) {
+        int count = 0;
+        for (const domain::PackagedStock& entry : stock) {
+            if (entry.type == type) count += entry.count;
+        }
+        if (count == 0) continue;
+        if (!totals.empty()) totals += " · ";
+        totals += domain::count_text(type, count);
+    }
+    for (const domain::PackagedStock& entry : stock) total_l += entry.volume_l();
+    ImGui::TextUnformatted(totals.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s in all", calc::format(total_l, volume).c_str());
+    ImGui::Spacing();
+
+    if (!ImGui::BeginTable("##packaged", 5, kListFlags | ImGuiTableFlags_ScrollY)) return;
+    ImGui::TableSetupScrollFreeze(0, 1);
+    ImGui::TableSetupColumn("Beer", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Package");
+    ImGui::TableSetupColumn("Count");
+    ImGui::TableSetupColumn("Volume");
+    ImGui::TableSetupColumn("Packaged");
+    ImGui::TableHeadersRow();
+    for (const domain::PackagedStock& entry : stock) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(domain::batch_label(entry.batch_code, entry.beer).c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(package_text(entry.type, entry.unit_volume_l, units).c_str());
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", entry.count);
+        ImGui::TableNextColumn();
+        ImGui::TextDisabled("%s", calc::format(entry.volume_l(), volume).c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextDisabled("%s", date_text(domain::local_date(entry.packaged_at)).c_str());
+    }
+    ImGui::EndTable();
+}
+
+void PackagingViews::draw_packaging_log(const calc::UnitPreferences& units) {
+    if (packaging_revision_ != goods_.revision()) {
+        packaging_log_ = goods_.packaged_history(300);
+        packaging_revision_ = goods_.revision();
+    }
+    if (packaging_log_.empty()) {
+        wrapped_note("Nothing has been packaged yet.");
+        return;
+    }
+    if (!ImGui::BeginTable("##packaging_log", 6, kListFlags | ImGuiTableFlags_ScrollY)) return;
+    ImGui::TableSetupScrollFreeze(0, 1);
+    ImGui::TableSetupColumn("When");
+    ImGui::TableSetupColumn("Change");
+    ImGui::TableSetupColumn("Beer");
+    ImGui::TableSetupColumn("What");
+    ImGui::TableSetupColumn("Note", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Who");
+    ImGui::TableHeadersRow();
+    for (const data::PackagedMovementRow& row : packaging_log_) {
+        const domain::PackagedMovement& movement = row.movement;
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextDisabled("%s", time_text(movement.at).c_str());
+        ImGui::TableNextColumn();
+        std::string change = (movement.quantity > 0 ? "+" : "-") +
+                             domain::count_text(movement.type, std::abs(movement.quantity));
+        if (!domain::is_keg(movement.type)) {
+            change += " (" + calc::format(movement.unit_volume_l, fill_volume_unit(units)) + ")";
+        }
+        ImGui::TextColored(movement.quantity > 0 ? kGoodColor : ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s",
+                           change.c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(domain::batch_label(row.batch_code, row.beer).c_str());
+        ImGui::TableNextColumn();
+        std::string what(domain::name(movement.reason));
+        if (!row.vessel_name.empty()) what += " from " + row.vessel_name;
+        ImGui::TextUnformatted(what.c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(movement.note.c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextDisabled("%s", movement.user.c_str());
+    }
+    ImGui::EndTable();
+}
 
 // --- The keg cleaner ----------------------------------------------------------------
 

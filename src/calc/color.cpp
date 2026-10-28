@@ -1,6 +1,7 @@
 #include "calc/color.h"
 
 #include "calc/common.h"
+#include "calc/formulas.h"
 #include "calc/units.h"
 
 #include <algorithm>
@@ -21,11 +22,11 @@ double srm_from_mcu(double mcu, ColorModel model) {
     if (!(mcu >= 0.0)) return kInvalid;
     switch (model) {
     case ColorModel::Morey:
-        return 1.4922 * std::pow(mcu, 0.6859);
+        return with_formula(Formula::MoreySrm, {mcu}, [&] { return 1.4922 * std::pow(mcu, 0.6859); });
     case ColorModel::Daniels:
-        return std::min(mcu, 0.2 * mcu + 8.4);
+        return with_formula(Formula::DanielsSrm, {mcu}, [&] { return std::min(mcu, 0.2 * mcu + 8.4); });
     case ColorModel::Mosher:
-        return std::min(mcu, 0.3 * mcu + 4.7);
+        return with_formula(Formula::MosherSrm, {mcu}, [&] { return std::min(mcu, 0.3 * mcu + 4.7); });
     }
     return kInvalid;
 }

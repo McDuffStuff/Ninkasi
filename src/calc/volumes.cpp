@@ -1,6 +1,7 @@
 #include "calc/volumes.h"
 
 #include "calc/common.h"
+#include "calc/formulas.h"
 
 #include <algorithm>
 
@@ -29,15 +30,26 @@ BrewVolumes plan_brew_volumes(const BrewVolumeInputs& in) {
 
     BrewVolumes v;
     v.fermenter_volume_l = in.fermenter_volume_l;
-    v.knockout_volume_l = in.fermenter_volume_l + in.kettle_loss_l;
-    v.post_boil_volume_l = v.knockout_volume_l / (1.0 - in.cooling_shrinkage);
-    v.pre_boil_volume_l = v.post_boil_volume_l + in.boil_off_l_per_hr * in.boil_time_min / 60.0;
+    v.knockout_volume_l = with_formula(Formula::KnockoutVolume, {in.fermenter_volume_l, in.kettle_loss_l},
+                                       [&] { return in.fermenter_volume_l + in.kettle_loss_l; });
+    v.post_boil_volume_l = with_formula(Formula::PostBoilVolume, {v.knockout_volume_l, in.cooling_shrinkage},
+                                        [&] { return v.knockout_volume_l / (1.0 - in.cooling_shrinkage); });
+    v.pre_boil_volume_l =
+        with_formula(Formula::PreBoilVolume, {v.post_boil_volume_l, in.boil_off_l_per_hr, in.boil_time_min},
+                     [&] { return v.post_boil_volume_l + in.boil_off_l_per_hr * in.boil_time_min / 60.0; });
 
-    v.total_water_l = v.pre_boil_volume_l + in.grain_mass_kg * in.grain_absorption_l_per_kg + in.mash_tun_loss_l;
+    v.total_water_l = with_formula(
+        Formula::TotalWater, {v.pre_boil_volume_l, in.grain_mass_kg, in.grain_absorption_l_per_kg, in.mash_tun_loss_l},
+        [&] { return v.pre_boil_volume_l + in.grain_mass_kg * in.grain_absorption_l_per_kg + in.mash_tun_loss_l; });
     // A thin enough mash can use all the water; then there's nothing to sparge.
-    v.strike_water_l = std::min(in.grain_mass_kg * in.mash_thickness_l_per_kg, v.total_water_l);
-    v.sparge_water_l = v.total_water_l - v.strike_water_l;
-    v.mash_volume_l = v.strike_water_l + in.grain_mass_kg * in.grain_displacement_l_per_kg;
+    v.strike_water_l =
+        with_formula(Formula::StrikeWater, {in.grain_mass_kg, in.mash_thickness_l_per_kg, v.total_water_l},
+                     [&] { return std::min(in.grain_mass_kg * in.mash_thickness_l_per_kg, v.total_water_l); });
+    v.sparge_water_l = with_formula(Formula::SpargeWater, {v.total_water_l, v.strike_water_l},
+                                    [&] { return v.total_water_l - v.strike_water_l; });
+    v.mash_volume_l =
+        with_formula(Formula::MashVolume, {v.strike_water_l, in.grain_mass_kg, in.grain_displacement_l_per_kg},
+                     [&] { return v.strike_water_l + in.grain_mass_kg * in.grain_displacement_l_per_kg; });
     return v;
 }
 

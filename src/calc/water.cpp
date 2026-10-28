@@ -1,6 +1,7 @@
 #include "calc/water.h"
 
 #include "calc/common.h"
+#include "calc/formulas.h"
 
 #include <algorithm>
 #include <array>
@@ -140,13 +141,19 @@ WaterProfile add_salts(const WaterProfile& water, std::span<const SaltAddition> 
     for (const SaltAddition& addition : additions) {
         if (!(addition.mass_kg >= 0.0)) return invalid_profile();
         const SaltRow& salt = row(addition.salt);
-        const double mmol_per_l = addition.mass_kg * 1.0e6 / salt.molar_mass / volume_l;
-        result.calcium += mmol_per_l * salt.calcium * kCalcium;
-        result.magnesium += mmol_per_l * salt.magnesium * kMagnesium;
-        result.sodium += mmol_per_l * salt.sodium * kSodium;
-        result.chloride += mmol_per_l * salt.chloride * kChlorine;
-        result.sulfate += mmol_per_l * salt.sulfate * kSulfate;
-        result.bicarbonate += mmol_per_l * salt.bicarbonate * kBicarbonate;
+        // ppm of an ion with this molar mass, `count` of them in each unit of the salt.
+        const auto ppm = [&](double count, double ion_mass) {
+            return with_formula(Formula::SaltIons, {addition.mass_kg, salt.molar_mass, volume_l, count, ion_mass}, [&] {
+                const double mmol_per_l = addition.mass_kg * 1.0e6 / salt.molar_mass / volume_l;
+                return mmol_per_l * count * ion_mass;
+            });
+        };
+        result.calcium += ppm(salt.calcium, kCalcium);
+        result.magnesium += ppm(salt.magnesium, kMagnesium);
+        result.sodium += ppm(salt.sodium, kSodium);
+        result.chloride += ppm(salt.chloride, kChlorine);
+        result.sulfate += ppm(salt.sulfate, kSulfate);
+        result.bicarbonate += ppm(salt.bicarbonate, kBicarbonate);
     }
     return result;
 }
@@ -160,18 +167,22 @@ WaterProfile blend(const WaterProfile& a, double a_volume_l, const WaterProfile&
 }
 
 double alkalinity(const WaterProfile& water) {
-    return water.bicarbonate / kBicarbonate * kCalciumCarbonateEq;
+    return with_formula(Formula::Alkalinity, {water.bicarbonate},
+                        [&] { return water.bicarbonate / kBicarbonate * kCalciumCarbonateEq; });
 }
 
 double residual_alkalinity(const WaterProfile& water) {
-    const double meq_per_l = water.bicarbonate / kBicarbonate - water.calcium / kCalciumEq / 3.5 -
-                             water.magnesium / kMagnesiumEq / 7.0;
-    return meq_per_l * kCalciumCarbonateEq;
+    return with_formula(Formula::ResidualAlkalinity, {water.bicarbonate, water.calcium, water.magnesium}, [&] {
+        const double meq_per_l = water.bicarbonate / kBicarbonate - water.calcium / kCalciumEq / 3.5 -
+                                 water.magnesium / kMagnesiumEq / 7.0;
+        return meq_per_l * kCalciumCarbonateEq;
+    });
 }
 
 double sulfate_chloride_ratio(const WaterProfile& water) {
     if (!(water.chloride > 0.0)) return kInvalid;
-    return water.sulfate / water.chloride;
+    return with_formula(Formula::SulfateChlorideRatio, {water.sulfate, water.chloride},
+                        [&] { return water.sulfate / water.chloride; });
 }
 
 // --- Acids ------------------------------------------------------------------
@@ -204,7 +215,8 @@ double default_di_ph(MaltCategory category, double color_lovibond) {
     case MaltCategory::Acidulated:  // its lactic acid is counted separately
         return 5.7;
     case MaltCategory::Crystal:
-        return std::clamp(5.38 - 0.0144 * (color_lovibond - 10.0), 4.5, 5.6);
+        return with_formula(Formula::CrystalMaltPh, {color_lovibond},
+                            [&] { return std::clamp(5.38 - 0.0144 * (color_lovibond - 10.0), 4.5, 5.6); });
     case MaltCategory::Roasted:
         return 4.7;
     }

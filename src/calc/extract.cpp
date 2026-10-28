@@ -1,6 +1,7 @@
 #include "calc/extract.h"
 
 #include "calc/common.h"
+#include "calc/formulas.h"
 #include "calc/gravity.h"
 #include "calc/units.h"
 
@@ -8,12 +9,29 @@ namespace ninkasi::calc {
 
 double extract_kg(double volume_l, double sg) {
     if (!(volume_l >= 0.0)) return kInvalid;
-    const double wort_mass_kg = volume_l * sg * kWaterDensityKgPerL;
-    return wort_mass_kg * sg_to_plato(sg) / 100.0;
+    const double plato = sg_to_plato(sg);
+    return with_formula(Formula::ExtractMass, {volume_l, sg, plato}, [&] {
+        const double wort_mass_kg = volume_l * sg * kWaterDensityKgPerL;
+        return wort_mass_kg * plato / 100.0;
+    });
 }
 
 double sg_from_extract(double extract_mass_kg, double volume_l) {
     if (!(volume_l > 0.0) || !(extract_mass_kg >= 0.0)) return kInvalid;
+    if (adjusted_formula(Formula::ExtractMass)) {
+        // An adjusted extract formula is solved by halving the range the gravity can be in.
+        double low = 0.5;
+        double high = 2.0;
+        for (int i = 0; i < 100; ++i) {
+            const double middle = (low + high) / 2.0;
+            if (extract_kg(volume_l, middle) < extract_mass_kg) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        return (low + high) / 2.0;
+    }
     // extract = volume × water density × SG × °P / 100, and °P depends on SG,
     // so iterate: guess SG, work out the °P that implies, convert back.
     // Each step shrinks the error ~10x or more, so this converges quickly.
@@ -48,11 +66,12 @@ double expected_extract_kg(std::span<const Fermentable> fermentables, double mas
 
 double efficiency(double actual_kg, double potential_kg) {
     if (!(potential_kg > 0.0) || !(actual_kg >= 0.0)) return kInvalid;
-    return actual_kg / potential_kg;
+    return with_formula(Formula::Efficiency, {actual_kg, potential_kg}, [&] { return actual_kg / potential_kg; });
 }
 
 double as_is_yield(double dry_basis_extract, double moisture, double fine_coarse_difference) {
-    return (dry_basis_extract - fine_coarse_difference) * (1.0 - moisture);
+    return with_formula(Formula::AsIsYield, {dry_basis_extract, fine_coarse_difference, moisture},
+                        [&] { return (dry_basis_extract - fine_coarse_difference) * (1.0 - moisture); });
 }
 
 double potential_sg_from_yield(double yield) {

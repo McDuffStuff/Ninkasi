@@ -32,6 +32,7 @@ add_library(ninkasi_calc STATIC
     src/calc/color.cpp
     src/calc/expression.cpp
     src/calc/extract.cpp
+    src/calc/formulas.cpp
     src/calc/gravity.cpp
     src/calc/latex.cpp
     src/calc/units.cpp
@@ -177,6 +178,7 @@ if(NINKASI_BUILD_TESTS)
         tests/calc/test_color.cpp
         tests/calc/test_expression.cpp
         tests/calc/test_extract.cpp
+        tests/calc/test_formulas.cpp
         tests/calc/test_gravity.cpp
         tests/calc/test_units.cpp
         tests/calc/test_volumes.cpp

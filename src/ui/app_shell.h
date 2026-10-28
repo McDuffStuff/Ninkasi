@@ -68,8 +68,9 @@ private:
 
     // Declaration order matters: later members are built from earlier ones,
     // and are destroyed (and save their work) first.
-    data::SettingsRepository settings_;
+    data::SettingsRepository settings_;  // the brewery's
     app::Session session_;
+    data::SettingsRepository personal_;  // the signed-in person's: theme, open windows, floor view
     std::string db_path_;
     float ui_scale_;
     Theme theme_ = Theme::Dark;

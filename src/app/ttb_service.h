@@ -4,6 +4,7 @@
 // and the brewery's TTB settings: how often it reports, whether it pays the
 // small brewer rate, and its TTB brewery number.
 
+#include "app/session.h"
 #include "data/database.h"
 #include "data/settings_repository.h"
 #include "data/ttb_repository.h"
@@ -24,9 +25,9 @@ struct TtbReport {
 
 class TtbService {
 public:
-    TtbService(data::Database& db, data::SettingsRepository& settings);
+    TtbService(data::Database& db, Session session, data::SettingsRepository& settings);
 
-    // --- Settings, saved as they change ------------------------------------------
+    // --- Settings, saved as they change; admins only (NotAllowed otherwise) ----------
     domain::ReportCadence cadence() const { return cadence_; }
     void set_cadence(domain::ReportCadence cadence);
     // Whether the brewery qualifies for the $3.50 rate: a domestic brewer
@@ -43,6 +44,7 @@ public:
     std::string csv(const TtbReport& report) const;
 
 private:
+    Session session_;
     data::SettingsRepository& settings_;
     data::TtbRepository repository_;
     domain::ReportCadence cadence_ = domain::ReportCadence::Quarterly;

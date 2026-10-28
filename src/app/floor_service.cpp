@@ -47,6 +47,7 @@ domain::Element& FloorService::get(std::int64_t id) {
 }
 
 std::int64_t FloorService::add(domain::ElementType type, double center_x, double center_y) {
+    require_admin(session_, "add equipment");
     const domain::ElementTypeInfo& type_info = domain::info(type);
 
     domain::Element element;
@@ -66,6 +67,7 @@ std::int64_t FloorService::add(domain::ElementType type, double center_x, double
 }
 
 void FloorService::set_rect(std::int64_t id, const domain::Rect& rect) {
+    require_admin(session_, "move equipment");
     domain::Element updated = get(id);
     updated.rect = with_minimum_size(rect);
     repository_.update(updated);
@@ -73,6 +75,7 @@ void FloorService::set_rect(std::int64_t id, const domain::Rect& rect) {
 }
 
 void FloorService::rename(std::int64_t id, std::string_view name) {
+    require_admin(session_, "rename equipment");
     const std::string_view trimmed = trim(name);
     if (trimmed.empty()) throw std::invalid_argument("an element's name can't be blank");
 
@@ -89,6 +92,7 @@ void FloorService::rename(std::int64_t id, std::string_view name) {
 }
 
 void FloorService::set_capacity(std::int64_t id, std::optional<double> capacity_l) {
+    require_admin(session_, "change equipment's capacity");
     if (capacity_l && !(*capacity_l >= 0.0)) throw std::invalid_argument("capacity can't be negative");
 
     domain::Element updated = get(id);
@@ -114,6 +118,7 @@ std::optional<std::string> FloorService::removal_blocker(std::int64_t id) {
 }
 
 void FloorService::remove(std::int64_t id) {
+    require_admin(session_, "remove equipment");
     if (const std::optional<std::string> blocker = removal_blocker(id)) throw std::invalid_argument(*blocker);
     const domain::Element& element = get(id);
     const std::string details = std::string(domain::info(element.type).name) + " \"" + element.name + "\"";

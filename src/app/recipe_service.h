@@ -39,6 +39,7 @@ public:
 
     // The template new recipes start from; its ingredient lists are ignored.
     domain::Recipe defaults();
+    // Admins only (NotAllowed otherwise).
     void set_defaults(const domain::Recipe& defaults);
 
 private:

@@ -1,5 +1,7 @@
 #include "app/ttb_service.h"
 
+#include <utility>
+
 #include "app/csv.h"
 
 #include <cstdio>
@@ -20,8 +22,8 @@ std::string number(double value, int decimals) {
 
 } // namespace
 
-TtbService::TtbService(data::Database& db, data::SettingsRepository& settings)
-    : settings_(settings), repository_(db) {
+TtbService::TtbService(data::Database& db, Session session, data::SettingsRepository& settings)
+    : session_(std::move(session)), settings_(settings), repository_(db) {
     cadence_ = domain::report_cadence_from_key(settings_.get_or(kCadenceKey, "quarterly"))
                    .value_or(domain::ReportCadence::Quarterly);
     small_brewer_ = settings_.get_or(kSmallBrewerKey, "1") != "0";
@@ -29,16 +31,19 @@ TtbService::TtbService(data::Database& db, data::SettingsRepository& settings)
 }
 
 void TtbService::set_cadence(domain::ReportCadence cadence) {
+    require_admin(session_, "change the TTB settings");
     cadence_ = cadence;
     settings_.set(kCadenceKey, domain::key(cadence));
 }
 
 void TtbService::set_small_brewer(bool small_brewer) {
+    require_admin(session_, "change the TTB settings");
     small_brewer_ = small_brewer;
     settings_.set(kSmallBrewerKey, small_brewer ? "1" : "0");
 }
 
 void TtbService::set_brewery_number(std::string_view number) {
+    require_admin(session_, "change the TTB settings");
     brewery_number_ = std::string(number);
     settings_.set(kBreweryNumberKey, brewery_number_);
 }

@@ -39,7 +39,7 @@ struct Brewery {
     app::InventoryService inventory{db, session};
     app::PackagedGoodsService goods{db, session};
     app::BatchService batches{db, session, floor, inventory, goods};
-    app::TtbService ttb{db, settings};
+    app::TtbService ttb{db, session, settings};
     std::int64_t brewhouse = floor.add(domain::ElementType::Brewhouse, 0.0, 0.0);
     std::int64_t fermenter = floor.add(domain::ElementType::Fermenter, 0.0, 0.0);
 };
@@ -97,7 +97,7 @@ TEST_CASE("TTB settings are remembered") {
     brewery.ttb.set_small_brewer(false);
     brewery.ttb.set_brewery_number("BR-CA-12345");
 
-    app::TtbService again{brewery.db, brewery.settings};
+    app::TtbService again{brewery.db, brewery.session, brewery.settings};
     CHECK(again.cadence() == domain::ReportCadence::Monthly);
     CHECK_FALSE(again.small_brewer());
     CHECK(again.brewery_number() == "BR-CA-12345");

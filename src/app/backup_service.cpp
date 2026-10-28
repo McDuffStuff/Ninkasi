@@ -85,8 +85,9 @@ void write_backup(data::Database& db, const fs::path& path) {
     }
 }
 
-BackupService::BackupService(data::Database& db, data::SettingsRepository& settings, fs::path db_path)
-    : db_(db), settings_(settings), db_path_(std::move(db_path)) {
+BackupService::BackupService(data::Database& db, Session session, data::SettingsRepository& settings,
+                             fs::path db_path)
+    : db_(db), session_(std::move(session)), settings_(settings), db_path_(std::move(db_path)) {
     automatic_ = settings_.get_or(kAutomaticKey, "1") != "0";
     try {
         keep_ = std::max(1, std::stoi(settings_.get_or(kKeepKey, "14")));
@@ -98,16 +99,19 @@ BackupService::BackupService(data::Database& db, data::SettingsRepository& setti
 }
 
 void BackupService::set_automatic(bool automatic) {
+    require_admin(session_, "change the backup settings");
     automatic_ = automatic;
     settings_.set(kAutomaticKey, automatic ? "1" : "0");
 }
 
 void BackupService::set_keep(int keep) {
+    require_admin(session_, "change the backup settings");
     keep_ = std::max(1, keep);
     settings_.set(kKeepKey, std::to_string(keep_));
 }
 
 void BackupService::set_folder(const fs::path& folder) {
+    require_admin(session_, "change the backup settings");
     folder_ = folder;
     settings_.set(kFolderKey, utf8(folder));
 }
@@ -163,6 +167,7 @@ void BackupService::prune() {
 }
 
 void BackupService::restore_on_next_start(const fs::path& backup) {
+    require_admin(session_, "restore a backup");
     if (!fs::exists(backup)) throw std::runtime_error("There is no backup at " + utf8(backup) + ".");
     // The backup to restore, then where to save the data it replaces.
     std::ofstream marker(restore_marker(db_path_), std::ios::binary | std::ios::trunc);
@@ -178,6 +183,7 @@ std::optional<fs::path> BackupService::pending_restore() const {
 }
 
 void BackupService::cancel_restore() {
+    require_admin(session_, "cancel a restore");
     std::error_code error;
     fs::remove(restore_marker(db_path_), error);
 }

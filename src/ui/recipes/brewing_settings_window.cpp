@@ -35,10 +35,12 @@ void row(const char* label, float width) {
 
 } // namespace
 
-BrewingSettingsWindow::BrewingSettingsWindow(domain::CalcSettings& calc_settings, data::SettingsRepository& settings,
-                                             app::RecipeService& recipes, app::IngredientLibrary& library,
-                                             const calc::UnitPreferences& units, float ui_scale)
-    : calc_settings_(calc_settings),
+BrewingSettingsWindow::BrewingSettingsWindow(const app::Session& session, domain::CalcSettings& calc_settings,
+                                             data::SettingsRepository& settings, app::RecipeService& recipes,
+                                             app::IngredientLibrary& library, const calc::UnitPreferences& units,
+                                             float ui_scale)
+    : session_(session),
+      calc_settings_(calc_settings),
       settings_(settings),
       recipes_(recipes),
       library_(library),
@@ -60,7 +62,7 @@ void BrewingSettingsWindow::show() {
 }
 
 void BrewingSettingsWindow::save() {
-    if (calc_dirty_) app::save_calc_settings(settings_, calc_settings_);
+    if (calc_dirty_) app::save_calc_settings(session_, settings_, calc_settings_);
     if (defaults_dirty_) recipes_.set_defaults(defaults_);
     calc_dirty_ = defaults_dirty_ = false;
 }

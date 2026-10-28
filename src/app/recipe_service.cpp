@@ -98,6 +98,7 @@ domain::Recipe RecipeService::defaults() {
 }
 
 void RecipeService::set_defaults(const domain::Recipe& defaults) {
+    require_admin(session_, "change the defaults for new recipes");
     // Only the brewery-wide settings matter; drop any ingredients.
     domain::Recipe stored = defaults;
     stored.id = 0;

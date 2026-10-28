@@ -18,7 +18,9 @@ domain::CalcSettings load_calc_settings(data::SettingsRepository& settings) {
     }
 }
 
-void save_calc_settings(data::SettingsRepository& settings, const domain::CalcSettings& calc_settings) {
+void save_calc_settings(const Session& by, data::SettingsRepository& settings,
+                        const domain::CalcSettings& calc_settings) {
+    require_admin(by, "change the brewing settings");
     settings.set(kKey, data::to_json(calc_settings));
 }
 

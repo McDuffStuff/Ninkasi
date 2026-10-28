@@ -322,6 +322,33 @@ constexpr Migration kMigrations[] = {
         );
         CREATE INDEX packaged_by_batch ON packaged_movements (batch_id, package);
     )sql"},
+    {10, R"sql(
+        -- Signing in. People who leave are made inactive rather than deleted,
+        -- so the records they made keep their name. `username` now holds the
+        -- name in lower case, which keeps names unique whatever their case.
+        ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE users ADD COLUMN last_sign_in TEXT;
+        UPDATE users SET username = lower(display_name);
+
+        -- Each person's own preferences: theme, window layout, which windows
+        -- are open and where the floor is scrolled to.
+        CREATE TABLE user_settings (
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            key     TEXT NOT NULL,
+            value   TEXT NOT NULL,
+            PRIMARY KEY (user_id, key)
+        );
+
+        -- Until now these were kept with the brewery's settings, for its one user.
+        INSERT INTO user_settings (user_id, key, value)
+            SELECT u.id, s.key, s.value FROM settings s, users u
+            WHERE u.id = (SELECT MIN(id) FROM users)
+              AND s.key IN ('ui.theme', 'floor.view', 'floor.open_elements', 'batches.open_windows',
+                          'recipes.open_editors', 'recipes.editor_tab');
+        DELETE FROM settings
+            WHERE key IN ('ui.theme', 'floor.view', 'floor.open_elements', 'batches.open_windows',
+                          'recipes.open_editors', 'recipes.editor_tab');
+    )sql"},
 };
 
 } // namespace

@@ -107,7 +107,7 @@ TEST_CASE("calculation settings persist") {
     domain::CalcSettings chosen;
     chosen.ibu.formula = calc::IbuFormula::Rager;
     chosen.color_model = calc::ColorModel::Daniels;
-    app::save_calc_settings(settings, chosen);
+    app::save_calc_settings(brewery.session, settings, chosen);
     CHECK(app::load_calc_settings(settings) == chosen);
 
     settings.set("calc.settings", "{broken");

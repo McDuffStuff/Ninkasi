@@ -23,7 +23,9 @@ calc::UnitPreferences load_unit_preferences(data::SettingsRepository& settings) 
     return preferences;
 }
 
-void save_unit_preferences(data::SettingsRepository& settings, const calc::UnitPreferences& preferences) {
+void save_unit_preferences(const Session& by, data::SettingsRepository& settings,
+                           const calc::UnitPreferences& preferences) {
+    require_admin(by, "change the brewery's units");
     for (calc::Measure measure : calc::kAllMeasures) {
         settings.set(settings_key(measure), calc::key(preferences.unit_for(measure)));
     }

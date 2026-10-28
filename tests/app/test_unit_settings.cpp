@@ -1,3 +1,4 @@
+#include "app/session.h"
 #include "app/unit_settings.h"
 #include "data/database.h"
 #include "data/migrations.h"
@@ -22,7 +23,7 @@ TEST_CASE("unit preferences round-trip through settings") {
     calc::UnitPreferences chosen = calc::UnitPreferences::metric_brewery();
     chosen.set(calc::Measure::Gravity, calc::Unit::SpecificGravity);
     chosen.set(calc::Measure::HopMass, calc::Unit::Gram);
-    app::save_unit_preferences(settings, chosen);
+    app::save_unit_preferences(app::open_local_session(db), settings, chosen);
 
     CHECK(app::load_unit_preferences(settings) == chosen);
     CHECK(settings.get("units.volume") == "hectoliter");

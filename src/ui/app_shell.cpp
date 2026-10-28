@@ -19,6 +19,7 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
                    std::string startup_notice)
     : settings_(db),
       session_(std::move(session)),
+      personal_(db, session_.user_id),
       db_path_(std::move(db_path)),
       ui_scale_(ui_scale),
       units_(app::load_unit_preferences(settings_)),
@@ -30,25 +31,25 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
       packaged_goods_(db, session_),
       batches_(db, session_, floor_, inventory_, packaged_goods_),
       tasks_(db, session_),
-      ttb_(db, settings_),
-      backups_(db, settings_, std::filesystem::path(db_path_)),
+      ttb_(db, session_, settings_),
+      backups_(db, session_, settings_, std::filesystem::path(db_path_)),
       exports_(db, units_),
       dialogs_(batches_, floor_, recipes_, inventory_, packaged_goods_, units_, calc_settings_, ui_scale_),
       task_views_(tasks_, floor_, batches_, ui_scale_),
       inventory_views_(inventory_, floor_, library_, units_, ui_scale_),
       packaging_views_(packaged_goods_, ui_scale_),
       element_windows_(floor_, batches_, tasks_, dialogs_, task_views_, inventory_views_, packaging_views_,
-                       settings_, units_, calc_settings_, ui_scale_),
-      batch_windows_(batches_, floor_, dialogs_, settings_, units_, calc_settings_, ui_scale_),
+                       personal_, units_, calc_settings_, ui_scale_),
+      batch_windows_(batches_, floor_, dialogs_, personal_, units_, calc_settings_, ui_scale_),
       ttb_window_(ttb_, batches_, packaged_goods_, ui_scale_),
       backup_window_(backups_, exports_, ui_scale_),
       floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
-                  packaging_views_, settings_, units_, calc_settings_, ui_scale_),
-      recipe_editors_(recipes_, library_, settings_, units_, calc_settings_, ui_scale_),
+                  packaging_views_, personal_, units_, calc_settings_, ui_scale_),
+      recipe_editors_(recipes_, library_, personal_, units_, calc_settings_, ui_scale_),
       recipe_library_(recipes_, recipe_editors_, ui_scale_),
       ingredient_window_(library_, units_, ui_scale_),
-      brewing_settings_(calc_settings_, settings_, recipes_, library_, units_, ui_scale_) {
-    theme_ = theme_from_name(settings_.get_or(kThemeKey, "dark"));
+      brewing_settings_(session_, calc_settings_, settings_, recipes_, library_, units_, ui_scale_) {
+    theme_ = theme_from_name(personal_.get_or(kThemeKey, "dark"));
     apply_theme(theme_, ui_scale_);
 
     recipe_editors_.on_saved = [this] { recipe_library_.refresh(); };
@@ -198,12 +199,12 @@ void AppShell::draw_about_window() {
 void AppShell::set_theme(Theme theme) {
     theme_ = theme;
     apply_theme(theme_, ui_scale_);
-    settings_.set(kThemeKey, theme_name(theme_));
+    personal_.set(kThemeKey, theme_name(theme_));
 }
 
 void AppShell::set_units(const calc::UnitPreferences& units) {
     units_ = units;  // the floor, element windows and recipes hold a reference to units_
-    app::save_unit_preferences(settings_, units_);
+    app::save_unit_preferences(session_, settings_, units_);
 }
 
 void AppShell::draw_notice() {

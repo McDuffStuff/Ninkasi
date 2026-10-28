@@ -12,6 +12,7 @@
 // next time Ninkasi starts (restore_pending_backup), after the data being
 // replaced is saved as one more backup.
 
+#include "app/session.h"
 #include "data/database.h"
 #include "data/settings_repository.h"
 #include "domain/timestamp.h"
@@ -32,9 +33,10 @@ struct BackupFile {
 
 class BackupService {
 public:
-    BackupService(data::Database& db, data::SettingsRepository& settings, std::filesystem::path db_path);
+    BackupService(data::Database& db, Session session, data::SettingsRepository& settings,
+                  std::filesystem::path db_path);
 
-    // --- Settings, saved as they change ------------------------------------------
+    // --- Settings, saved as they change; admins only (NotAllowed otherwise) ----------
     bool automatic() const { return automatic_; }
     void set_automatic(bool automatic);
     // How many backups to keep in the folder; at least 1.
@@ -56,7 +58,7 @@ public:
     // The backups in the folder, newest first.
     std::vector<BackupFile> backups() const;
 
-    // --- Restoring ----------------------------------------------------------------
+    // --- Restoring: admins only (NotAllowed otherwise) ---------------------------------
     // Asks for `backup` to replace the brewery's data the next time Ninkasi starts.
     void restore_on_next_start(const std::filesystem::path& backup);
     std::optional<std::filesystem::path> pending_restore() const;
@@ -67,6 +69,7 @@ private:
     void prune();
 
     data::Database& db_;
+    Session session_;
     data::SettingsRepository& settings_;
     std::filesystem::path db_path_;
     bool automatic_ = true;

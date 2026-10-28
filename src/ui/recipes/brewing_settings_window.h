@@ -4,6 +4,7 @@
 
 #include "app/ingredient_library.h"
 #include "app/recipe_service.h"
+#include "app/session.h"
 #include "calc/units.h"
 #include "data/settings_repository.h"
 #include "domain/recipe.h"
@@ -14,9 +15,9 @@ namespace ninkasi::ui {
 class BrewingSettingsWindow {
 public:
     // Edits `calc_settings` in place, so open recipes update immediately.
-    BrewingSettingsWindow(domain::CalcSettings& calc_settings, data::SettingsRepository& settings,
-                          app::RecipeService& recipes, app::IngredientLibrary& library,
-                          const calc::UnitPreferences& units, float ui_scale);
+    BrewingSettingsWindow(const app::Session& session, domain::CalcSettings& calc_settings,
+                          data::SettingsRepository& settings, app::RecipeService& recipes,
+                          app::IngredientLibrary& library, const calc::UnitPreferences& units, float ui_scale);
     ~BrewingSettingsWindow();  // saves any unsaved changes
 
     BrewingSettingsWindow(const BrewingSettingsWindow&) = delete;
@@ -29,6 +30,7 @@ private:
     bool draw_calculations();
     void save();
 
+    const app::Session& session_;
     domain::CalcSettings& calc_settings_;
     data::SettingsRepository& settings_;
     app::RecipeService& recipes_;

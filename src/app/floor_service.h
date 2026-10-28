@@ -5,6 +5,9 @@
 // change is saved in one transaction, and the meaningful ones (adding,
 // renaming, deleting...) are written to the audit log under the session's
 // user. Moving or resizing is layout, not history, so it isn't audited.
+//
+// Setting up equipment (adding, moving, resizing, renaming, changing its
+// capacity, removing) is for admins; the others throw NotAllowed for anyone else.
 
 #include "app/session.h"
 #include "calc/units.h"

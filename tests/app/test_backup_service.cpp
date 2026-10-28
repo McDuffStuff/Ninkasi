@@ -46,7 +46,7 @@ struct Brewery {
         : db(path.string()),
           session((data::migrate(db), app::open_local_session(db))),
           floor(db, session),
-          backups(db, settings, path) {
+          backups(db, session, settings, path) {
         fermenter = floor.add(domain::ElementType::Fermenter, 0.0, 0.0);
         floor.rename(fermenter, "FV1");
     }
@@ -93,7 +93,7 @@ TEST_CASE("automatic backups are made once a day when on") {
     CHECK_FALSE(brewery.backups.back_up_if_due().has_value());
 
     // The settings are remembered.
-    app::BackupService again(brewery.db, brewery.settings, temp.path / "ninkasi.db");
+    app::BackupService again(brewery.db, brewery.session, brewery.settings, temp.path / "ninkasi.db");
     CHECK(again.automatic());
     CHECK(again.folder() == temp.path / "backups");
 }

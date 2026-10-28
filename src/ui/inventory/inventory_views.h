@@ -1,9 +1,10 @@
 #pragma once
-// Inventory on screen: the Inventory window (every item, what's on hand,
-// its lots and history), the stock and in/out log of each storage element,
-// and the dialogs for adding items, receiving deliveries, counting stock and
-// using or discarding it. Like the cellar dialogs, these log what already
-// happened: fill them in and press Enter.
+// Inventory on screen: every item with what's on hand, its lots and history,
+// and the log of everything in and out, shown in the Inventory window and in
+// the window of each Inventory element on the floor; and the dialogs for
+// adding items, receiving deliveries, counting stock and using or discarding
+// it. Like the cellar dialogs, these log what already happened: fill them in
+// and press Enter.
 
 #include "app/floor_service.h"
 #include "app/ingredient_library.h"
@@ -36,23 +37,25 @@ public:
     // Call once per frame, outside any window: the Inventory window and the dialogs.
     void draw();
 
-    // For a storage element's window: the items kept there, and their log.
-    void draw_storage_stock(std::int64_t element_id);
-    void draw_storage_log(std::int64_t element_id);
+    // The stock (the toolbar, every item, and the selected item's lots and
+    // history) and the log of everything in and out. The Inventory window
+    // shows these, and so do Inventory elements' windows.
+    void draw_stock();
+    void draw_log();
 
 private:
     enum class Kind { None, EditItem, Receive, Count, Take };
 
     void draw_window();
-    // Items in a table; clicking one selects it. Only those kept in
-    // `location_id`, if given.
-    void draw_items(const char* id, std::optional<std::int64_t> location_id);
+    // Items in a table, filtered by the search and low-stock filter;
+    // clicking one selects it.
+    void draw_items();
     void draw_item_details(std::int64_t item_id);
     void draw_movements(const char* id, const std::vector<data::MovementRow>& rows, bool show_item);
 
     void open(Kind kind);
     void close();
-    void edit_item(std::optional<std::int64_t> item_id, std::optional<std::int64_t> location_id);
+    void edit_item(std::optional<std::int64_t> item_id);
     void receive(std::optional<std::int64_t> item_id);
     void count(std::int64_t item_id);
     void take(std::int64_t item_id);
@@ -68,7 +71,6 @@ private:
     bool item_combo(const char* label, std::int64_t& item_id);
     // A quantity field in the item's unit.
     void quantity_field(const char* label, const domain::InventoryItem& item, double& quantity);
-    std::string location_name(std::optional<std::int64_t> location_id) const;
 
     app::InventoryService& inventory_;
     const app::FloorService& floor_;
@@ -82,15 +84,14 @@ private:
     bool low_only_ = false;
     std::optional<std::int64_t> selected_;
 
-    // Lots and history of the selected item, and storage logs, re-read when
+    // Lots and history of the selected item, and the log, re-read when
     // inventory changes.
     std::uint64_t loaded_revision_ = 0;
     std::int64_t loaded_item_ = 0;
     std::vector<data::LotRow> lots_;
     std::vector<data::MovementRow> history_;
     std::uint64_t log_revision_ = 0;
-    std::int64_t loaded_location_ = 0;
-    std::vector<data::MovementRow> location_log_;
+    std::vector<data::MovementRow> log_;
 
     // The open dialog and its form.
     Kind kind_ = Kind::None;

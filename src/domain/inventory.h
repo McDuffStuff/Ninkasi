@@ -41,7 +41,6 @@ struct InventoryItem {
     StockUnit unit = StockUnit::Mass;
     std::int64_t library_id = 0;          // the ingredient library entry it stocks; 0 if none
     std::optional<double> reorder_level;  // low stock below this
-    std::optional<std::int64_t> location_id;  // the storage element it's kept in
     std::string notes;
     bool archived = false;                // no longer stocked; kept for its history
 

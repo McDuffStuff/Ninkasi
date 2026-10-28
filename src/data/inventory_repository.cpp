@@ -5,7 +5,7 @@ namespace ninkasi::data {
 namespace {
 
 constexpr const char* kItemColumns =
-    "id, name, category, unit, library_id, reorder_level, location_id, notes, archived";
+    "id, name, category, unit, library_id, reorder_level, notes, archived";
 
 std::optional<domain::InventoryItem> read_item(const Statement& stmt) {
     const std::optional<domain::ItemCategory> category = domain::item_category_from_key(stmt.column_text(2));
@@ -18,9 +18,8 @@ std::optional<domain::InventoryItem> read_item(const Statement& stmt) {
     item.unit = *unit;
     item.library_id = stmt.column_optional_int64(4).value_or(0);
     item.reorder_level = stmt.column_optional_double(5);
-    item.location_id = stmt.column_optional_int64(6);
-    item.notes = stmt.column_text(7);
-    item.archived = stmt.column_int64(8) != 0;
+    item.notes = stmt.column_text(6);
+    item.archived = stmt.column_int64(7) != 0;
     return item;
 }
 
@@ -28,8 +27,7 @@ void bind_item(Statement& stmt, const domain::InventoryItem& item) {
     stmt.bind(1, item.name).bind(2, domain::key(item.category)).bind(3, domain::key(item.unit));
     stmt.bind_optional(4, item.library_id != 0 ? std::optional<std::int64_t>(item.library_id) : std::nullopt);
     stmt.bind_optional(5, item.reorder_level);
-    stmt.bind_optional(6, item.location_id);
-    stmt.bind(7, item.notes).bind(8, item.archived ? 1 : 0);
+    stmt.bind(6, item.notes).bind(7, item.archived ? 1 : 0);
 }
 
 domain::Timestamp column_time(const Statement& stmt, int col) {
@@ -52,8 +50,8 @@ std::vector<domain::InventoryItem> InventoryRepository::load_items(bool include_
 
 std::int64_t InventoryRepository::insert_item(const domain::InventoryItem& item) {
     auto stmt = db_.prepare(
-        "INSERT INTO inventory_items (name, category, unit, library_id, reorder_level, location_id, notes, archived) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?);");
+        "INSERT INTO inventory_items (name, category, unit, library_id, reorder_level, notes, archived) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?);");
     bind_item(stmt, item);
     stmt.execute();
     return db_.last_insert_id();
@@ -62,9 +60,9 @@ std::int64_t InventoryRepository::insert_item(const domain::InventoryItem& item)
 void InventoryRepository::update_item(const domain::InventoryItem& item) {
     auto stmt = db_.prepare(
         "UPDATE inventory_items SET name = ?, category = ?, unit = ?, library_id = ?, reorder_level = ?, "
-        "location_id = ?, notes = ?, archived = ? WHERE id = ?;");
+        "notes = ?, archived = ? WHERE id = ?;");
     bind_item(stmt, item);
-    stmt.bind(9, item.id);
+    stmt.bind(8, item.id);
     stmt.execute();
 }
 
@@ -170,11 +168,8 @@ double InventoryRepository::unlotted(std::int64_t item_id) {
     return stmt.column_double(0);
 }
 
-std::vector<MovementRow> InventoryRepository::movements(std::optional<std::int64_t> item_id,
-                                                        std::optional<std::int64_t> location_id, int limit) {
-    std::string where = "1 = 1";
-    if (item_id) where += " AND m.item_id = ?2";
-    if (location_id) where += " AND i.location_id = ?3";
+std::vector<MovementRow> InventoryRepository::movements(std::optional<std::int64_t> item_id, int limit) {
+    const std::string where = item_id ? "m.item_id = ?2" : "1 = 1";
     auto stmt = db_.prepare(
         "SELECT m.id, m.at, m.item_id, m.lot_id, m.quantity, m.reason, m.batch_id, m.note, u.display_name, "
         "i.name, i.category, i.unit, COALESCE(l.lot_code, ''), COALESCE(b.code, '') "
@@ -183,7 +178,6 @@ std::vector<MovementRow> InventoryRepository::movements(std::optional<std::int64
         "WHERE " + where + " ORDER BY m.at DESC, m.id DESC LIMIT ?1;");
     stmt.bind(1, limit);
     if (item_id) stmt.bind(2, *item_id);
-    if (location_id) stmt.bind(3, *location_id);
     std::vector<MovementRow> rows;
     while (stmt.step()) {
         MovementRow row;

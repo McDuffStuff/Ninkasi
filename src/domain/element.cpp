@@ -12,9 +12,11 @@ constexpr ElementTypeInfo kTypes[] = {
     {ElementType::Brewhouse,     "brewhouse",      "Brewhouse",      160.0, 160.0, true},
     {ElementType::Fermenter,     "fermenter",      "Fermenter",      130.0, 130.0, true},
     {ElementType::BriteTank,     "brite_tank",     "Brite tank",     120.0, 120.0, true},
-    {ElementType::DryStorage,    "dry_storage",    "Dry storage",    200.0, 140.0, false},
-    {ElementType::ColdStorage,   "cold_storage",   "Cold storage",   220.0, 160.0, false},
-    {ElementType::KegWasher,     "keg_washer",     "Keg washer",     130.0, 90.0,  false},
+    // Inventory's and the keg cleaner's keys are from when they were "dry
+    // storage" and "keg washer".
+    {ElementType::Inventory,     "dry_storage",    "Inventory",      200.0, 140.0, false},
+    {ElementType::PackagedGoods, "packaged_goods", "Packaged goods", 220.0, 160.0, false},
+    {ElementType::KegCleaner,    "keg_washer",     "Keg cleaner",    150.0, 110.0, false},
     {ElementType::RecipeStation, "recipe_station", "Recipe station", 150.0, 100.0, false},
 };
 

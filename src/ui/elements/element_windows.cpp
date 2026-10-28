@@ -155,11 +155,10 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
             // Just its name: the recipe library is what it's for.
             draw_overview_tab(window, element);
         } else if (ImGui::BeginTabBar("##tabs")) {
-            // Storage opens on what's kept there.
-            const bool storage = element.type == domain::ElementType::DryStorage ||
-                                 element.type == domain::ElementType::ColdStorage;
-            if (storage && ImGui::BeginTabItem("Stock")) {
-                inventory_views_.draw_storage_stock(element.id);
+            // Inventory opens on the stock.
+            const bool inventory = element.type == domain::ElementType::Inventory;
+            if (inventory && ImGui::BeginTabItem("Stock")) {
+                inventory_views_.draw_stock();
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Overview")) {
@@ -190,9 +189,9 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
                 }
             }
 
-            // Storage: what came in and went out.
-            if (storage && ImGui::BeginTabItem("In and out")) {
-                inventory_views_.draw_storage_log(element.id);
+            // Inventory: what came in and went out.
+            if (inventory && ImGui::BeginTabItem("In and out")) {
+                inventory_views_.draw_log();
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Tasks")) {

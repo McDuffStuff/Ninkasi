@@ -49,9 +49,8 @@ std::vector<data::LotRow> InventoryService::lots(std::int64_t item_id) {
     return repository_.lots(item_id);
 }
 
-std::vector<data::MovementRow> InventoryService::movements(std::optional<std::int64_t> item_id,
-                                                           std::optional<std::int64_t> location_id, int limit) {
-    return repository_.movements(item_id, location_id, limit);
+std::vector<data::MovementRow> InventoryService::movements(std::optional<std::int64_t> item_id, int limit) {
+    return repository_.movements(item_id, limit);
 }
 
 // --- Items ----------------------------------------------------------------------

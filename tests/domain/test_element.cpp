@@ -26,5 +26,6 @@ TEST_CASE("vessels are the tanks that hold beer") {
     CHECK(info(ElementType::Fermenter).is_vessel);
     CHECK(info(ElementType::BriteTank).is_vessel);
     CHECK(info(ElementType::Brewhouse).is_vessel);
-    CHECK_FALSE(info(ElementType::DryStorage).is_vessel);
+    CHECK_FALSE(info(ElementType::Inventory).is_vessel);
+    CHECK_FALSE(info(ElementType::PackagedGoods).is_vessel);
 }

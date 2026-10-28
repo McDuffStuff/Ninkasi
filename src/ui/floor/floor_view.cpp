@@ -437,7 +437,7 @@ void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& elemen
         if (!status.empty()) lines.push_back({status, small, muted});
         lines.push_back({calc::format(held->volume_l, units.unit_for(Measure::Volume)), small, muted});
     } else {
-        // The type, unless the name already says it ("Keg washer", "Fermenter 2").
+        // The type, unless the name already says it ("Keg cleaner", "Fermenter 2").
         if (!element.name.starts_with(type.name)) lines.push_back({std::string(type.name), small, muted});
         if (type.is_vessel && element.capacity_l) {
             lines.push_back({calc::format(*element.capacity_l, units.unit_for(Measure::Volume)), small, muted});
@@ -450,12 +450,11 @@ void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& elemen
                 lines.push_back({"Out of service", small, to_u32(kErrorColor)});
             }
         }
-        if (element.type == domain::ElementType::DryStorage || element.type == domain::ElementType::ColdStorage) {
-            // How many items are kept here, and how many are running low.
+        if (element.type == domain::ElementType::Inventory) {
+            // How many items are stocked, and how many are running low.
             int kept = 0;
             int low = 0;
             for (const app::ItemStock& entry : inventory_.stock()) {
-                if (entry.item.location_id != element.id) continue;
                 ++kept;
                 if (entry.low() || entry.on_hand < 0.0) ++low;
             }
@@ -524,7 +523,7 @@ void FloorView::draw_task_badge(ImDrawList* draw_list, const domain::Element& el
 void FloorView::draw_empty_hint(ImDrawList* draw_list) const {
     const char* lines[] = {
         "Your brewery floor is empty.",
-        "Use \"Add equipment\" or right-click to place tanks, storage and stations.",
+        "Use \"Add equipment\" or right-click to place tanks, inventory and stations.",
     };
     const ImU32 muted = ImGui::GetColorU32(ImGuiCol_TextDisabled);
     const float line_height = ImGui::GetTextLineHeightWithSpacing();
@@ -600,11 +599,11 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
         }
     }
 
-    // Storage: what's running low.
-    if (element->type == domain::ElementType::DryStorage || element->type == domain::ElementType::ColdStorage) {
+    // Inventory: what's running low.
+    if (element->type == domain::ElementType::Inventory) {
         bool header = false;
         for (const app::ItemStock& entry : inventory_.stock()) {
-            if (entry.item.location_id != element->id || !(entry.low() || entry.on_hand < 0.0)) continue;
+            if (!(entry.low() || entry.on_hand < 0.0)) continue;
             if (!header) {
                 ImGui::Separator();
                 ImGui::TextColored(kWarningColor, "Low stock");

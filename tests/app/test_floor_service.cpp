@@ -100,7 +100,7 @@ TEST_CASE("every change is saved and survives a reload") {
 TEST_CASE("elements can't shrink below the minimum size") {
     Brewery brewery;
     app::FloorService floor(brewery.db, brewery.session);
-    const auto id = floor.add(ElementType::KegWasher, 0.0, 0.0);
+    const auto id = floor.add(ElementType::KegCleaner, 0.0, 0.0);
     floor.set_rect(id, {0.0, 0.0, 5.0, -10.0});
     CHECK(floor.find(id)->rect.width == domain::kMinElementSize);
     CHECK(floor.find(id)->rect.height == domain::kMinElementSize);

@@ -33,10 +33,6 @@ bool is_blank(const std::string& text) {
     return text.find_first_not_of(" \t\r\n") == std::string::npos;
 }
 
-bool is_storage(domain::ElementType type) {
-    return type == domain::ElementType::DryStorage || type == domain::ElementType::ColdStorage;
-}
-
 // "+50.0 lb" / "-12.5 lb": a change in stock.
 std::string change_text(const domain::InventoryItem& item, double quantity, const calc::UnitPreferences& units) {
     return (quantity > 0.0 ? "+" : "") + stock_text(item, quantity, units);
@@ -93,14 +89,24 @@ void InventoryViews::draw_window() {
     }
     const bool expanded = ImGui::Begin("Inventory", &visible_);
     if (raise) raise_os_window();
-    if (!expanded) {
-        ImGui::End();
-        return;
+    if (expanded && ImGui::BeginTabBar("##inventory_tabs")) {
+        if (ImGui::BeginTabItem("Stock")) {
+            draw_stock();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("In and out")) {
+            draw_log();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
     }
+    ImGui::End();
+}
 
+void InventoryViews::draw_stock() {
     if (ImGui::Button("Receive...")) receive(selected_);
     ImGui::SameLine();
-    if (ImGui::Button("New item...")) edit_item(std::nullopt, std::nullopt);
+    if (ImGui::Button("New item...")) edit_item(std::nullopt);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(220.0f * ui_scale_);
     ImGui::InputTextWithHint("##filter", "Search", &filter_);
@@ -111,37 +117,41 @@ void InventoryViews::draw_window() {
     if (inventory_.stock().empty()) {
         wrapped_note("Nothing is stocked yet. Add the items you keep with New item, then log deliveries with "
                      "Receive. Knock-outs take the ingredients they used from here.");
-        ImGui::End();
         return;
     }
 
     // The item list on top, the selected item's lots and history below.
     const float list_height = selected_ ? ImGui::GetContentRegionAvail().y * 0.45f : 0.0f;
-    if (ImGui::BeginChild("##items", ImVec2(0.0f, list_height))) draw_items("##all_items", std::nullopt);
+    if (ImGui::BeginChild("##items", ImVec2(0.0f, list_height))) draw_items();
     ImGui::EndChild();
     if (selected_ && inventory_.find(*selected_)) {
         ImGui::Separator();
         draw_item_details(*selected_);
     }
-    ImGui::End();
 }
 
-void InventoryViews::draw_items(const char* id, std::optional<std::int64_t> location_id) {
+void InventoryViews::draw_log() {
+    if (log_revision_ != inventory_.revision()) {
+        log_ = inventory_.movements(std::nullopt, 300);
+        log_revision_ = inventory_.revision();
+    }
+    draw_movements("##log", log_, true);
+}
+
+void InventoryViews::draw_items() {
     const std::string needle = lowercase(filter_);
-    if (!ImGui::BeginTable(id, 5, kListFlags | ImGuiTableFlags_ScrollY)) return;
+    if (!ImGui::BeginTable("##item_list", 4, kListFlags | ImGuiTableFlags_ScrollY)) return;
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Item", ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupColumn("Category");
     ImGui::TableSetupColumn("On hand");
     ImGui::TableSetupColumn("Reorder below");
-    ImGui::TableSetupColumn("Kept in");
     ImGui::TableHeadersRow();
 
     for (const app::ItemStock& entry : inventory_.stock()) {
         const domain::InventoryItem& item = entry.item;
-        if (location_id && item.location_id != location_id) continue;
-        if (!location_id && low_only_ && !entry.low()) continue;
-        if (!location_id && !needle.empty() &&
+        if (low_only_ && !entry.low()) continue;
+        if (!needle.empty() &&
             lowercase(item.name + " " + std::string(domain::name(item.category))).find(needle) == std::string::npos) {
             continue;
         }
@@ -150,12 +160,6 @@ void InventoryViews::draw_items(const char* id, std::optional<std::int64_t> loca
         ImGui::TableNextColumn();
         if (ImGui::Selectable(item.name.c_str(), selected_ == item.id, ImGuiSelectableFlags_SpanAllColumns)) {
             selected_ = item.id;
-            if (location_id) {
-                // From a storage window: show it in the Inventory window.
-                low_only_ = false;
-                filter_.clear();
-                show_window();
-            }
         }
         ImGui::TableNextColumn();
         ImGui::TextDisabled("%s", domain::name(item.category).data());
@@ -172,8 +176,6 @@ void InventoryViews::draw_items(const char* id, std::optional<std::int64_t> loca
         }
         ImGui::TableNextColumn();
         if (item.reorder_level) ImGui::TextDisabled("%s", stock_text(item, *item.reorder_level, units_).c_str());
-        ImGui::TableNextColumn();
-        ImGui::TextDisabled("%s", location_name(item.location_id).c_str());
         ImGui::PopID();
     }
     ImGui::EndTable();
@@ -184,7 +186,7 @@ void InventoryViews::draw_item_details(std::int64_t item_id) {
     const domain::InventoryItem item = entry.item;  // the buttons below can change the list
     if (loaded_item_ != item_id || loaded_revision_ != inventory_.revision()) {
         lots_ = inventory_.lots(item_id);
-        history_ = inventory_.movements(item_id, std::nullopt, 200);
+        history_ = inventory_.movements(item_id, 200);
         loaded_item_ = item_id;
         loaded_revision_ = inventory_.revision();
     }
@@ -199,7 +201,7 @@ void InventoryViews::draw_item_details(std::int64_t item_id) {
     ImGui::SameLine();
     if (ImGui::Button("Use or discard...")) take(item_id);
     ImGui::SameLine();
-    if (ImGui::Button("Edit...")) edit_item(item_id, std::nullopt);
+    if (ImGui::Button("Edit...")) edit_item(item_id);
     ImGui::SameLine();
     if (ImGui::Button("Remove")) {
         inventory_.remove_item(item_id);
@@ -297,33 +299,6 @@ void InventoryViews::draw_movements(const char* id, const std::vector<data::Move
     ImGui::EndTable();
 }
 
-// --- Storage elements -------------------------------------------------------------
-
-void InventoryViews::draw_storage_stock(std::int64_t element_id) {
-    if (ImGui::Button("Receive...")) receive(std::nullopt);
-    ImGui::SameLine();
-    if (ImGui::Button("New item...")) edit_item(std::nullopt, element_id);
-    ImGui::SameLine();
-    if (ImGui::Button("Open inventory")) show_window();
-    ImGui::Spacing();
-    const bool any = std::any_of(inventory_.stock().begin(), inventory_.stock().end(),
-                                 [element_id](const app::ItemStock& entry) { return entry.item.location_id == element_id; });
-    if (!any) {
-        wrapped_note("Nothing is kept here yet. Items are kept where their \"Kept in\" says.");
-        return;
-    }
-    draw_items("##stored", element_id);
-}
-
-void InventoryViews::draw_storage_log(std::int64_t element_id) {
-    if (loaded_location_ != element_id || log_revision_ != inventory_.revision()) {
-        location_log_ = inventory_.movements(std::nullopt, element_id, 300);
-        loaded_location_ = element_id;
-        log_revision_ = inventory_.revision();
-    }
-    draw_movements("##storage_log", location_log_, true);
-}
-
 // --- Dialogs ----------------------------------------------------------------------
 
 void InventoryViews::open(Kind kind) {
@@ -339,18 +314,13 @@ void InventoryViews::close() {
     error_.clear();
 }
 
-void InventoryViews::edit_item(std::optional<std::int64_t> item_id, std::optional<std::int64_t> location_id) {
+void InventoryViews::edit_item(std::optional<std::int64_t> item_id) {
     if (item_id) {
         const app::ItemStock* entry = inventory_.find(*item_id);
         if (!entry) return;
         item_ = entry->item;
     } else {
         item_ = {};
-        // New items are kept where they were added from, or in the first dry storage.
-        item_.location_id = location_id;
-        for (const domain::Element& element : floor_.elements()) {
-            if (!item_.location_id && element.type == domain::ElementType::DryStorage) item_.location_id = element.id;
-        }
     }
     has_reorder_ = item_.reorder_level.has_value();
     reorder_ = item_.reorder_level.value_or(0.0);
@@ -477,21 +447,6 @@ void InventoryViews::draw_item_editor() {
         if (has_reorder_) {
             ImGui::SameLine();
             quantity_field("##reorder", item_, reorder_);
-        }
-
-        table_row("Kept in");
-        ImGui::SetNextItemWidth(field);
-        if (ImGui::BeginCombo("##location", location_name(item_.location_id).c_str())) {
-            if (ImGui::Selectable("Not set", !item_.location_id)) item_.location_id.reset();
-            for (const domain::Element& element : floor_.elements()) {
-                if (!is_storage(element.type)) continue;
-                ImGui::PushID(static_cast<int>(element.id));
-                if (ImGui::Selectable(element.name.c_str(), item_.location_id == element.id)) {
-                    item_.location_id = element.id;
-                }
-                ImGui::PopID();
-            }
-            ImGui::EndCombo();
         }
 
         table_row("Notes");
@@ -671,11 +626,6 @@ void InventoryViews::quantity_field(const char* label, const domain::InventoryIt
     } else {
         edit_number(label, quantity, 0, "ea");
     }
-}
-
-std::string InventoryViews::location_name(std::optional<std::int64_t> location_id) const {
-    const domain::Element* element = location_id ? floor_.find(*location_id) : nullptr;
-    return element ? element->name : std::string("Not set");
 }
 
 } // namespace ninkasi::ui

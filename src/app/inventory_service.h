@@ -66,8 +66,8 @@ public:
     // --- From the database ----------------------------------------------------
 
     std::vector<data::LotRow> lots(std::int64_t item_id);
-    std::vector<data::MovementRow> movements(std::optional<std::int64_t> item_id,
-                                             std::optional<std::int64_t> location_id, int limit = 500);
+    // Newest first: of one item, or of everything.
+    std::vector<data::MovementRow> movements(std::optional<std::int64_t> item_id, int limit = 500);
 
     // --- Items ----------------------------------------------------------------
 

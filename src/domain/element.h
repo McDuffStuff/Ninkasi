@@ -15,9 +15,9 @@ enum class ElementType {
     Brewhouse,
     Fermenter,
     BriteTank,
-    DryStorage,
-    ColdStorage,
-    KegWasher,
+    Inventory,      // where ingredients and supplies are kept
+    PackagedGoods,  // packaged beer: kegs and cans
+    KegCleaner,     // empty kegs, dirty and clean
     RecipeStation,
 };
 

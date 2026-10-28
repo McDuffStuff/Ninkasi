@@ -56,10 +56,8 @@ public:
     // The item's stock not tied to a lot: negative when stock was used
     // before its delivery was logged.
     double unlotted(std::int64_t item_id);
-    // Movements, newest first: of one item, or of the items kept in one
-    // storage element, or of everything.
-    std::vector<MovementRow> movements(std::optional<std::int64_t> item_id, std::optional<std::int64_t> location_id,
-                                       int limit);
+    // Movements, newest first: of one item, or of everything.
+    std::vector<MovementRow> movements(std::optional<std::int64_t> item_id, int limit);
 
 private:
     Database& db_;

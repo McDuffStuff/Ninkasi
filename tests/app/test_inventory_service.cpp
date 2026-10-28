@@ -105,7 +105,7 @@ TEST_CASE("a stock count replaces the recorded stock") {
 
     stores.inventory.count(salt, 12.0, day(3), "found a bag");
     CHECK(stores.on_hand(salt) == near(12.0, 1e-9));
-    const std::vector<data::MovementRow> history = stores.inventory.movements(salt, std::nullopt);
+    const std::vector<data::MovementRow> history = stores.inventory.movements(salt);
     REQUIRE(history.size() == 3);
     CHECK(history.front().movement.reason == StockReason::Counted);
     CHECK(history.front().movement.note == "found a bag");

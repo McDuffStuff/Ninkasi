@@ -261,6 +261,12 @@ constexpr Migration kMigrations[] = {
         CREATE INDEX stock_by_item ON stock_movements (item_id, at);
         CREATE INDEX stock_by_lot ON stock_movements (lot_id);
     )sql"},
+    {6, R"sql(
+        -- Dry and cold storage became one element type, Inventory (still
+        -- stored as 'dry_storage'). Items are no longer kept in a particular
+        -- one, so inventory_items.location_id is no longer used.
+        UPDATE elements SET type = 'dry_storage' WHERE type = 'cold_storage';
+    )sql"},
 };
 
 } // namespace

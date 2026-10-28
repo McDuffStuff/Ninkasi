@@ -15,6 +15,12 @@ Requirements: Visual Studio 2022+ or Build Tools with the **Desktop development 
 .\scripts\build.ps1 -Run             # build, test, launch
 ```
 
+If PowerShell says running scripts is disabled on this system (Windows' default), run them like this instead, or allow your own scripts once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
+```
+
 ### Linux
 Requirements: GCC 11+ or Clang 14+, CMake 3.24+, Ninja, and the GLFW build dependencies:
 

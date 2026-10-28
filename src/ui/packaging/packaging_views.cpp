@@ -38,7 +38,30 @@ std::string package_text(PackageType type, double unit_volume_l, const calc::Uni
     return text;
 }
 
+// Whether a removal is taxed, and the line of the TTB report it goes on.
+const char* removal_hint(domain::PackagedReason reason) {
+    using domain::PackagedReason;
+    switch (reason) {
+    case PackagedReason::Sold:               return "Taxed. TTB report line 14.";
+    case PackagedReason::Taproom:            return "Taxed. TTB report line 15.";
+    case PackagedReason::Exported:           return "Not taxed. TTB report line 16.";
+    case PackagedReason::Supplies:           return "Not taxed. TTB report line 17.";
+    case PackagedReason::Research:           return "Not taxed. TTB report line 18.";
+    case PackagedReason::SameOwnership:      return "Not taxed. TTB report line 19.";
+    case PackagedReason::Unfit:              return "Not taxed. TTB report line 20.";
+    case PackagedReason::ConsumedOnPremises: return "Not taxed, e.g. tasting room samples. TTB report line 21.";
+    case PackagedReason::LabSamples:         return "Not taxed. TTB report line 27.";
+    case PackagedReason::Destroyed:          return "Not taxed. TTB report line 28.";
+    case PackagedReason::Lost:               return "Explain it in the report's remarks. TTB report line 30.";
+    default:                                 return "";
+    }
+}
+
 } // namespace
+
+bool PackagingViews::Product::matches(const domain::PackagedProduct& product) const {
+    return product.beer == beer && product.type == type && product.unit_volume_l == unit_volume_l;
+}
 
 PackagingViews::PackagingViews(app::PackagedGoodsService& goods, float ui_scale)
     : goods_(goods), ui_scale_(ui_scale) {}
@@ -47,6 +70,16 @@ PackagingViews::PackagingViews(app::PackagedGoodsService& goods, float ui_scale)
 
 void PackagingViews::draw_packaged_stock(const calc::UnitPreferences& units) {
     const std::vector<domain::PackagedStock>& stock = goods_.packaged();
+    ImGui::BeginDisabled(stock.empty());
+    if (ImGui::Button("Take out...")) open_goods_dialog(Kind::TakeOut, units);
+    ImGui::SetItemTooltip("Beer sold, sent to the taproom, exported, destroyed...");
+    ImGui::SameLine();
+    if (ImGui::Button("Count...")) open_goods_dialog(Kind::Count, units);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Returns...")) open_goods_dialog(Kind::Return, units);
+    ImGui::SetItemTooltip("Packaged beer that came back to the brewery");
+    ImGui::Spacing();
     if (stock.empty()) {
         wrapped_note("No packaged beer yet. Packaging a tank (its Package... button) puts the kegs and cans here.");
         return;
@@ -75,8 +108,7 @@ void PackagingViews::draw_packaged_stock(const calc::UnitPreferences& units) {
     // shows its batches below.
     const std::vector<domain::PackagedProduct> products = domain::combine_by_beer(stock);
     const auto is_selected = [this](const domain::PackagedProduct& product) {
-        return selected_ && selected_->beer == product.beer && selected_->type == product.type &&
-               selected_->unit_volume_l == product.unit_volume_l;
+        return selected_ && selected_->matches(product);
     };
     const auto selected = std::find_if(products.begin(), products.end(), is_selected);
     const float list_height = selected != products.end() ? ImGui::GetContentRegionAvail().y * 0.5f : 0.0f;
@@ -95,7 +127,7 @@ void PackagingViews::draw_packaged_stock(const calc::UnitPreferences& units) {
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             if (ImGui::Selectable(product.beer.c_str(), is_selected(product), ImGuiSelectableFlags_SpanAllColumns)) {
-                selected_ = Selection{product.beer, product.type, product.unit_volume_l};
+                selected_ = Product{product.beer, product.type, product.unit_volume_l};
             }
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(package_text(product.type, product.unit_volume_l, units).c_str());
@@ -329,6 +361,9 @@ void PackagingViews::draw() {
     case Kind::Clean:  title = "Clean kegs"; break;
     case Kind::Add:    title = "Add kegs"; break;
     case Kind::Remove: title = "Remove kegs"; break;
+    case Kind::TakeOut: title = "Take out packaged beer"; break;
+    case Kind::Count:   title = "Count packaged beer"; break;
+    case Kind::Return:  title = "Packaged beer returned"; break;
     case Kind::None:   break;
     }
     ImGui::SetNextWindowPos(center_, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -342,6 +377,9 @@ void PackagingViews::draw() {
     case Kind::Clean:  draw_clean(); break;
     case Kind::Add:    draw_add(); break;
     case Kind::Remove: draw_remove(); break;
+    case Kind::TakeOut: draw_take_out(); break;
+    case Kind::Count:   draw_count(); break;
+    case Kind::Return:  draw_return(); break;
     case Kind::None:   break;
     }
     ImGui::EndPopup();
@@ -451,6 +489,188 @@ void PackagingViews::draw_remove() {
     if (!buttons("Remove", !kegs.empty())) return;
     try {
         goods_.remove_kegs(kegs, state_, at_, note_);
+        close();
+    } catch (const std::exception& e) {
+        error_ = e.what();
+    }
+}
+
+// --- Packaged goods dialogs ---------------------------------------------------------
+
+void PackagingViews::open_goods_dialog(Kind kind, const calc::UnitPreferences& units) {
+    units_ = units;
+    const std::vector<domain::PackagedProduct> products = domain::combine_by_beer(goods_.packaged());
+    const auto selected = std::find_if(products.begin(), products.end(), [this](const domain::PackagedProduct& p) {
+        return selected_ && selected_->matches(p);
+    });
+    if (selected != products.end()) {
+        product_ = *selected_;
+    } else if (!products.empty()) {
+        product_ = Product{products.front().beer, products.front().type, products.front().unit_volume_l};
+    }
+    count_ = 0;
+    reason_ = domain::PackagedReason::Sold;
+    at_ = domain::now();
+    note_.clear();
+    if (kind == Kind::Count) {
+        if (selected != products.end()) count_ = selected->count;
+        else if (!products.empty()) count_ = products.front().count;
+    }
+    if (kind == Kind::Return) {
+        ever_ = goods_.packaged_ever();
+        return_line_ = 0;
+    }
+    open(kind);
+}
+
+const domain::PackagedProduct* PackagingViews::product_combo(const std::vector<domain::PackagedProduct>& products) {
+    const auto chosen = std::find_if(products.begin(), products.end(),
+                                     [this](const domain::PackagedProduct& p) { return product_.matches(p); });
+    const auto label = [this](const domain::PackagedProduct& product) {
+        return product.beer + " · " + package_text(product.type, product.unit_volume_l, units_);
+    };
+    ImGui::SetNextItemWidth(300.0f * ui_scale_);
+    if (ImGui::BeginCombo("##product", chosen != products.end() ? label(*chosen).c_str() : "Choose the beer")) {
+        for (std::size_t i = 0; i < products.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::Selectable(label(products[i]).c_str(), product_.matches(products[i]))) {
+                product_ = Product{products[i].beer, products[i].type, products[i].unit_volume_l};
+                if (kind_ == Kind::Count) count_ = products[i].count;
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    return chosen != products.end() ? &*chosen : nullptr;
+}
+
+void PackagingViews::draw_take_out() {
+    const std::vector<domain::PackagedProduct> products = domain::combine_by_beer(goods_.packaged());
+    const domain::PackagedProduct* product = nullptr;
+    if (ImGui::BeginTable("##take_out", 2, ImGuiTableFlags_SizingFixedFit)) {
+        table_row("Beer");
+        product = product_combo(products);
+        if (product) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%d on hand", product->count);
+        }
+        table_row("How many");
+        ImGui::SetNextItemWidth(80.0f * ui_scale_);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputInt("##count", &count_, 0, 0, ImGuiInputTextFlags_AutoSelectAll);
+        count_ = std::clamp(count_, 0, product ? product->count : 0);
+        table_row("Why");
+        ImGui::SetNextItemWidth(300.0f * ui_scale_);
+        if (ImGui::BeginCombo("##reason", domain::name(reason_).data())) {
+            for (domain::PackagedReason reason : domain::kRemovalReasons) {
+                if (ImGui::Selectable(domain::name(reason).data(), reason == reason_)) reason_ = reason;
+                ImGui::SetItemTooltip("%s", removal_hint(reason));
+            }
+            ImGui::EndCombo();
+        }
+        table_row("");
+        ImGui::TextDisabled("%s", removal_hint(reason_));
+        if (product && domain::is_keg(product->type)) {
+            table_row("");
+            ImGui::TextDisabled("%s", domain::keg_comes_back(reason_)
+                                          ? "The kegs go back to the keg cleaner, dirty."
+                                          : "The kegs leave with the beer; add them back when they return.");
+        }
+        table_row("When");
+        time_picker("##at", at_);
+        table_row("Note");
+        ImGui::SetNextItemWidth(300.0f * ui_scale_);
+        ImGui::InputTextWithHint("##note", "Customer, invoice...", &note_);
+        ImGui::EndTable();
+    }
+    if (!buttons("Save", product && count_ > 0)) return;
+    try {
+        goods_.remove({.beer = product->beer,
+                       .type = product->type,
+                       .unit_volume_l = product->unit_volume_l,
+                       .count = count_,
+                       .reason = reason_,
+                       .at = at_,
+                       .note = note_});
+        close();
+    } catch (const std::exception& e) {
+        error_ = e.what();
+    }
+}
+
+void PackagingViews::draw_count() {
+    const std::vector<domain::PackagedProduct> products = domain::combine_by_beer(goods_.packaged());
+    const domain::PackagedProduct* product = nullptr;
+    if (ImGui::BeginTable("##count", 2, ImGuiTableFlags_SizingFixedFit)) {
+        table_row("Beer");
+        product = product_combo(products);
+        table_row("Recorded");
+        ImGui::Text("%d", product ? product->count : 0);
+        table_row("Counted");
+        ImGui::SetNextItemWidth(80.0f * ui_scale_);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputInt("##counted", &count_, 0, 0, ImGuiInputTextFlags_AutoSelectAll);
+        count_ = std::max(count_, 0);
+        table_row("When");
+        time_picker("##at", at_);
+        table_row("Note");
+        ImGui::SetNextItemWidth(300.0f * ui_scale_);
+        ImGui::InputTextWithHint("##note", "Why the count differs", &note_);
+        ImGui::EndTable();
+    }
+    if (product && count_ < product->count) {
+        ImGui::TextColored(kWarningColor, "A shortage of %d. TTB may tax shortages: explain it in the report's remarks.",
+                           product->count - count_);
+    }
+    if (!buttons("Save count", product != nullptr)) return;
+    try {
+        goods_.count(product->beer, product->type, product->unit_volume_l, count_, at_, note_);
+        close();
+    } catch (const std::exception& e) {
+        error_ = e.what();
+    }
+}
+
+void PackagingViews::draw_return() {
+    if (ever_.empty()) {
+        wrapped_note("Nothing has been packaged yet, so nothing can come back.");
+        if (buttons("Save", false)) close();
+        return;
+    }
+    return_line_ = std::min(return_line_, ever_.size() - 1);
+    const domain::PackagedStock& line = ever_[return_line_];
+    const auto label = [this](const domain::PackagedStock& entry) {
+        return domain::batch_label(entry.batch_code, entry.beer) + " · " +
+               package_text(entry.type, entry.unit_volume_l, units_);
+    };
+    if (ImGui::BeginTable("##return", 2, ImGuiTableFlags_SizingFixedFit)) {
+        table_row("Beer");
+        ImGui::SetNextItemWidth(320.0f * ui_scale_);
+        if (ImGui::BeginCombo("##line", label(line).c_str())) {
+            for (std::size_t i = 0; i < ever_.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::Selectable(label(ever_[i]).c_str(), i == return_line_)) return_line_ = i;
+                ImGui::PopID();
+            }
+            ImGui::EndCombo();
+        }
+        table_row("How many");
+        ImGui::SetNextItemWidth(80.0f * ui_scale_);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputInt("##count", &count_, 0, 0, ImGuiInputTextFlags_AutoSelectAll);
+        count_ = std::max(count_, 0);
+        table_row("When");
+        time_picker("##at", at_);
+        table_row("Note");
+        ImGui::SetNextItemWidth(320.0f * ui_scale_);
+        ImGui::InputTextWithHint("##note", "Who returned it, and why", &note_);
+        ImGui::EndTable();
+    }
+    wrapped_note("Returned beer goes back into packaged goods (TTB report line 7); take it out again as destroyed "
+                 "if it's dumped. Tax paid on it can be claimed back.");
+    if (!buttons("Save", count_ > 0)) return;
+    try {
+        goods_.return_packages(line.batch_id, line.type, line.unit_volume_l, count_, at_, note_);
         close();
     } catch (const std::exception& e) {
         error_ = e.what();

@@ -1,9 +1,10 @@
 #pragma once
 // Packaged beer and kegs on screen: the packaged goods window (what's on
-// hand and the packaging log), the keg cleaner's window (dirty kegs, clean
-// kegs and the keg log) and the keg cleaner's dialogs for cleaning kegs,
-// adding kegs and removing them. Like the other dialogs, these log what
-// already happened: fill them in and press Enter.
+// hand and the packaging log) with its dialogs for taking beer out, counting
+// it and taking returns; and the keg cleaner's window (dirty kegs, clean kegs
+// and the keg log) with its dialogs for cleaning, adding and removing kegs.
+// Like the other dialogs, these log what already happened: fill them in and
+// press Enter.
 
 #include "app/packaged_goods_service.h"
 #include "calc/units.h"
@@ -43,7 +44,16 @@ public:
     void draw();
 
 private:
-    enum class Kind { None, Clean, Add, Remove };
+    enum class Kind { None, Clean, Add, Remove, TakeOut, Count, Return };
+
+    // One beer in one kind and size of package.
+    struct Product {
+        std::string beer;
+        domain::PackageType type = domain::PackageType::HalfBarrel;
+        double unit_volume_l = 0.0;
+
+        bool matches(const domain::PackagedProduct& product) const;
+    };
 
     // Empty kegs of each size in one state, as a small table.
     void draw_counts(domain::KegState state);
@@ -60,16 +70,20 @@ private:
     void draw_add();
     void draw_remove();
 
+    // Packaged goods dialogs, opened from its Stock tab for the selected
+    // product (or the first).
+    void open_goods_dialog(Kind kind, const calc::UnitPreferences& units);
+    // A picker of the beer on hand, by product. Returns the chosen one.
+    const domain::PackagedProduct* product_combo(const std::vector<domain::PackagedProduct>& products);
+    void draw_take_out();
+    void draw_count();
+    void draw_return();
+
     app::PackagedGoodsService& goods_;
     float ui_scale_;
 
     // The packaged product whose batches are shown.
-    struct Selection {
-        std::string beer;
-        domain::PackageType type = domain::PackageType::HalfBarrel;
-        double unit_volume_l = 0.0;
-    };
-    std::optional<Selection> selected_;
+    std::optional<Product> selected_;
 
     // The keg and packaging logs, re-read when they change.
     std::uint64_t history_revision_ = 0;
@@ -86,6 +100,13 @@ private:
     domain::KegState state_ = domain::KegState::Dirty;   // removing from
     domain::Timestamp at_{};
     std::string note_;
+    // Packaged goods dialogs.
+    calc::UnitPreferences units_{};  // of the window the dialog was opened from
+    Product product_;
+    int count_ = 0;
+    domain::PackagedReason reason_ = domain::PackagedReason::Sold;
+    std::vector<domain::PackagedStock> ever_;  // what can be returned
+    std::size_t return_line_ = 0;
 };
 
 } // namespace ninkasi::ui

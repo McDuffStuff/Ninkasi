@@ -1,5 +1,6 @@
 #include "app/batch_service.h"
 #include "app/floor_service.h"
+#include "app/inventory_service.h"
 #include "app/session.h"
 #include "data/database.h"
 #include "data/migrations.h"
@@ -42,12 +43,13 @@ struct Cellar {
     data::Database db{":memory:"};
     app::Session session = migrated_session(db);
     app::FloorService floor{db, session};
+    app::InventoryService inventory{db, session};
     std::int64_t brewhouse = floor.add(ElementType::Brewhouse, 0.0, 0.0);
     std::int64_t fv1 = add_vessel(ElementType::Fermenter, 2000.0);
     std::int64_t fv2 = add_vessel(ElementType::Fermenter, 2000.0);
     std::int64_t small = add_vessel(ElementType::Fermenter, 500.0);
     std::int64_t brite = add_vessel(ElementType::BriteTank, 2000.0);
-    app::BatchService batches{db, session, floor};
+    app::BatchService batches{db, session, floor, inventory};
 
     std::int64_t add_vessel(ElementType type, double capacity_l) {
         const std::int64_t id = floor.add(type, 0.0, 0.0);

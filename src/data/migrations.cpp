@@ -212,6 +212,55 @@ constexpr Migration kMigrations[] = {
         CREATE INDEX activity_by_element ON activity_log (element_id, at);
         CREATE INDEX activity_by_other_element ON activity_log (other_element_id, at);
     )sql"},
+    {5, R"sql(
+        -- Things the brewery stocks. Items with history are archived, never deleted.
+        CREATE TABLE inventory_items (
+            id            INTEGER PRIMARY KEY,
+            name          TEXT NOT NULL,
+            category      TEXT NOT NULL,               -- see ItemCategory in domain/inventory.h
+            unit          TEXT NOT NULL,               -- 'mass' (kg), 'volume' (L) or 'count'
+            library_id    INTEGER,                     -- the ingredient library entry it stocks (not a foreign key)
+            reorder_level REAL,                        -- low stock below this
+            location_id   INTEGER REFERENCES elements(id) ON DELETE SET NULL,
+            notes         TEXT NOT NULL DEFAULT '',
+            archived      INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        -- Deliveries: each is a lot, drawn from first in, first out.
+        CREATE TABLE inventory_lots (
+            id          INTEGER PRIMARY KEY,
+            item_id     INTEGER NOT NULL REFERENCES inventory_items(id),
+            received_at TEXT NOT NULL,
+            quantity    REAL NOT NULL,                 -- as received
+            supplier    TEXT NOT NULL DEFAULT '',
+            lot_code    TEXT NOT NULL DEFAULT '',
+            cost        REAL,
+            best_before TEXT,                          -- local date, YYYY-MM-DD
+            note        TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX lots_by_item ON inventory_lots (item_id, received_at);
+
+        -- The stock ledger: every change to what's on hand, positive in and
+        -- negative out. An item's stock is the sum of its rows, a lot's what's
+        -- left of it. Rows without a lot are stock used before its delivery
+        -- was logged (or found in a count). Append-only.
+        CREATE TABLE stock_movements (
+            id                 INTEGER PRIMARY KEY,
+            at                 TEXT NOT NULL,
+            item_id            INTEGER NOT NULL REFERENCES inventory_items(id),
+            lot_id             INTEGER REFERENCES inventory_lots(id),
+            quantity           REAL NOT NULL,
+            reason             TEXT NOT NULL,          -- see StockReason in domain/inventory.h
+            batch_id           INTEGER REFERENCES batches(id) ON DELETE SET NULL,
+            brew_ingredient_id INTEGER REFERENCES brew_ingredients(id) ON DELETE SET NULL,
+            note               TEXT NOT NULL DEFAULT '',
+            user_id            INTEGER NOT NULL REFERENCES users(id),
+            recorded_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE INDEX stock_by_item ON stock_movements (item_id, at);
+        CREATE INDEX stock_by_lot ON stock_movements (lot_id);
+    )sql"},
 };
 
 } // namespace

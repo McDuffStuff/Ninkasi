@@ -68,7 +68,9 @@ public:
     // Saves the knock-out: vessel, time, volume, OG and notes.
     void update_brew(const domain::Brew& brew);
     void remove_brew(std::int64_t brew_id);
-    void insert_ingredients(std::int64_t brew_id, const std::vector<domain::IngredientUse>& ingredients);
+    // Returns the new rows' ids, in the same order.
+    std::vector<std::int64_t> insert_ingredients(std::int64_t brew_id,
+                                                 const std::vector<domain::IngredientUse>& ingredients);
     std::vector<domain::IngredientUse> ingredients(std::int64_t brew_id);
     // The brews made on a brewhouse, newest first.
     std::vector<BrewSummary> brewhouse_history(std::int64_t brewhouse_id, int limit);

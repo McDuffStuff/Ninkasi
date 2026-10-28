@@ -4,6 +4,7 @@
 #include "app/batch_service.h"
 #include "app/floor_service.h"
 #include "app/ingredient_library.h"
+#include "app/inventory_service.h"
 #include "app/recipe_service.h"
 #include "app/session.h"
 #include "app/task_service.h"
@@ -65,6 +66,7 @@ private:
     app::FloorService floor_;
     app::RecipeService recipes_;
     app::IngredientLibrary library_;
+    app::InventoryService inventory_;
     app::BatchService batches_;
     app::TaskService tasks_;
     CellarDialogs dialogs_;

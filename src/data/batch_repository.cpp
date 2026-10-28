@@ -232,7 +232,9 @@ void BatchRepository::remove_brew(std::int64_t brew_id) {
     stmt.execute();
 }
 
-void BatchRepository::insert_ingredients(std::int64_t brew_id, const std::vector<domain::IngredientUse>& ingredients) {
+std::vector<std::int64_t> BatchRepository::insert_ingredients(std::int64_t brew_id,
+                                                              const std::vector<domain::IngredientUse>& ingredients) {
+    std::vector<std::int64_t> ids;
     auto stmt = db_.prepare(
         "INSERT INTO brew_ingredients (brew_id, position, kind, library_id, name, detail, amount_kind, planned, actual, "
         "text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
@@ -244,7 +246,9 @@ void BatchRepository::insert_ingredients(std::int64_t brew_id, const std::vector
         stmt.bind(5, use.name).bind(6, use.detail).bind(7, domain::key(use.amount_kind));
         stmt.bind(8, use.planned).bind(9, use.actual).bind(10, use.text);
         stmt.execute();
+        ids.push_back(db_.last_insert_id());
     }
+    return ids;
 }
 
 std::vector<domain::IngredientUse> BatchRepository::ingredients(std::int64_t brew_id) {

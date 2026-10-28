@@ -12,6 +12,9 @@
 // a row in the volume ledger (volume_events); what a vessel holds is the sum
 // of its rows. Mistakes are corrected with new rows, never by editing old ones.
 //
+// Knock-outs draw the confirmed ingredients from inventory in the same
+// transaction (see InventoryService).
+//
 // The rules, each enforced by throwing std::invalid_argument with a message
 // for the brewer:
 // - A vessel holds one batch at a time; a batch may be split across vessels.
@@ -27,6 +30,7 @@
 // It is reloaded after every change.
 
 #include "app/floor_service.h"
+#include "app/inventory_service.h"
 #include "app/session.h"
 #include "data/batch_repository.h"
 #include "data/database.h"
@@ -101,7 +105,7 @@ struct Packaging {
 
 class BatchService {
 public:
-    BatchService(data::Database& db, Session session, const FloorService& floor);
+    BatchService(data::Database& db, Session session, const FloorService& floor, InventoryService& inventory);
 
     // --- In memory: cheap enough to call every frame --------------------------
 
@@ -198,6 +202,7 @@ private:
     data::Database& db_;
     Session session_;
     const FloorService& floor_;
+    InventoryService& inventory_;
     data::BatchRepository repository_;
 
     std::vector<domain::Batch> active_;

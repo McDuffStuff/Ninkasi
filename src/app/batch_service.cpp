@@ -55,8 +55,9 @@ std::string describe(const domain::Reading& reading) {
 
 } // namespace
 
-BatchService::BatchService(data::Database& db, Session session, const FloorService& floor)
-    : db_(db), session_(std::move(session)), floor_(floor), repository_(db) {
+BatchService::BatchService(data::Database& db, Session session, const FloorService& floor,
+                           InventoryService& inventory)
+    : db_(db), session_(std::move(session)), floor_(floor), inventory_(inventory), repository_(db) {
     reload();
 }
 
@@ -185,6 +186,7 @@ std::int64_t BatchService::log_brew(const StartBrew& start, const std::optional<
     if (knock_out) write_knock_out(batch, brew, *knock_out);
     tx.commit();
     reload();
+    if (knock_out) inventory_.refresh();
     return brew.id;
 }
 
@@ -225,6 +227,7 @@ void BatchService::knock_out(const KnockOut& request) {
     write_knock_out(batch_copy, brew_copy, request);
     tx.commit();
     reload();
+    inventory_.refresh();
 }
 
 void BatchService::check_knock_out(const KnockOut& request, std::optional<std::int64_t> batch_id,
@@ -512,7 +515,11 @@ void BatchService::write_knock_out(const domain::Batch& batch, domain::Brew brew
     if (request.og) text += " at " + domain::gravity_token(*request.og);
 
     repository_.update_brew(brew);
-    repository_.insert_ingredients(brew.id, request.ingredients);
+    // The confirmed amounts come out of inventory.
+    const std::vector<std::int64_t> rows = repository_.insert_ingredients(brew.id, request.ingredients);
+    std::vector<std::pair<std::int64_t, domain::IngredientUse>> used;
+    for (std::size_t i = 0; i < rows.size(); ++i) used.emplace_back(rows[i], request.ingredients[i]);
+    inventory_.write_brew_usage(batch.id, used, request.at);
     record({0, request.at, batch.id, request.vessel_id, request.volume_l, VolumeReason::Brewed});
     // Full now; it needs cleaning again once it's emptied.
     repository_.set_condition(request.vessel_id, domain::VesselCondition::Clean);

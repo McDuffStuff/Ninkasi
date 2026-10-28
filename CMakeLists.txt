@@ -30,8 +30,10 @@ add_library(ninkasi_calc STATIC
     src/calc/alcohol.cpp
     src/calc/bitterness.cpp
     src/calc/color.cpp
+    src/calc/expression.cpp
     src/calc/extract.cpp
     src/calc/gravity.cpp
+    src/calc/latex.cpp
     src/calc/units.cpp
     src/calc/volumes.cpp
     src/calc/water.cpp
@@ -173,6 +175,7 @@ if(NINKASI_BUILD_TESTS)
         tests/calc/test_alcohol.cpp
         tests/calc/test_bitterness.cpp
         tests/calc/test_color.cpp
+        tests/calc/test_expression.cpp
         tests/calc/test_extract.cpp
         tests/calc/test_gravity.cpp
         tests/calc/test_units.cpp

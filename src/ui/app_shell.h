@@ -5,6 +5,7 @@
 #include "app/batch_service.h"
 #include "app/export_service.h"
 #include "app/floor_service.h"
+#include "app/formula_service.h"
 #include "app/ingredient_library.h"
 #include "app/inventory_service.h"
 #include "app/packaged_goods_service.h"
@@ -82,6 +83,7 @@ private:
     Theme theme_ = Theme::Dark;
     calc::UnitPreferences units_;
     domain::CalcSettings calc_settings_;
+    app::FormulaService formulas_;  // first, so adjusted formulas are in place before anything calculates
     app::FloorService floor_;
     app::RecipeService recipes_;
     app::IngredientLibrary library_;

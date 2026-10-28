@@ -37,13 +37,14 @@ void row(const char* label, float width) {
 
 BrewingSettingsWindow::BrewingSettingsWindow(const app::Session& session, domain::CalcSettings& calc_settings,
                                              data::SettingsRepository& settings, app::RecipeService& recipes,
-                                             app::IngredientLibrary& library, const calc::UnitPreferences& units,
-                                             float ui_scale)
+                                             app::IngredientLibrary& library, app::FormulaService& formulas,
+                                             const calc::UnitPreferences& units, float ui_scale)
     : session_(session),
       calc_settings_(calc_settings),
       settings_(settings),
       recipes_(recipes),
       library_(library),
+      formulas_tab_(formulas, ui_scale),
       units_(units),
       ui_scale_(ui_scale) {}
 
@@ -61,6 +62,11 @@ void BrewingSettingsWindow::show() {
     focus_ = true;
 }
 
+void BrewingSettingsWindow::show_formulas() {
+    show();
+    select_formulas_ = true;
+}
+
 void BrewingSettingsWindow::save() {
     if (calc_dirty_) app::save_calc_settings(session_, settings_, calc_settings_);
     if (defaults_dirty_) recipes_.set_defaults(defaults_);
@@ -69,7 +75,7 @@ void BrewingSettingsWindow::save() {
 
 void BrewingSettingsWindow::draw() {
     if (!visible_) return;
-    ImGui::SetNextWindowSize(ImVec2(720.0f, 620.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(960.0f, 680.0f) * ui_scale_, ImGuiCond_FirstUseEver);
     bool raise = false;
     if (focus_) {
         ImGui::SetNextWindowFocus();
@@ -111,6 +117,13 @@ void BrewingSettingsWindow::draw() {
                     last_change_ = ImGui::GetTime();
                 }
                 ImGui::EndDisabled();
+                ImGui::EndTabItem();
+            }
+            // Everyone can browse the formulas; the tab itself lets admins adjust them.
+            const ImGuiTabItemFlags formulas_flags = select_formulas_ ? ImGuiTabItemFlags_SetSelected : 0;
+            select_formulas_ = false;
+            if (ImGui::BeginTabItem("Formulas", nullptr, formulas_flags)) {
+                formulas_tab_.draw();
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();

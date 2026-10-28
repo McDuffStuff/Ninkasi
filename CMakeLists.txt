@@ -126,7 +126,9 @@ add_executable(ninkasi
     src/ui/packaging/packaging_views.cpp
     src/ui/people_window.cpp
     src/ui/fonts.cpp
+    src/ui/math_view.cpp
     src/ui/recipes/brewing_settings_window.cpp
+    src/ui/recipes/formulas_tab.cpp
     src/ui/recipes/ingredient_library_window.cpp
     src/ui/recipes/recipe_editors.cpp
     src/ui/recipes/recipe_library_window.cpp

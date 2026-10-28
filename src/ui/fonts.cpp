@@ -17,14 +17,16 @@ namespace {
 
 constexpr float kBaseFontSize = 16.0f;
 constexpr float kHeadingFontSize = 26.0f;
+constexpr float kMathFontSize = 21.0f;  // formulas are set a little larger than the UI text
 
-// Latin-1 plus the punctuation and symbols the UI uses (° · – — “ ” … − ≈).
-// Roboto has no arrows, so UI text must not use them.
+// Latin-1 plus the punctuation and symbols the UI uses (° · – — “ ” … − ≈),
+// and Greek letters and math operators for formulas (Roboto has the common
+// ones: ∑ √ ≤ ≥ ≠ ∞...). Roboto has no arrows, so UI text must not use them.
 const ImWchar kGlyphRanges[] = {
     0x0020, 0x00FF,  // Basic Latin and Latin-1 Supplement
+    0x0370, 0x03FF,  // Greek
     0x2010, 0x2027,  // dashes, quotation marks, bullet, ellipsis
-    0x2212, 0x2212,  // minus sign
-    0x2248, 0x2248,  // almost equal to
+    0x2200, 0x22FF,  // mathematical operators
     0,
 };
 
@@ -34,7 +36,7 @@ void load_fonts(float scale) {
     ImFontConfig config;
     config.FontDataOwnedByAtlas = false;  // the data lives in the executable
     // The first font added is the default.
-    for (const float size : {kBaseFontSize, kHeadingFontSize}) {
+    for (const float size : {kBaseFontSize, kHeadingFontSize, kMathFontSize}) {
         ImGui::GetIO().Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(embedded::kRobotoMediumTtf),
                                                    static_cast<int>(embedded::kRobotoMediumTtfSize), size * scale,
                                                    &config, kGlyphRanges);

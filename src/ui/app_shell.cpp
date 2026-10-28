@@ -21,6 +21,7 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       ui_scale_(ui_scale),
       units_(app::load_unit_preferences(settings_)),
       calc_settings_(app::load_calc_settings(settings_)),
+      formulas_(db, session_),
       floor_(db, session_),
       recipes_(db, session_),
       library_(db, session_),
@@ -46,7 +47,7 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       recipe_editors_(recipes_, library_, personal_, units_, calc_settings_, ui_scale_),
       recipe_library_(recipes_, recipe_editors_, ui_scale_),
       ingredient_window_(library_, units_, ui_scale_),
-      brewing_settings_(session_, calc_settings_, settings_, recipes_, library_, units_, ui_scale_) {
+      brewing_settings_(session_, calc_settings_, settings_, recipes_, library_, formulas_, units_, ui_scale_) {
     theme_ = theme_from_name(personal_.get_or(kThemeKey, "dark"));
     apply_theme(theme_, ui_scale_);
 
@@ -59,6 +60,10 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
 
     // The day's backup, before anything changes.
     notice_ = std::move(startup_notice);
+    // Adjusted formulas that can't be used any more.
+    for (const std::string& problem : formulas_.problems()) {
+        notice_ += std::string(notice_.empty() ? "" : "\n\n") + problem;
+    }
     // An admin who forgets their password needs a recovery code to get back in.
     const std::optional<domain::User> me = users_.person(session_.user_id);
     if (session_.is_admin() && me && me->has_password && !me->has_recovery_code) {
@@ -147,6 +152,8 @@ void AppShell::draw_menu_bar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Brewing settings")) brewing_settings_.show();
         ImGui::SetItemTooltip("Calculation formulas and the defaults for new recipes");
+        if (ImGui::MenuItem("Formulas")) brewing_settings_.show_formulas();
+        ImGui::SetItemTooltip("Every formula Ninkasi calculates with, written out");
         ImGui::EndMenu();
     }
     draw_units_menu();

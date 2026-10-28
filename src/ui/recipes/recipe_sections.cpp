@@ -82,13 +82,6 @@ void form_row(const char* label) {
     ImGui::TableNextColumn();
 }
 
-bool contains_ignoring_case(std::string_view text, std::string_view filter) {
-    if (filter.empty()) return true;
-    auto lower = [](char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); };
-    return std::search(text.begin(), text.end(), filter.begin(), filter.end(),
-                       [&](char a, char b) { return lower(a) == lower(b); }) != text.end();
-}
-
 bool remove_button() {
     const bool clicked = ImGui::SmallButton("×");
     ImGui::SetItemTooltip("Remove");
@@ -103,18 +96,14 @@ bool library_picker(const char* label, const std::vector<domain::LibraryItem<T>>
     bool added = false;
     if (ImGui::Button(label)) ImGui::OpenPopup(label);
     if (ImGui::BeginPopup(label)) {
-        static std::string filter;
-        if (ImGui::IsWindowAppearing()) {
-            filter.clear();
-            ImGui::SetKeyboardFocusHere();
-        }
-        ImGui::SetNextItemWidth(px(context, 380.0f));
-        ImGui::InputTextWithHint("##filter", "Search the library", &filter);
+        search_field("Search the library", px(context, 380.0f));
         if (ImGui::BeginChild("##entries", ImVec2(px(context, 380.0f), px(context, 280.0f)))) {
-            for (const domain::LibraryItem<T>& entry : entries) {
-                if (!contains_ignoring_case(entry.item.name, filter)) continue;
+            std::vector<std::string> names;
+            for (const domain::LibraryItem<T>& entry : entries) names.push_back(entry.item.name);
+            for (std::size_t i : search_order(names)) {
+                const domain::LibraryItem<T>& entry = entries[i];
                 ImGui::PushID(static_cast<int>(entry.id));
-                if (ImGui::Selectable(entry.item.name.c_str())) {
+                if (search_item(entry.item.name.c_str(), false)) {
                     add(entry.id, entry.item);
                     added = true;
                     ImGui::CloseCurrentPopup();
@@ -139,29 +128,36 @@ bool library_picker(const char* label, const std::vector<domain::LibraryItem<T>>
 
 bool salt_combo(const char* label, calc::Salt& salt) {
     bool changed = false;
-    if (ImGui::BeginCombo(label, calc::info(salt).name.data())) {
-        for (const calc::SaltInfo& option : calc::salts()) {
-            const std::string text = std::string(option.name) + "  " + std::string(option.formula);
-            if (ImGui::Selectable(text.c_str(), option.salt == salt) && option.salt != salt) {
-                salt = option.salt;
+    if (begin_search_combo(label, calc::info(salt).name.data())) {
+        const std::span<const calc::SaltInfo> options = calc::salts();
+        std::vector<std::string> texts;
+        for (const calc::SaltInfo& option : options) {
+            texts.push_back(std::string(option.name) + "  " + std::string(option.formula));
+        }
+        for (std::size_t i : search_order(texts)) {
+            if (search_item(texts[i].c_str(), options[i].salt == salt) && options[i].salt != salt) {
+                salt = options[i].salt;
                 changed = true;
             }
         }
-        ImGui::EndCombo();
+        end_search_combo();
     }
     return changed;
 }
 
 bool acid_combo(const char* label, calc::Acid& acid) {
     bool changed = false;
-    if (ImGui::BeginCombo(label, calc::info(acid).name.data())) {
-        for (const calc::AcidInfo& option : calc::acids()) {
-            if (ImGui::Selectable(option.name.data(), option.acid == acid) && option.acid != acid) {
-                acid = option.acid;
+    if (begin_search_combo(label, calc::info(acid).name.data())) {
+        const std::span<const calc::AcidInfo> options = calc::acids();
+        std::vector<std::string> names;
+        for (const calc::AcidInfo& option : options) names.emplace_back(option.name);
+        for (std::size_t i : search_order(names)) {
+            if (search_item(names[i].c_str(), options[i].acid == acid) && options[i].acid != acid) {
+                acid = options[i].acid;
                 changed = true;
             }
         }
-        ImGui::EndCombo();
+        end_search_combo();
     }
     return changed;
 }

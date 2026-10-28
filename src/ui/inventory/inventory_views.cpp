@@ -532,17 +532,21 @@ void InventoryViews::draw_item_fields() {
                                              [this](const auto& choice) { return choice.first == item_.library_id; });
             table_row("Library ingredient");
             ImGui::SetNextItemWidth(field);
-            if (ImGui::BeginCombo("##library", linked != choices.end() ? linked->second.c_str() : "Matched by name")) {
-                if (ImGui::Selectable("Matched by name", linked == choices.end())) item_.library_id = 0;
-                for (const auto& [id, name] : choices) {
+            if (begin_search_combo("##library",
+                                   linked != choices.end() ? linked->second.c_str() : "Matched by name")) {
+                if (!searching() && search_item("Matched by name", linked == choices.end())) item_.library_id = 0;
+                std::vector<std::string> names;
+                for (const auto& choice : choices) names.push_back(choice.second);
+                for (std::size_t i : search_order(names)) {
+                    const auto& [id, name] = choices[i];
                     ImGui::PushID(static_cast<int>(id));
-                    if (ImGui::Selectable(name.c_str(), id == item_.library_id)) {
+                    if (search_item(name.c_str(), id == item_.library_id)) {
                         item_.library_id = id;
                         if (is_blank(item_.name)) item_.name = name;
                     }
                     ImGui::PopID();
                 }
-                ImGui::EndCombo();
+                end_search_combo();
             }
             ImGui::SetItemTooltip("Brews draw on this item for that ingredient. Otherwise they draw on the item "
                                   "with the ingredient's name.");
@@ -689,6 +693,7 @@ void InventoryViews::draw_invoice() {
     // The new item dialog opens over this one, from outside the item picker.
     if (open_new_item_) {
         item_ = {};
+        item_.name = new_item_name_;
         has_reorder_ = false;
         reorder_ = 0.0;
         new_item_error_.clear();
@@ -814,12 +819,10 @@ InventoryViews::Choice InventoryViews::dialog_buttons(const char* confirm, bool 
     if (ImGui::Button(confirm)) choice = Choice::Confirm;
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Cancel") || (keys && ImGui::IsKeyPressed(ImGuiKey_Escape))) choice = Choice::Cancel;
+    if (ImGui::Button("Cancel") || (keys && dialog_escape_pressed())) choice = Choice::Cancel;
     if (keys && enabled) {
         // Enter saves; a field being typed in has already taken its value.
-        const bool enter =
-            ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
-        if (enter && !ImGui::IsAnyItemActive()) choice = Choice::Confirm;
+        if (dialog_enter_pressed() && !ImGui::IsAnyItemActive()) choice = Choice::Confirm;
         ImGui::SameLine();
         ImGui::TextDisabled("Enter saves");
     }
@@ -835,10 +838,18 @@ bool InventoryViews::buttons(const char* confirm, bool enabled) {
 bool InventoryViews::item_combo(const char* label, std::int64_t& item_id, bool& new_item) {
     const app::ItemStock* chosen = inventory_.find(item_id);
     bool changed = false;
-    if (ImGui::BeginCombo(label, chosen ? chosen->item.name.c_str() : "Choose an item")) {
-        for (const app::ItemStock& entry : inventory_.stock()) {
+    if (begin_search_combo(label, chosen ? chosen->item.name.c_str() : "Choose an item")) {
+        // Searched by name and category.
+        const std::vector<app::ItemStock>& stock = inventory_.stock();
+        std::vector<std::string> texts;
+        for (const app::ItemStock& entry : stock) {
+            texts.push_back(entry.item.name + " " + std::string(domain::name(entry.item.category)));
+        }
+        const std::vector<std::size_t> order = search_order(texts);
+        for (std::size_t i : order) {
+            const app::ItemStock& entry = stock[i];
             ImGui::PushID(static_cast<int>(entry.item.id));
-            if (ImGui::Selectable(entry.item.name.c_str(), entry.item.id == item_id)) {
+            if (search_item(entry.item.name.c_str(), entry.item.id == item_id)) {
                 item_id = entry.item.id;
                 changed = true;
             }
@@ -847,8 +858,17 @@ bool InventoryViews::item_combo(const char* label, std::int64_t& item_id, bool& 
             ImGui::PopID();
         }
         ImGui::Separator();
-        if (ImGui::Selectable("New item...")) new_item = true;
-        ImGui::EndCombo();
+        // Nothing found: offer to add it, named as searched (Enter does this).
+        if (searching() && order.empty()) {
+            if (search_item(("New item \"" + search_text() + "\"...").c_str(), false)) {
+                new_item = true;
+                new_item_name_ = search_text();
+            }
+        } else if (ImGui::Selectable("New item...")) {
+            new_item = true;
+            new_item_name_.clear();
+        }
+        end_search_combo();
     }
     return changed;
 }

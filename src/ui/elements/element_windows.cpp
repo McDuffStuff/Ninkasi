@@ -521,16 +521,20 @@ void ElementWindows::draw_units_tab(const domain::Element& element) {
 
         ImGui::PushID(static_cast<int>(calc::index_of(measure)));
         ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::BeginCombo("##unit", preview.c_str())) {
-            if (ImGui::Selectable(default_label.c_str(), !chosen)) {
-                floor_.set_unit_override(element.id, measure, std::nullopt);
-            }
+        if (begin_search_combo("##unit", preview.c_str())) {
+            // The brewery default first, then each unit.
+            std::vector<std::optional<calc::Unit>> options{std::nullopt};
+            std::vector<std::string> labels{default_label};
             for (calc::Unit unit : calc::units_of(measure)) {
-                if (ImGui::Selectable(unit_label(unit).c_str(), chosen == unit)) {
-                    floor_.set_unit_override(element.id, measure, unit);
+                options.emplace_back(unit);
+                labels.push_back(unit_label(unit));
+            }
+            for (std::size_t i : search_order(labels)) {
+                if (search_item(labels[i].c_str(), chosen == options[i])) {
+                    floor_.set_unit_override(element.id, measure, options[i]);
                 }
             }
-            ImGui::EndCombo();
+            end_search_combo();
         }
         ImGui::PopID();
     }

@@ -411,10 +411,9 @@ bool PackagingViews::buttons(const char* confirm, bool enabled) {
     bool pressed = ImGui::Button(confirm);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) close();
+    if (ImGui::Button("Cancel") || dialog_escape_pressed()) close();
     // Enter saves; a field being typed in has already taken its value.
-    const bool enter = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
-    if (enabled && enter && !ImGui::IsAnyItemActive()) pressed = true;
+    if (enabled && dialog_enter_pressed() && !ImGui::IsAnyItemActive()) pressed = true;
     if (enabled) {
         ImGui::SameLine();
         ImGui::TextDisabled("Enter saves");
@@ -530,16 +529,18 @@ const domain::PackagedProduct* PackagingViews::product_combo(const std::vector<d
         return product.beer + " · " + package_text(product.type, product.unit_volume_l, units_);
     };
     ImGui::SetNextItemWidth(300.0f * ui_scale_);
-    if (ImGui::BeginCombo("##product", chosen != products.end() ? label(*chosen).c_str() : "Choose the beer")) {
-        for (std::size_t i = 0; i < products.size(); ++i) {
+    if (begin_search_combo("##product", chosen != products.end() ? label(*chosen).c_str() : "Choose the beer")) {
+        std::vector<std::string> labels;
+        for (const domain::PackagedProduct& product : products) labels.push_back(label(product));
+        for (std::size_t i : search_order(labels)) {
             ImGui::PushID(static_cast<int>(i));
-            if (ImGui::Selectable(label(products[i]).c_str(), product_.matches(products[i]))) {
+            if (search_item(labels[i].c_str(), product_.matches(products[i]))) {
                 product_ = Product{products[i].beer, products[i].type, products[i].unit_volume_l};
                 if (kind_ == Kind::Count) count_ = products[i].count;
             }
             ImGui::PopID();
         }
-        ImGui::EndCombo();
+        end_search_combo();
     }
     return chosen != products.end() ? &*chosen : nullptr;
 }
@@ -561,12 +562,15 @@ void PackagingViews::draw_take_out() {
         count_ = std::clamp(count_, 0, product ? product->count : 0);
         table_row("Why");
         ImGui::SetNextItemWidth(300.0f * ui_scale_);
-        if (ImGui::BeginCombo("##reason", domain::name(reason_).data())) {
-            for (domain::PackagedReason reason : domain::kRemovalReasons) {
-                if (ImGui::Selectable(domain::name(reason).data(), reason == reason_)) reason_ = reason;
+        if (begin_search_combo("##reason", domain::name(reason_).data())) {
+            std::vector<std::string> names;
+            for (domain::PackagedReason reason : domain::kRemovalReasons) names.emplace_back(domain::name(reason));
+            for (std::size_t i : search_order(names)) {
+                const domain::PackagedReason reason = domain::kRemovalReasons[i];
+                if (search_item(names[i].c_str(), reason == reason_)) reason_ = reason;
                 ImGui::SetItemTooltip("%s", removal_hint(reason));
             }
-            ImGui::EndCombo();
+            end_search_combo();
         }
         table_row("");
         ImGui::TextDisabled("%s", removal_hint(reason_));
@@ -646,13 +650,15 @@ void PackagingViews::draw_return() {
     if (ImGui::BeginTable("##return", 2, ImGuiTableFlags_SizingFixedFit)) {
         table_row("Beer");
         ImGui::SetNextItemWidth(320.0f * ui_scale_);
-        if (ImGui::BeginCombo("##line", label(line).c_str())) {
-            for (std::size_t i = 0; i < ever_.size(); ++i) {
+        if (begin_search_combo("##line", label(line).c_str())) {
+            std::vector<std::string> labels;
+            for (const domain::PackagedStock& entry : ever_) labels.push_back(label(entry));
+            for (std::size_t i : search_order(labels)) {
                 ImGui::PushID(static_cast<int>(i));
-                if (ImGui::Selectable(label(ever_[i]).c_str(), i == return_line_)) return_line_ = i;
+                if (search_item(labels[i].c_str(), i == return_line_)) return_line_ = i;
                 ImGui::PopID();
             }
-            ImGui::EndCombo();
+            end_search_combo();
         }
         table_row("How many");
         ImGui::SetNextItemWidth(80.0f * ui_scale_);

@@ -258,7 +258,7 @@ void RecipeLibraryWindow::draw_import_report() {
         }
     }
     ImGui::Spacing();
-    if (ImGui::Button("OK") || ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+    if (ImGui::Button("OK") || dialog_enter_pressed() || dialog_escape_pressed()) {
         open_import_report_ = false;
         ImGui::CloseCurrentPopup();
     }

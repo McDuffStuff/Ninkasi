@@ -302,10 +302,14 @@ void CellarDialogs::draw_log_brew() {
         if (!add_to_batch_) {
             table_row("Recipe");
             ImGui::SetNextItemWidth(field);
-            if (ImGui::BeginCombo("##recipe", recipe_ ? recipe_->name.c_str() : "Choose a recipe")) {
-                for (const data::RecipeSummary& recipe : recipe_list_) {
+            if (begin_search_combo("##recipe", recipe_ ? recipe_->name.c_str() : "Choose a recipe")) {
+                // Searched by name and style.
+                std::vector<std::string> texts;
+                for (const data::RecipeSummary& recipe : recipe_list_) texts.push_back(recipe.name + " " + recipe.style);
+                for (std::size_t i : search_order(texts)) {
+                    const data::RecipeSummary& recipe = recipe_list_[i];
                     ImGui::PushID(static_cast<int>(recipe.id));
-                    if (ImGui::Selectable(recipe.name.c_str(), recipe.id == recipe_id_)) {
+                    if (search_item(recipe.name.c_str(), recipe.id == recipe_id_)) {
                         recipe_id_ = recipe.id;
                         recipe_ = recipes_.load(recipe.id);
                     }
@@ -315,7 +319,7 @@ void CellarDialogs::draw_log_brew() {
                     }
                     ImGui::PopID();
                 }
-                ImGui::EndCombo();
+                end_search_combo();
             }
             table_row("Batch code");
             ImGui::SetNextItemWidth(field * 0.5f);
@@ -327,10 +331,16 @@ void CellarDialogs::draw_log_brew() {
             const domain::Batch* chosen = batches_.find_active(batch_id_);
             table_row("Batch");
             ImGui::SetNextItemWidth(field);
-            if (ImGui::BeginCombo("##batch", chosen ? domain::label(*chosen).c_str() : "")) {
+            if (begin_search_combo("##batch", chosen ? domain::label(*chosen).c_str() : "")) {
+                // Searched by code, beer and tank.
+                std::vector<std::string> texts;
                 for (const domain::Batch* batch : open_batches) {
+                    texts.push_back(domain::label(*batch) + " " + where_text(batches_, floor_, batch->id));
+                }
+                for (std::size_t i : search_order(texts)) {
+                    const domain::Batch* batch = open_batches[i];
                     ImGui::PushID(static_cast<int>(batch->id));
-                    if (ImGui::Selectable(domain::label(*batch).c_str(), batch->id == batch_id_)) batch_id_ = batch->id;
+                    if (search_item(domain::label(*batch).c_str(), batch->id == batch_id_)) batch_id_ = batch->id;
                     const std::string where = where_text(batches_, floor_, batch->id);
                     if (!where.empty()) {
                         ImGui::SameLine();
@@ -338,7 +348,7 @@ void CellarDialogs::draw_log_brew() {
                     }
                     ImGui::PopID();
                 }
-                ImGui::EndCombo();
+                end_search_combo();
             }
         }
         table_row("Brewed");
@@ -667,16 +677,20 @@ void CellarDialogs::draw_package() {
             cans_ = std::max(cans_, 0);
             ImGui::SameLine();
             ImGui::SetNextItemWidth(200.0f * ui_scale_);
-            if (ImGui::BeginCombo("##can_item", can_stock ? can_stock->item.name.c_str() : "Choose the cans")) {
+            if (begin_search_combo("##can_item", can_stock ? can_stock->item.name.c_str() : "Choose the cans")) {
+                std::vector<const app::ItemStock*> cans;
+                std::vector<std::string> names;
                 for (const app::ItemStock& entry : inventory_.stock()) {
                     if (entry.item.category != domain::ItemCategory::Can) continue;
-                    ImGui::PushID(static_cast<int>(entry.item.id));
-                    if (ImGui::Selectable(entry.item.name.c_str(), entry.item.id == can_item_id_)) {
-                        can_item_id_ = entry.item.id;
-                    }
+                    cans.push_back(&entry);
+                    names.push_back(entry.item.name);
+                }
+                for (std::size_t i : search_order(names)) {
+                    ImGui::PushID(static_cast<int>(cans[i]->item.id));
+                    if (search_item(names[i].c_str(), cans[i]->item.id == can_item_id_)) can_item_id_ = cans[i]->item.id;
                     ImGui::PopID();
                 }
-                ImGui::EndCombo();
+                end_search_combo();
             }
             if (can_stock) {
                 ImGui::SameLine();
@@ -963,12 +977,11 @@ bool CellarDialogs::buttons(const char* confirm, bool enabled, const char* dismi
     bool pressed = ImGui::Button(confirm);
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button(dismiss) || ImGui::IsKeyPressed(ImGuiKey_Escape)) close();
+    if (ImGui::Button(dismiss) || dialog_escape_pressed()) close();
 
     // Enter saves, unless it's typing a new line in a notes box. A field
     // being typed in has already taken its value by now.
-    const bool enter = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
-    if (enter_confirms && enabled && enter && !ImGui::IsAnyItemActive()) pressed = true;
+    if (enter_confirms && enabled && dialog_enter_pressed() && !ImGui::IsAnyItemActive()) pressed = true;
     if (enter_confirms && enabled) {
         ImGui::SameLine();
         ImGui::TextDisabled("Enter saves");
@@ -981,21 +994,27 @@ void CellarDialogs::vessel_combo(const char* label, std::int64_t& vessel_id,
                                  const calc::UnitPreferences& units) {
     const domain::Element* chosen = floor_.find(vessel_id);
     ImGui::SetNextItemWidth(220.0f * ui_scale_);
-    if (ImGui::BeginCombo(label, chosen ? chosen->name.c_str() : "Choose a tank")) {
+    if (begin_search_combo(label, chosen ? chosen->name.c_str() : "Choose a tank")) {
+        std::vector<const domain::Element*> tanks;
+        std::vector<std::string> names;
         for (const domain::Element& element : floor_.elements()) {
             if (!domain::holds_beer(element.type)) continue;
+            tanks.push_back(&element);
+            names.push_back(element.name);
+        }
+        // Tanks that can't take the beer are listed but can't be picked.
+        for (std::size_t i : search_order(names)) {
+            const domain::Element& element = *tanks[i];
             const app::Availability availability = check(element.id);
             ImGui::PushID(static_cast<int>(element.id));
-            ImGui::BeginDisabled(!availability.allowed);
-            if (ImGui::Selectable(element.name.c_str(), element.id == vessel_id)) vessel_id = element.id;
-            ImGui::EndDisabled();
+            if (search_item(element.name.c_str(), element.id == vessel_id, availability.allowed)) vessel_id = element.id;
             if (!availability.message.empty()) {
                 ImGui::SameLine();
                 ImGui::TextDisabled("%s", rendered(availability.message, units).c_str());
             }
             ImGui::PopID();
         }
-        ImGui::EndCombo();
+        end_search_combo();
     }
     // Why the chosen tank won't do, or what to watch out for.
     if (chosen) {

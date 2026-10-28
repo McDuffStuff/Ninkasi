@@ -150,6 +150,7 @@ private:
     std::vector<DraftLine> lines_;
     bool open_new_item_ = false;
     std::size_t new_item_line_ = 0;  // the line an item is being added for
+    std::string new_item_name_;      // what was searched for when it wasn't found
     std::string new_item_error_;
 };
 

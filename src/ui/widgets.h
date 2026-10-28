@@ -4,6 +4,7 @@
 #include "calc/units.h"
 #include "domain/recipe.h"
 #include "domain/recipe_math.h"
+#include "ui/search_combo.h"
 
 #include <imgui.h>
 
@@ -41,18 +42,20 @@ bool edit_percent(const char* label, double& fraction, int decimals = 1);
 // as qt/lb when grain is weighed in pounds or ounces.
 bool edit_volume_per_mass(const char* label, double& l_per_kg, calc::Unit mass_unit);
 
-// A combo over `values`, labelled with domain::name().
+// A dropdown of `values`, labelled with domain::name(), that can be searched.
 template <typename E, std::size_t N>
 bool enum_combo(const char* label, E& value, const std::array<E, N>& values) {
     bool changed = false;
-    if (ImGui::BeginCombo(label, domain::name(value).data())) {
-        for (E option : values) {
-            if (ImGui::Selectable(domain::name(option).data(), option == value) && option != value) {
-                value = option;
+    if (begin_search_combo(label, domain::name(value).data())) {
+        std::array<std::string, N> names;
+        for (std::size_t i = 0; i < N; ++i) names[i] = std::string(domain::name(values[i]));
+        for (std::size_t i : search_order(names)) {
+            if (search_item(names[i].c_str(), values[i] == value) && values[i] != value) {
+                value = values[i];
                 changed = true;
             }
         }
-        ImGui::EndCombo();
+        end_search_combo();
     }
     return changed;
 }

@@ -206,15 +206,21 @@ void TaskViews::draw_add_form(Draft& draft, std::optional<std::int64_t> fixed_el
 
 void TaskViews::element_combo(const char* label, std::int64_t& element_id) {
     const domain::Element* chosen = element_id ? floor_.find(element_id) : nullptr;
-    if (!ImGui::BeginCombo(label, chosen ? chosen->name.c_str() : "No equipment")) return;
-    if (ImGui::Selectable("No equipment", !chosen)) element_id = 0;
+    if (!begin_search_combo(label, chosen ? chosen->name.c_str() : "No equipment")) return;
+    if (!searching() && search_item("No equipment", !chosen)) element_id = 0;
+    std::vector<const domain::Element*> elements;
+    std::vector<std::string> names;
     for (const domain::Element& element : floor_.elements()) {
         if (element.type == domain::ElementType::RecipeStation) continue;  // it has no tasks
-        ImGui::PushID(static_cast<int>(element.id));
-        if (ImGui::Selectable(element.name.c_str(), element.id == element_id)) element_id = element.id;
+        elements.push_back(&element);
+        names.push_back(element.name);
+    }
+    for (std::size_t i : search_order(names)) {
+        ImGui::PushID(static_cast<int>(elements[i]->id));
+        if (search_item(names[i].c_str(), elements[i]->id == element_id)) element_id = elements[i]->id;
         ImGui::PopID();
     }
-    ImGui::EndCombo();
+    end_search_combo();
 }
 
 // --- The editor -----------------------------------------------------------------
@@ -280,7 +286,7 @@ void TaskViews::draw_editor() {
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+    if (ImGui::Button("Cancel") || dialog_escape_pressed()) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
 }
 

@@ -48,6 +48,7 @@ add_library(ninkasi_core STATIC
     src/domain/activity.cpp
     src/domain/batch.cpp
     src/domain/element.cpp
+    src/domain/fuzzy_match.cpp
     src/domain/inventory.cpp
     src/domain/packaging.cpp
     src/domain/recipe.cpp
@@ -103,6 +104,7 @@ add_executable(ninkasi
     src/ui/elements/element_windows.cpp
     src/ui/file_dialog.cpp
     src/ui/floor/floor_view.cpp
+    src/ui/search_combo.cpp
     src/ui/inventory/inventory_views.cpp
     src/ui/packaging/packaging_views.cpp
     src/ui/fonts.cpp
@@ -166,6 +168,7 @@ if(NINKASI_BUILD_TESTS)
         tests/domain/test_activity.cpp
         tests/domain/test_batch.cpp
         tests/domain/test_element.cpp
+        tests/domain/test_fuzzy_match.cpp
         tests/domain/test_inventory.cpp
         tests/domain/test_packaging.cpp
         tests/domain/test_recipe_math.cpp

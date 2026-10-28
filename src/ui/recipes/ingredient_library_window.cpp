@@ -73,11 +73,15 @@ void IngredientLibraryWindow::draw() {
         needs_reload_ = false;
     }
     ImGui::SetNextWindowSize(ImVec2(900.0f, 560.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    bool raise = false;
     if (focus_) {
         ImGui::SetNextWindowFocus();
         focus_ = false;
+        raise = true;
     }
-    if (ImGui::Begin("Ingredient library", &visible_)) {
+    const bool expanded = ImGui::Begin("Ingredient library", &visible_);
+    if (raise) raise_os_window();
+    if (expanded) {
         ImGui::SetNextItemWidth(260.0f * ui_scale_);
         ImGui::InputTextWithHint("##filter", "Search", &filter_);
         ImGui::SameLine();

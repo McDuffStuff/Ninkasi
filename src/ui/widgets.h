@@ -60,4 +60,11 @@ bool enum_combo(const char* label, E& value, const std::array<E, N>& values) {
 // Muted text, wrapped to the window width.
 void wrapped_note(const char* text);
 
+// Brings the current window's OS window to the front if it has been popped
+// out of Ninkasi's main window. ImGui focuses windows inside the app but
+// leaves their OS windows where they are, so without this a popped-out
+// window asked to come forward could stay hidden behind the main window.
+// Call between Begin() and End() in the frame the window is focused.
+void raise_os_window();
+
 } // namespace ninkasi::ui

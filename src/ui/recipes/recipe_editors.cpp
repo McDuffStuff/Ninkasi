@@ -1,6 +1,7 @@
 #include "ui/recipes/recipe_editors.h"
 
 #include "ui/recipes/recipe_sections.h"
+#include "ui/widgets.h"
 
 #include <imgui.h>
 
@@ -92,6 +93,7 @@ bool RecipeEditors::draw_editor(Editor& editor) {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter() + ImVec2(stagger, stagger), ImGuiCond_FirstUseEver,
                             {0.5f, 0.5f});
     ImGui::SetNextWindowSize(ImVec2(960.0f, 660.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    const bool raise = editor.focus;
     if (editor.focus) {
         ImGui::SetNextWindowFocus();
         editor.focus = false;
@@ -101,7 +103,9 @@ bool RecipeEditors::draw_editor(Editor& editor) {
     const std::string title = (is_blank(recipe.name) ? std::string("Untitled recipe") : recipe.name) +
                               (editor.dirty ? " *" : "") + "###recipe_" + std::to_string(recipe.id);
     bool open = true;
-    if (ImGui::Begin(title.c_str(), &open)) {
+    const bool expanded = ImGui::Begin(title.c_str(), &open);
+    if (raise) raise_os_window();
+    if (expanded) {
         const RecipeContext context{units_, library_, ui_scale_};
         bool changed = draw_recipe_header(recipe, context);
         const domain::RecipeStats stats = domain::calculate(recipe, calc_settings_);

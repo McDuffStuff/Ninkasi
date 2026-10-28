@@ -3,9 +3,9 @@
 // popped out into its own OS window (so several screens can be used at
 // once), or maximized. The open windows are remembered between runs.
 //
-// Tanks show the batch they hold with its readings, a brewhouse shows the
-// brew under way and its brew sheet, and every piece of equipment has its
-// tasks and log.
+// Tanks show the batch they hold with its readings, a brewhouse logs brews
+// and lists those waiting for their knock-out, and every piece of equipment
+// has its tasks and log.
 
 #include "app/batch_service.h"
 #include "app/floor_service.h"
@@ -72,8 +72,7 @@ private:
     void draw_overview_tab(Window& window, const domain::Element& element);
     void draw_equipment_settings(Window& window, const domain::Element& element);
     void draw_vessel_status(const domain::Element& element, const calc::UnitPreferences& units);
-    void draw_brewhouse_status(const domain::Element& element, const calc::UnitPreferences& units);
-    void draw_brew_sheet(const domain::Batch& batch, const calc::UnitPreferences& units);
+    void draw_brewhouse_status(const domain::Element& element);
     void draw_history_tab(const Window& window, const calc::UnitPreferences& units);
     void draw_units_tab(const domain::Element& element);
     void refresh(Window& window);

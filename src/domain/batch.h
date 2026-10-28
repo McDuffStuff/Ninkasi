@@ -82,7 +82,7 @@ struct Reading {
 // --- Batches ----------------------------------------------------------------
 
 enum class BatchStatus {
-    Brewing,       // the first brew is under way; nothing is in a vessel yet
+    Brewing,       // brewed, but no knock-out logged yet: nothing is in a vessel
     Fermenting,
     Conditioning,  // crashing, lagering or in a brite tank
     Packaged,      // finished: all of it has left the vessels, some packaged

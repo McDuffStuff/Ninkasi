@@ -29,16 +29,9 @@ constexpr double kMaxZoom = 4.0;
 constexpr double kGridStep = 50.0;    // floor units between grid lines; every 5th is darker
 constexpr float kClickSlop = 4.0f;    // pixels a click may wander before it counts as a drag
 constexpr double kHoverDelay = 0.35;  // seconds before the summary appears
-constexpr double kBrewingFill = 0.7;  // how full a brewhouse looks while brewing
-constexpr float kPi = 3.14159265f;
 
 ImVec4 mix(const ImVec4& a, const ImVec4& b, float t) {
     return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t};
-}
-
-ImVec4 with_alpha(ImVec4 color, float alpha) {
-    color.w = alpha;
-    return color;
 }
 
 ImU32 to_u32(const ImVec4& color) {
@@ -162,38 +155,6 @@ std::optional<std::int64_t> FloorView::hit_test(ImVec2 screen) const {
 bool FloorView::over_resize_handle(const domain::Element& element, ImVec2 screen) const {
     const auto [min, max] = resize_handle(element);
     return screen.x >= min.x && screen.x <= max.x && screen.y >= min.y && screen.y <= max.y;
-}
-
-// --- What vessels hold ------------------------------------------------------------
-
-FloorView::Contents FloorView::contents_of(const domain::Element& element) const {
-    Contents contents;
-    if (element.type == domain::ElementType::Brewhouse) {
-        if (const domain::Brew* brew = batches_.brew_at(element.id)) {
-            contents.batch = batches_.find_active(brew->batch_id);
-            contents.fill = kBrewingFill;
-            contents.brewing = true;
-        }
-    } else if (const std::optional<app::VesselContents> held = batches_.contents(element.id)) {
-        contents.batch = batches_.find_active(held->batch_id);
-        // Without a capacity there's nothing to compare against: show it full.
-        contents.fill = element.capacity_l && *element.capacity_l > 0.0
-                            ? std::clamp(held->volume_l / *element.capacity_l, 0.0, 1.0)
-                            : 1.0;
-    }
-    return contents;
-}
-
-double FloorView::batch_srm(const domain::Batch& batch) const {
-    if (srm_revision_ != batches_.revision()) {
-        srm_cache_.clear();
-        srm_revision_ = batches_.revision();
-    }
-    const auto found = srm_cache_.find(batch.id);
-    if (found != srm_cache_.end()) return found->second;
-    const double srm = domain::calculate(batch.recipe, calc_settings_).srm;
-    srm_cache_[batch.id] = srm;
-    return srm;
 }
 
 // --- Toolbar ----------------------------------------------------------------
@@ -409,16 +370,11 @@ void FloorView::draw_element(ImDrawList* draw_list, const domain::Element& eleme
     const ImVec4 accent = out_of_service ? style_color(ImGuiCol_TextDisabled) : element_accent(element.type);
     const ImVec4 outline = selected ? accent : hovered ? mix(border, accent, 0.6f) : border;
     const float thickness = (selected ? 2.5f : hovered ? 1.75f : 1.0f) * ui_scale_;
-    const Contents contents = contents_of(element);
 
     if (shape.round) {
-        // Tanks: a body that fills with the beer's color, and an accent rim.
+        // Tanks: a body with an accent-colored rim.
         const float rim = 5.0f * px;
         draw_list->AddCircleFilled(shape.center, shape.radius, to_u32(mix(surface, accent, 0.16f)));
-        if (contents.batch) {
-            const ImVec4 beer = beer_color(batch_srm(*contents.batch));
-            draw_fill(draw_list, shape, rim, contents.fill, to_u32(beer));
-        }
         draw_list->AddCircle(shape.center, shape.radius - rim * 0.5f, to_u32(accent), 0, rim);
         draw_list->AddCircle(shape.center, shape.radius, to_u32(outline), 0, thickness);
     } else {
@@ -432,7 +388,7 @@ void FloorView::draw_element(ImDrawList* draw_list, const domain::Element& eleme
         draw_list->AddRect(min, max, to_u32(outline), rounding, ImDrawFlags_None, thickness);
     }
 
-    draw_labels(draw_list, element, shape, contents);
+    draw_labels(draw_list, element, shape);
     draw_task_badge(draw_list, element, shape);
 
     if (selected && edit_mode_) {
@@ -441,35 +397,7 @@ void FloorView::draw_element(ImDrawList* draw_list, const domain::Element& eleme
     }
 }
 
-void FloorView::draw_fill(ImDrawList* draw_list, const Shape& shape, float inset, double fill, ImU32 color) const {
-    if (fill <= 0.0) return;
-    const float radius = shape.radius - inset;
-    if (radius <= 0.0f) return;
-    if (fill >= 0.995) {
-        draw_list->AddCircleFilled(shape.center, radius, color);
-        return;
-    }
-
-    // The liquid is the part of the circle below the level: a circular
-    // segment, which is convex. Its arc runs from angle a0 (where the level
-    // meets the right side) down through the bottom to pi - a0.
-    const float level_y = shape.center.y + radius - static_cast<float>(fill) * 2.0f * radius;
-    const float a0 = std::asin(std::clamp((level_y - shape.center.y) / radius, -1.0f, 1.0f));
-    constexpr int kSegments = 48;
-    ImVec2 points[kSegments + 1];
-    for (int i = 0; i <= kSegments; ++i) {
-        const float angle = a0 + (kPi - 2.0f * a0) * static_cast<float>(i) / kSegments;
-        points[i] = shape.center + ImVec2(std::cos(angle), std::sin(angle)) * radius;
-    }
-    draw_list->AddConvexPolyFilled(points, kSegments + 1, color);
-
-    // A line of foam on top.
-    const float px = static_cast<float>(scale());
-    draw_list->AddLine(points[0], points[kSegments], to_u32({0.96f, 0.93f, 0.82f, 0.9f}), std::max(1.0f, 2.0f * px));
-}
-
-void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& element, const Shape& shape,
-                            const Contents& contents) const {
+void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& element, const Shape& shape) const {
     // Labels scale with the zoom and disappear when too small to read.
     const float font_size = ImGui::GetFontSize() * static_cast<float>(zoom_);
     if (font_size < 7.0f) return;
@@ -489,25 +417,22 @@ void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& elemen
     };
     std::vector<Line> lines{{element.name, font_size, text}};
 
-    if (contents.batch) {
-        // The batch, then its latest gravity and temperature (or that it's brewing).
-        const domain::Batch& batch = *contents.batch;
-        lines.push_back({domain::label(batch), small, text});
-        if (contents.brewing) {
-            lines.push_back({"Brewing", small, to_u32(element_accent(element.type))});
-        } else {
-            std::string status;
-            if (const domain::Reading* reading = batch.latest_gravity()) {
-                status = calc::format(*reading->gravity_sg, units.unit_for(Measure::Gravity));
-            } else if (const std::optional<double> og = batch.og()) {
-                status = "OG " + calc::format(*og, units.unit_for(Measure::Gravity));
-            }
-            if (const domain::Reading* reading = batch.latest_temperature()) {
-                if (!status.empty()) status += " · ";
-                status += calc::format(*reading->temperature_c, units.unit_for(Measure::Temperature));
-            }
-            if (!status.empty()) lines.push_back({status, small, muted});
+    const std::optional<app::VesselContents> held = batches_.contents(element.id);
+    if (const domain::Batch* batch = held ? batches_.find_active(held->batch_id) : nullptr) {
+        // The beer, its latest gravity and temperature, and how much there is.
+        lines.push_back({domain::label(*batch), small, text});
+        std::string status;
+        if (const domain::Reading* reading = batch->latest_gravity()) {
+            status = calc::format(*reading->gravity_sg, units.unit_for(Measure::Gravity));
+        } else if (const std::optional<double> og = batch->og()) {
+            status = "OG " + calc::format(*og, units.unit_for(Measure::Gravity));
         }
+        if (const domain::Reading* reading = batch->latest_temperature()) {
+            if (!status.empty()) status += " · ";
+            status += calc::format(*reading->temperature_c, units.unit_for(Measure::Temperature));
+        }
+        if (!status.empty()) lines.push_back({status, small, muted});
+        lines.push_back({calc::format(held->volume_l, units.unit_for(Measure::Volume)), small, muted});
     } else {
         // The type, unless the name already says it ("Keg washer", "Fermenter 2").
         if (!element.name.starts_with(type.name)) lines.push_back({std::string(type.name), small, muted});
@@ -522,32 +447,27 @@ void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& elemen
                 lines.push_back({"Out of service", small, to_u32(kErrorColor)});
             }
         }
+        if (element.type == domain::ElementType::Brewhouse) {
+            const std::size_t waiting = batches_.pending_brews(element.id).size();
+            if (waiting == 1) {
+                lines.push_back({"Knock-out to log", small, to_u32(kWarningColor)});
+            } else if (waiting > 1) {
+                lines.push_back({std::to_string(waiting) + " knock-outs to log", small, to_u32(kWarningColor)});
+            }
+        }
     }
 
     if (shape.round) {
         // Centered in the circle, clipped to its middle so text stays inside.
         float height = 0.0f;
-        float width = 0.0f;
-        for (const Line& line : lines) {
-            height += line.size * 1.2f;
-            width = std::max(width, font->CalcTextSizeA(line.size, FLT_MAX, 0.0f, line.text.c_str()).x);
-        }
+        for (const Line& line : lines) height += line.size * 1.2f;
         const float half_width = shape.radius * 0.85f;
-        const ImVec2 clip_min = shape.center - ImVec2(half_width, shape.radius);
-        const ImVec2 clip_max = shape.center + ImVec2(half_width, shape.radius);
-        draw_list->PushClipRect(clip_min, clip_max, true);
+        draw_list->PushClipRect(shape.center - ImVec2(half_width, shape.radius),
+                                shape.center + ImVec2(half_width, shape.radius), true);
         float y = shape.center.y - height * 0.5f;
-        if (contents.batch) {
-            // A backing plate keeps the text readable over any beer color.
-            const ImVec2 pad(6.0f * px, 3.0f * px);
-            const float plate = std::min(width * 0.5f, half_width) + pad.x;
-            draw_list->AddRectFilled({shape.center.x - plate, y - pad.y}, {shape.center.x + plate, y + height + pad.y},
-                                     to_u32(with_alpha(style_color(ImGuiCol_WindowBg), 0.78f)), 4.0f * px);
-        }
         for (const Line& line : lines) {
-            const float line_width = font->CalcTextSizeA(line.size, FLT_MAX, 0.0f, line.text.c_str()).x;
-            draw_list->AddText(font, line.size, {shape.center.x - line_width * 0.5f, y}, line.color,
-                               line.text.c_str());
+            const float width = font->CalcTextSizeA(line.size, FLT_MAX, 0.0f, line.text.c_str()).x;
+            draw_list->AddText(font, line.size, {shape.center.x - width * 0.5f, y}, line.color, line.text.c_str());
             y += line.size * 1.2f;
         }
         draw_list->PopClipRect();
@@ -617,43 +537,37 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
     const calc::UnitPreferences units = units_.with_overrides(element->unit_overrides);
     const calc::Unit volume = units.unit_for(Measure::Volume);
     const calc::Unit gravity = units.unit_for(Measure::Gravity);
-    const Contents contents = contents_of(*element);
+    const std::optional<app::VesselContents> held = batches_.contents(element->id);
+    const domain::Batch* batch = held ? batches_.find_active(held->batch_id) : nullptr;
 
     ImGui::BeginTooltip();
     ImGui::TextUnformatted(element->name.c_str());
     ImGui::TextDisabled("%s", type.name.data());
 
-    if (contents.batch) {
-        const domain::Batch& batch = *contents.batch;
+    if (batch) {
         ImGui::Separator();
         const float swatch = ImGui::GetTextLineHeight();
-        ImGui::ColorButton("##beer", beer_color(batch_srm(batch)), ImGuiColorEditFlags_NoTooltip,
-                           ImVec2(swatch, swatch));
+        ImGui::ColorButton("##beer", beer_color(domain::calculate(batch->recipe, calc_settings_).srm),
+                           ImGuiColorEditFlags_NoTooltip, ImVec2(swatch, swatch));
         ImGui::SameLine();
-        ImGui::TextUnformatted(domain::label(batch).c_str());
-        if (contents.brewing) {
-            const domain::Brew* brew = batches_.brew_at(element->id);
-            if (brew) ImGui::Text("Brewing since %s", time_text(brew->started_at).c_str());
-        } else {
-            ImGui::TextDisabled("%s · %s", domain::name(batch.status).data(), batch_age_text(batch).c_str());
-            const std::optional<app::VesselContents> held = batches_.contents(element->id);
-            std::string fill = held ? calc::format(held->volume_l, volume) : std::string("--");
-            if (element->capacity_l) fill += " of " + calc::format(*element->capacity_l, volume);
-            ImGui::TextUnformatted(fill.c_str());
+        ImGui::TextUnformatted(domain::label(*batch).c_str());
+        ImGui::TextDisabled("%s · %s", domain::name(batch->status).data(), batch_age_text(*batch).c_str());
+        std::string fill = calc::format(held->volume_l, volume);
+        if (element->capacity_l) fill += " of " + calc::format(*element->capacity_l, volume);
+        ImGui::TextUnformatted(fill.c_str());
 
-            const std::optional<double> og = batch.og();
-            const domain::Reading* latest = batch.latest_gravity();
-            if (og && latest) {
-                const double abv = calc::abv(*og, *latest->gravity_sg, calc_settings_.abv_formula);
-                ImGui::Text("%s → %s (%s ago) · %s ABV", calc::format(*og, gravity).c_str(),
-                            calc::format(*latest->gravity_sg, gravity).c_str(),
-                            ago_text(latest->at, domain::now()).c_str(), number_text(abv * 100.0, 1, " %").c_str());
-            } else if (og) {
-                ImGui::Text("OG %s", calc::format(*og, gravity).c_str());
-            }
-            if (const domain::Reading* warmth = batch.latest_temperature()) {
-                ImGui::Text("%s", calc::format(*warmth->temperature_c, units.unit_for(Measure::Temperature)).c_str());
-            }
+        const std::optional<double> og = batch->og();
+        const domain::Reading* latest = batch->latest_gravity();
+        if (og && latest) {
+            const double abv = calc::abv(*og, *latest->gravity_sg, calc_settings_.abv_formula);
+            ImGui::Text("OG %s · now %s (%s ago) · %s ABV", calc::format(*og, gravity).c_str(),
+                        calc::format(*latest->gravity_sg, gravity).c_str(),
+                        ago_text(latest->at, domain::now()).c_str(), number_text(abv * 100.0, 1, " %").c_str());
+        } else if (og) {
+            ImGui::Text("OG %s", calc::format(*og, gravity).c_str());
+        }
+        if (const domain::Reading* warmth = batch->latest_temperature()) {
+            ImGui::Text("%s", calc::format(*warmth->temperature_c, units.unit_for(Measure::Temperature)).c_str());
         }
     } else if (type.is_vessel) {
         ImGui::Separator();
@@ -661,8 +575,13 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
                     element->capacity_l ? calc::format(*element->capacity_l, volume).c_str() : "not set");
         if (domain::holds_beer(element->type)) {
             ImGui::Text("Empty · %s", domain::name(batches_.condition(element->id)).data());
-        } else if (element->type == domain::ElementType::Brewhouse) {
-            ImGui::TextUnformatted("Idle");
+        }
+        for (const domain::Brew& brew : batches_.pending_brews(element->id)) {
+            if (const domain::Batch* waiting = batches_.find_active(brew.batch_id)) {
+                ImGui::TextColored(kWarningColor, "Knock-out to log:");
+                ImGui::SameLine();
+                ImGui::Text("%s, brewed %s", domain::label(*waiting).c_str(), time_text(brew.started_at).c_str());
+            }
         }
     }
 
@@ -722,11 +641,15 @@ void FloorView::draw_context_menu() {
 void FloorView::draw_element_actions(const domain::Element& element) {
     if (element.type == domain::ElementType::Brewhouse) {
         ImGui::Separator();
-        if (batches_.brew_at(element.id)) {
-            if (ImGui::MenuItem("Knock out...")) dialogs_.knock_out(element.id);
-            if (ImGui::MenuItem("Cancel brew...")) dialogs_.cancel_brew(element.id);
-        } else if (ImGui::MenuItem("Start brew...")) {
-            dialogs_.start_brew(element.id);
+        if (ImGui::MenuItem("Log a brew...")) dialogs_.log_brew(element.id);
+        for (const domain::Brew& brew : batches_.pending_brews(element.id)) {
+            const domain::Batch* batch = batches_.find_active(brew.batch_id);
+            if (!batch) continue;
+            ImGui::PushID(static_cast<int>(brew.id));
+            if (ImGui::MenuItem(("Log knock-out of " + domain::label(*batch) + "...").c_str())) {
+                dialogs_.knock_out(brew.id);
+            }
+            ImGui::PopID();
         }
     }
 

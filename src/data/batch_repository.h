@@ -88,8 +88,8 @@ public:
     double total_volume(std::int64_t batch_id);
     // Whether any of the batch was kegged, canned or bottled.
     bool was_packaged(std::int64_t batch_id);
-    // Whether an element holds beer or has a brew under way: equipment in
-    // use can't be removed from the floor.
+    // Whether an element holds beer or has a brew waiting for its knock-out:
+    // equipment in use can't be removed from the floor.
     bool in_use(std::int64_t element_id);
 
     // --- Vessel conditions --------------------------------------------------

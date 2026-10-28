@@ -16,7 +16,8 @@
 
 namespace ninkasi::ui {
 
-// "brewed 6 days ago", "brewed today", or "brewing" before knock-out.
+// "brewed 6 days ago", "brewed today", or before the knock-out is logged
+// "brewed 2026-10-27, knock-out to log".
 std::string batch_age_text(const domain::Batch& batch);
 
 // The unit an ingredient's amount is shown in, or nullopt for packs and

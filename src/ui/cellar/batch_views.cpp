@@ -33,7 +33,10 @@ std::string axis_label(const char* name, calc::Unit unit) {
 
 std::string batch_age_text(const domain::Batch& batch) {
     const std::optional<domain::Timestamp> brewed = batch.brewed_at();
-    if (!brewed) return "brewing";
+    if (!brewed) {
+        if (batch.brews.empty()) return "";
+        return "brewed " + date_text(domain::local_date(batch.brews.front().started_at)) + ", knock-out to log";
+    }
     const int days = domain::days_between(domain::local_date(*brewed), domain::today());
     if (days <= 0) return "brewed today";
     if (days == 1) return "brewed yesterday";

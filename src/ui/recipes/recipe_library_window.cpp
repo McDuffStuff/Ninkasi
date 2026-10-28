@@ -73,11 +73,15 @@ void RecipeLibraryWindow::draw() {
 
     if (visible_) {
         ImGui::SetNextWindowSize(ImVec2(620.0f, 460.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+        bool raise = false;
         if (focus_) {
             ImGui::SetNextWindowFocus();
             focus_ = false;
+            raise = true;
         }
-        if (ImGui::Begin("Recipes", &visible_)) {
+        const bool expanded = ImGui::Begin("Recipes", &visible_);
+        if (raise) raise_os_window();
+        if (expanded) {
             draw_list();
             draw_new_recipe_popup();
             draw_delete_confirmation();

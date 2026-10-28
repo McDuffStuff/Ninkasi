@@ -95,9 +95,9 @@ TEST_CASE("brewing a batch fills a fermenter") {
     Cellar cellar;
     const std::int64_t brew_id = cellar.start("41");
 
-    const domain::Brew* brewing = cellar.batches.brew_at(cellar.brewhouse);
-    REQUIRE(brewing);
-    CHECK(brewing->id == brew_id);
+    const std::vector<domain::Brew> waiting = cellar.batches.pending_brews(cellar.brewhouse);
+    REQUIRE(waiting.size() == 1);
+    CHECK(waiting.front().id == brew_id);
     REQUIRE(cellar.batches.active_batches().size() == 1);
     const std::int64_t batch_id = cellar.batches.active_batches().front().id;
     CHECK(cellar.batches.active_batches().front().status == BatchStatus::Brewing);
@@ -105,7 +105,7 @@ TEST_CASE("brewing a batch fills a fermenter") {
 
     cellar.batches.knock_out(cellar.knock_out_request(brew_id, cellar.fv1, 1000.0));
 
-    CHECK_FALSE(cellar.batches.brew_at(cellar.brewhouse));
+    CHECK(cellar.batches.pending_brews(cellar.brewhouse).empty());
     REQUIRE(cellar.batches.contents(cellar.fv1));
     CHECK(cellar.batches.contents(cellar.fv1)->batch_id == batch_id);
     CHECK(cellar.held(cellar.fv1) == 1000.0);
@@ -149,10 +149,53 @@ TEST_CASE("batch codes are suggested in sequence and must be unique") {
     CHECK_THROWS_AS(cellar.start("  "), std::invalid_argument);
 }
 
-TEST_CASE("a brewhouse runs one brew at a time") {
+TEST_CASE("several brews can wait for their knock-outs to be logged") {
+    // Brews are logged after the fact, so a brewhouse is never "busy".
     Cellar cellar;
-    cellar.start();
-    CHECK_THROWS_AS(cellar.start(), std::invalid_argument);
+    const std::int64_t first = cellar.start();
+    const std::int64_t second = cellar.start();
+    REQUIRE(cellar.batches.pending_brews(cellar.brewhouse).size() == 2);
+
+    cellar.batches.knock_out(cellar.knock_out_request(second, cellar.fv2, 1000.0));
+    const std::vector<domain::Brew> waiting = cellar.batches.pending_brews();
+    REQUIRE(waiting.size() == 1);
+    CHECK(waiting.front().id == first);
+}
+
+TEST_CASE("a brew can be logged with its knock-out in one go") {
+    Cellar cellar;
+    app::KnockOut knock_out = cellar.knock_out_request(0, cellar.fv1, 1000.0);
+    const std::int64_t brew_id = cellar.batches.log_brew(
+        {.brewhouse_id = cellar.brewhouse, .at = at(0), .code = "50", .recipe = pale_ale()}, knock_out);
+
+    CHECK(cellar.batches.pending_brews().empty());
+    REQUIRE(cellar.batches.contents(cellar.fv1));
+    const domain::Batch* batch = cellar.batches.find_active(cellar.batches.contents(cellar.fv1)->batch_id);
+    REQUIRE(batch);
+    CHECK(batch->code == "50");
+    CHECK(batch->status == BatchStatus::Fermenting);
+    CHECK(cellar.batches.ingredients(brew_id).size() == 2);
+    CHECK(cellar.batches.batch_activity(batch->id).size() == 2);  // brewed, knocked out
+}
+
+TEST_CASE("a brew logged in one go saves nothing if its knock-out is refused") {
+    Cellar cellar;
+    cellar.brew(cellar.fv1, 1000.0);
+    const std::string next_code = cellar.batches.suggest_code();
+    const app::StartBrew start{.brewhouse_id = cellar.brewhouse, .at = at(0), .code = next_code, .recipe = pale_ale()};
+
+    // Into a full tank, too small a tank, and before the brew started.
+    CHECK_THROWS_AS(cellar.batches.log_brew(start, cellar.knock_out_request(0, cellar.fv1, 1000.0)),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(cellar.batches.log_brew(start, cellar.knock_out_request(0, cellar.small, 1000.0)),
+                    std::invalid_argument);
+    app::KnockOut too_early = cellar.knock_out_request(0, cellar.fv2, 1000.0);
+    too_early.at = at(-1);
+    CHECK_THROWS_AS(cellar.batches.log_brew(start, too_early), std::invalid_argument);
+
+    CHECK(cellar.batches.active_batches().size() == 1);
+    CHECK(cellar.batches.suggest_code() == next_code);
+    CHECK(cellar.number("SELECT COUNT(*) FROM brews") == 1.0);
 }
 
 TEST_CASE("knock-out goes only into an empty beer vessel that is big enough") {
@@ -171,7 +214,7 @@ TEST_CASE("knock-out goes only into an empty beer vessel that is big enough") {
                     std::invalid_argument);
     CHECK_THROWS_AS(cellar.batches.knock_out(cellar.knock_out_request(brew_id, cellar.small, 1000.0)),
                     std::invalid_argument);
-    CHECK(cellar.batches.brew_at(cellar.brewhouse));  // still brewing after the refusals
+    CHECK(cellar.batches.pending_brews().size() == 1);  // still waiting after the refusals
 
     cellar.batches.knock_out(cellar.knock_out_request(brew_id, cellar.fv2, 1000.0));
     CHECK(cellar.held(cellar.fv2) == 1000.0);
@@ -185,6 +228,7 @@ TEST_CASE("another brew can top up its own batch") {
 
     CHECK_FALSE(cellar.batches.can_knock_out(second, cellar.fv1, 1200.0).allowed);  // only 1000 L free
     app::KnockOut request = cellar.knock_out_request(second, cellar.fv1, 500.0);
+    request.at = at(14);
     request.og = 1.056;
     cellar.batches.knock_out(request);
 
@@ -296,21 +340,21 @@ TEST_CASE("correcting a volume records the difference") {
     CHECK(ledger[1].volume_l == near(15.0, 1e-9));
 }
 
-TEST_CASE("cancelling a new batch's only brew forgets the batch") {
+TEST_CASE("deleting a new batch's only brew forgets the batch") {
     Cellar cellar;
     const std::int64_t brew_id = cellar.start("7");
-    cellar.batches.cancel_brew(brew_id);
+    cellar.batches.delete_brew(brew_id);
 
     CHECK(cellar.batches.active_batches().empty());
-    CHECK_FALSE(cellar.batches.brew_at(cellar.brewhouse));
+    CHECK(cellar.batches.pending_brews().empty());
     CHECK(cellar.batches.suggest_code() == "1");  // the code is free again
-    CHECK(cellar.number("SELECT COUNT(*) FROM audit_log WHERE action = 'batch.cancel'") == 1.0);
+    CHECK(cellar.number("SELECT COUNT(*) FROM audit_log WHERE action = 'batch.delete'") == 1.0);
 
-    // Cancelling another brew of an existing batch keeps the batch.
+    // Deleting another brew of an existing batch keeps the batch.
     const std::int64_t batch_id = cellar.brew(cellar.fv1, 1000.0);
     const std::int64_t second =
         cellar.batches.start_brew({.brewhouse_id = cellar.brewhouse, .at = at(8), .add_to_batch = batch_id});
-    cellar.batches.cancel_brew(second);
+    cellar.batches.delete_brew(second);
     REQUIRE(cellar.batches.find_active(batch_id));
     CHECK(cellar.batches.find_active(batch_id)->brews.size() == 1);
 }
@@ -323,7 +367,7 @@ TEST_CASE("knock-out is all or nothing") {
 
     CHECK_THROWS_AS(cellar.batches.knock_out(cellar.knock_out_request(brew_id, cellar.fv1, 1000.0)), data::DbError);
 
-    CHECK(cellar.batches.brew_at(cellar.brewhouse));
+    CHECK(cellar.batches.pending_brews().size() == 1);
     CHECK(cellar.batches.active_batches().front().status == BatchStatus::Brewing);
     CHECK(cellar.number("SELECT COUNT(*) FROM brew_ingredients") == 0.0);
     CHECK(cellar.number("SELECT COUNT(*) FROM brews WHERE knocked_out_at IS NOT NULL") == 0.0);
@@ -366,7 +410,8 @@ TEST_CASE("equipment in use can't be removed from the floor") {
     CHECK(cellar.floor.removal_blocker(cellar.brewhouse));
     CHECK_THROWS_AS(cellar.floor.remove(cellar.brewhouse), std::invalid_argument);
 
-    cellar.batches.knock_out(cellar.knock_out_request(cellar.batches.brew_at(cellar.brewhouse)->id, cellar.fv1, 900.0));
+    cellar.batches.knock_out(
+        cellar.knock_out_request(cellar.batches.pending_brews(cellar.brewhouse).front().id, cellar.fv1, 900.0));
     CHECK_FALSE(cellar.floor.removal_blocker(cellar.brewhouse));
     CHECK_THROWS_AS(cellar.floor.remove(cellar.fv1), std::invalid_argument);
 

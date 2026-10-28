@@ -10,6 +10,7 @@
 #include <imgui_stdlib.h>
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 
 namespace ninkasi::ui {
@@ -56,55 +57,45 @@ CellarDialogs::CellarDialogs(app::BatchService& batches, const app::FloorService
 
 // --- Opening a dialog -----------------------------------------------------------
 
-void CellarDialogs::start_brew(std::int64_t brewhouse_id) {
+void CellarDialogs::log_brew(std::int64_t brewhouse_id) {
     element_id_ = brewhouse_id;
     recipe_list_ = recipes_.list();
     recipe_id_ = 0;
+    recipe_.reset();
     code_ = batches_.suggest_code();
     add_to_batch_ = false;
     batch_id_ = 0;
     at_ = domain::now();
-    open(Kind::StartBrew);
+    with_knock_out_ = true;
+    knocked_out_at_ = at_;
+    knock_out_time_set_ = false;
+    prepared_for_.clear();
+    text_.clear();
+    open(Kind::LogBrew);
 }
 
-void CellarDialogs::knock_out(std::int64_t brewhouse_id) {
-    const domain::Brew* brew = batches_.brew_at(brewhouse_id);
-    const domain::Batch* batch = brew ? batches_.find_active(brew->batch_id) : nullptr;
-    if (!batch) return;
-
-    element_id_ = brewhouse_id;
-    brew_id_ = brew->id;
+void CellarDialogs::knock_out(std::int64_t brew_id) {
+    const auto [batch, brew] = batches_.find_brew(brew_id);
+    if (!brew || !brew->in_progress()) return;
+    brew_id_ = brew_id;
     batch_id_ = batch->id;
-    const domain::RecipeStats predicted = domain::calculate(batch->recipe, calc_settings_);
-    volume_l_ = batch->recipe.batch_volume_l;
-    has_og_ = true;
-    og_ = calc::is_valid(predicted.og) ? predicted.og : 1.050;
-    ingredients_ = domain::planned_ingredients(batch->recipe);
+    element_id_ = brew->brewhouse_id.value_or(0);
+    at_ = brew->started_at;
+    // Usually logged after the fact: suggest later on brew day, not now.
+    knocked_out_at_ = std::min(domain::now(), brew->started_at + std::chrono::hours(8));
+    knock_out_time_set_ = true;
     text_.clear();
-    at_ = domain::now();
-
-    // Suggest where the wort goes: the vessel already holding this batch, or
-    // the first fermenter (then brite tank) that can take it.
-    target_id_ = 0;
-    if (const auto held = batches_.locations(batch->id); !held.empty()) target_id_ = held.front().first;
-    for (ElementType type : {ElementType::Fermenter, ElementType::BriteTank}) {
-        for (const domain::Element& element : floor_.elements()) {
-            if (target_id_ == 0 && element.type == type &&
-                batches_.can_knock_out(brew_id_, element.id, volume_l_).allowed) {
-                target_id_ = element.id;
-            }
-        }
-    }
+    prepare_knock_out(batch->recipe, batch->id);
     open(Kind::KnockOut);
 }
 
-void CellarDialogs::cancel_brew(std::int64_t brewhouse_id) {
-    const domain::Brew* brew = batches_.brew_at(brewhouse_id);
-    if (!brew) return;
-    element_id_ = brewhouse_id;
-    brew_id_ = brew->id;
-    batch_id_ = brew->batch_id;
-    open(Kind::CancelBrew);
+void CellarDialogs::delete_brew(std::int64_t brew_id) {
+    const auto [batch, brew] = batches_.find_brew(brew_id);
+    if (!brew || !brew->in_progress()) return;
+    brew_id_ = brew_id;
+    batch_id_ = batch->id;
+    element_id_ = brew->brewhouse_id.value_or(0);
+    open(Kind::DeleteBrew);
 }
 
 void CellarDialogs::transfer(std::int64_t vessel_id) {
@@ -223,9 +214,9 @@ void CellarDialogs::draw() {
 
     const char* title = "";
     switch (kind_) {
-    case Kind::StartBrew:     title = "Start a brew"; break;
-    case Kind::KnockOut:      title = "Knock out"; break;
-    case Kind::CancelBrew:    title = "Cancel the brew"; break;
+    case Kind::LogBrew:       title = "Log a brew"; break;
+    case Kind::KnockOut:      title = "Log the knock-out"; break;
+    case Kind::DeleteBrew:    title = "Delete the brew"; break;
     case Kind::Transfer:      title = "Transfer"; break;
     case Kind::Package:       title = "Package"; break;
     case Kind::Dump:          title = "Dump"; break;
@@ -235,21 +226,26 @@ void CellarDialogs::draw() {
     case Kind::None:          break;
     }
 
-    ImGui::SetNextWindowPos(center_, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGuiWindowFlags flags = ImGuiWindowFlags_AlwaysAutoResize;
-    if (kind_ == Kind::KnockOut) {
-        flags = ImGuiWindowFlags_None;  // resizable: the ingredient list can be long
-        ImGui::SetNextWindowSize(ImVec2(780.0f, 660.0f) * ui_scale_, ImGuiCond_Appearing);
-    }
+    // Centered, and kept centered as it grows or shrinks (choosing a recipe
+    // adds the knock-out fields) so it never runs off the screen.
+    ImGui::SetNextWindowPos(center_, recenter_ ? ImGuiCond_Always : ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    recenter_ = false;
     bool keep_open = true;
-    if (!ImGui::BeginPopupModal((std::string(title) + kPopupId).c_str(), &keep_open, flags)) {
+    if (!ImGui::BeginPopupModal((std::string(title) + kPopupId).c_str(), &keep_open,
+                                ImGuiWindowFlags_AlwaysAutoResize)) {
         kind_ = Kind::None;  // closed with the title bar's button
         return;
     }
+    const ImVec2 size = ImGui::GetWindowSize();
+    if (!ImGui::IsWindowAppearing() && (size.x != shown_size_.x || size.y != shown_size_.y)) {
+        center_ = ImGui::GetWindowPos() + shown_size_ * 0.5f;  // where it is now, wherever it was moved
+        recenter_ = true;
+    }
+    shown_size_ = size;
     switch (kind_) {
-    case Kind::StartBrew:     draw_start_brew(); break;
+    case Kind::LogBrew:       draw_log_brew(); break;
     case Kind::KnockOut:      draw_knock_out(); break;
-    case Kind::CancelBrew:    draw_cancel_brew(); break;
+    case Kind::DeleteBrew:    draw_delete_brew(); break;
     case Kind::Transfer:      draw_transfer(); break;
     case Kind::Package:       draw_package(); break;
     case Kind::Dump:          draw_dump(); break;
@@ -261,15 +257,14 @@ void CellarDialogs::draw() {
     ImGui::EndPopup();
 }
 
-void CellarDialogs::draw_start_brew() {
+void CellarDialogs::draw_log_brew() {
     const domain::Element* brewhouse = floor_.find(element_id_);
     if (!brewhouse) return close();
+    const calc::UnitPreferences units = units_for(element_id_);
 
     // Batches another brew can be added to.
     std::vector<const domain::Batch*> open_batches;
-    for (const domain::Batch& batch : batches_.active_batches()) {
-        if (!batch.brew_in_progress()) open_batches.push_back(&batch);
-    }
+    for (const domain::Batch& batch : batches_.active_batches()) open_batches.push_back(&batch);
     if (open_batches.empty()) add_to_batch_ = false;
 
     ImGui::TextDisabled("On %s", brewhouse->name.c_str());
@@ -282,16 +277,17 @@ void CellarDialogs::draw_start_brew() {
     ImGui::Spacing();
 
     const float field = 280.0f * ui_scale_;
-    if (ImGui::BeginTable("##form", 2, ImGuiTableFlags_SizingFixedFit)) {
+    if (ImGui::BeginTable("##brew", 2, ImGuiTableFlags_SizingFixedFit)) {
         if (!add_to_batch_) {
             table_row("Recipe");
-            const auto chosen = std::find_if(recipe_list_.begin(), recipe_list_.end(),
-                                             [this](const data::RecipeSummary& r) { return r.id == recipe_id_; });
             ImGui::SetNextItemWidth(field);
-            if (ImGui::BeginCombo("##recipe", chosen != recipe_list_.end() ? chosen->name.c_str() : "Choose a recipe")) {
+            if (ImGui::BeginCombo("##recipe", recipe_ ? recipe_->name.c_str() : "Choose a recipe")) {
                 for (const data::RecipeSummary& recipe : recipe_list_) {
                     ImGui::PushID(static_cast<int>(recipe.id));
-                    if (ImGui::Selectable(recipe.name.c_str(), recipe.id == recipe_id_)) recipe_id_ = recipe.id;
+                    if (ImGui::Selectable(recipe.name.c_str(), recipe.id == recipe_id_)) {
+                        recipe_id_ = recipe.id;
+                        recipe_ = recipes_.load(recipe.id);
+                    }
                     if (!recipe.style.empty()) {
                         ImGui::SameLine();
                         ImGui::TextDisabled("%s", recipe.style.c_str());
@@ -324,42 +320,129 @@ void CellarDialogs::draw_start_brew() {
                 ImGui::EndCombo();
             }
         }
-        table_row("Started");
-        time_picker("##started", at_);
+        table_row("Brewed");
+        time_picker("##brewed", at_);
         ImGui::EndTable();
     }
     if (!add_to_batch_ && recipe_list_.empty()) note("There are no recipes yet: create one in Recipes > Recipe library.");
 
-    const bool ready = add_to_batch_ ? batch_id_ != 0 : recipe_id_ != 0;
-    if (!buttons("Start brew", ready)) return;
-
-    app::StartBrew request{.brewhouse_id = element_id_, .at = at_};
+    // What's being brewed, and which batch the wort goes to (nullopt: a new one).
+    const domain::Recipe* recipe = nullptr;
+    std::optional<std::int64_t> filling;
+    std::string source;
     if (add_to_batch_) {
-        request.add_to_batch = batch_id_;
-    } else {
-        std::optional<domain::Recipe> recipe = recipes_.load(recipe_id_);
-        if (!recipe) {
-            error_ = "That recipe no longer exists.";
-            return;
+        if (const domain::Batch* batch = batches_.find_active(batch_id_)) {
+            recipe = &batch->recipe;
+            filling = batch->id;
+            source = "batch " + std::to_string(batch->id);
         }
-        request.code = code_;
-        request.recipe = std::move(*recipe);
+    } else if (recipe_) {
+        recipe = &*recipe_;
+        source = "recipe " + std::to_string(recipe_id_);
     }
-    attempt([&] { batches_.start_brew(request); });
+    if (recipe && source != prepared_for_) {
+        prepare_knock_out(*recipe, filling);
+        prepared_for_ = source;
+    }
+    // Until it's been set, the knock-out time follows the brew's.
+    if (!knock_out_time_set_) knocked_out_at_ = at_;
+
+    ImGui::SeparatorText("Knock-out");
+    ImGui::Checkbox("Log the knock-out now", &with_knock_out_);
+    bool knock_out_ready = true;
+    if (!with_knock_out_) {
+        note("The brew will wait on the brewhouse for its knock-out to be logged.");
+    } else if (recipe) {
+        knock_out_ready = draw_knock_out_fields(*recipe, filling, units);
+    } else {
+        note(add_to_batch_ ? "Choose a batch." : "Choose a recipe.");
+        knock_out_ready = false;
+    }
+
+    const bool ready = recipe != nullptr && knock_out_ready;
+    if (!buttons(with_knock_out_ ? "Save brew" : "Save, knock out later", ready)) return;
+
+    app::StartBrew start{.brewhouse_id = element_id_, .at = at_};
+    if (add_to_batch_) {
+        start.add_to_batch = batch_id_;
+    } else {
+        start.code = code_;
+        start.recipe = *recipe_;
+    }
+    std::optional<app::KnockOut> knock_out;
+    if (with_knock_out_) {
+        knock_out = app::KnockOut{.vessel_id = target_id_,
+                                  .at = knocked_out_at_,
+                                  .volume_l = volume_l_,
+                                  .og = has_og_ ? std::optional<double>(og_) : std::nullopt,
+                                  .ingredients = ingredients_,
+                                  .notes = text_};
+    }
+    attempt([&] { batches_.log_brew(start, knock_out); });
 }
 
 void CellarDialogs::draw_knock_out() {
-    const domain::Batch* batch = batches_.find_active(batch_id_);
-    const domain::Element* brewhouse = floor_.find(element_id_);
-    if (!batch || !brewhouse) return close();
+    const auto [batch, brew] = batches_.find_brew(brew_id_);
+    if (!brew || !brew->in_progress()) return close();
     const calc::UnitPreferences units = units_for(element_id_);
 
-    ImGui::Text("%s from %s", domain::label(*batch).c_str(), brewhouse->name.c_str());
+    ImGui::Text("%s", domain::label(*batch).c_str());
+    ImGui::TextDisabled("Brewed %s on %s", time_text(brew->started_at).c_str(),
+                        floor_.find(element_id_) ? floor_.find(element_id_)->name.c_str() : "a removed brewhouse");
     ImGui::Spacing();
+    const bool ready = draw_knock_out_fields(batch->recipe, batch->id, units);
+    if (!buttons("Save knock-out", ready)) return;
+
+    const app::KnockOut request{.brew_id = brew_id_,
+                                .vessel_id = target_id_,
+                                .at = knocked_out_at_,
+                                .volume_l = volume_l_,
+                                .og = has_og_ ? std::optional<double>(og_) : std::nullopt,
+                                .ingredients = ingredients_,
+                                .notes = text_};
+    attempt([&] { batches_.knock_out(request); });
+}
+
+void CellarDialogs::draw_delete_brew() {
+    const auto [batch, brew] = batches_.find_brew(brew_id_);
+    if (!brew || !brew->in_progress()) return close();
+
+    ImGui::Text("Delete the brew of %s, brewed %s?", domain::label(*batch).c_str(),
+                time_text(brew->started_at).c_str());
+    const bool only_brew = batch->status == domain::BatchStatus::Brewing && batch->brews.size() == 1;
+    note(only_brew ? "Nothing has gone into a tank yet, so the batch is deleted too and its code can be used again."
+                   : "The batch keeps its other brews.");
+    if (buttons("Delete brew", true, "Keep it", false)) attempt([this] { batches_.delete_brew(brew_id_); });
+}
+
+void CellarDialogs::prepare_knock_out(const domain::Recipe& recipe, std::optional<std::int64_t> batch_id) {
+    const domain::RecipeStats predicted = domain::calculate(recipe, calc_settings_);
+    volume_l_ = recipe.batch_volume_l;
+    has_og_ = true;
+    og_ = calc::is_valid(predicted.og) ? predicted.og : 1.050;
+    ingredients_ = domain::planned_ingredients(recipe);
+
+    // The tank: the one already holding the batch, or the first fermenter
+    // (then brite tank) that can take it.
+    target_id_ = 0;
+    if (batch_id) {
+        if (const auto held = batches_.locations(*batch_id); !held.empty()) target_id_ = held.front().first;
+    }
+    for (ElementType type : {ElementType::Fermenter, ElementType::BriteTank}) {
+        for (const domain::Element& element : floor_.elements()) {
+            if (target_id_ == 0 && element.type == type && batches_.can_fill(element.id, volume_l_, batch_id).allowed) {
+                target_id_ = element.id;
+            }
+        }
+    }
+}
+
+bool CellarDialogs::draw_knock_out_fields(const domain::Recipe& recipe, std::optional<std::int64_t> batch_id,
+                                          const calc::UnitPreferences& units) {
+    const auto check = [&](std::int64_t vessel_id) { return batches_.can_fill(vessel_id, volume_l_, batch_id); };
     if (ImGui::BeginTable("##knock_out", 2, ImGuiTableFlags_SizingFixedFit)) {
         table_row("Into");
-        vessel_combo("##into", target_id_,
-                     [this](std::int64_t id) { return batches_.can_knock_out(brew_id_, id, volume_l_); }, units);
+        vessel_combo("##into", target_id_, check, units);
         table_row("Volume");
         ImGui::SetNextItemWidth(120.0f * ui_scale_);
         edit_quantity("##volume", volume_l_, units.unit_for(Measure::Volume));
@@ -372,21 +455,26 @@ void CellarDialogs::draw_knock_out() {
         edit_quantity("##og", og_, units.unit_for(Measure::Gravity));
         ImGui::EndDisabled();
         table_row("Knocked out");
-        time_picker("##at", at_);
+        if (time_picker("##knocked_out", knocked_out_at_)) knock_out_time_set_ = true;
         ImGui::EndTable();
     }
+    const bool in_order = knocked_out_at_ >= at_;
+    if (!in_order) ImGui::TextColored(kWarningColor, "The knock-out is before the brew started.");
 
-    ImGui::SeparatorText("Ingredients used");
-    note("Check each amount against what actually went in. These are recorded as used, and inventory will be "
-         "deducted from them once it is tracked.");
-    if (ImGui::SmallButton("Reset to the recipe")) ingredients_ = domain::planned_ingredients(batch->recipe);
+    // The ingredients actually used, starting from the recipe's amounts.
+    ImGui::Spacing();
+    ImGui::TextUnformatted("Ingredients used");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Reset to the recipe")) ingredients_ = domain::planned_ingredients(recipe);
+    note("Change any amount that differs from what actually went in. Inventory will be deducted from these "
+         "amounts once it is tracked.");
 
-    // The list takes whatever height the notes and buttons below it leave.
+    // A fixed size, scrolling past eight rows: the dialog sizes itself to fit.
     const ImGuiStyle& style = ImGui::GetStyle();
-    const float reserved = ImGui::GetTextLineHeightWithSpacing() * (error_.empty() ? 1.0f : 2.0f) +
-                           50.0f * ui_scale_ + ImGui::GetFrameHeightWithSpacing() + style.ItemSpacing.y * 3.0f;
-    const float list_height = std::max(120.0f * ui_scale_, ImGui::GetContentRegionAvail().y - reserved);
-    if (ImGui::BeginTable("##ingredients", 4, kListFlags | ImGuiTableFlags_ScrollY, ImVec2(0.0f, list_height))) {
+    const float row_height = ImGui::GetFrameHeight() + style.CellPadding.y * 2.0f;
+    const float rows = static_cast<float>(std::min<std::size_t>(std::max<std::size_t>(ingredients_.size(), 1), 8));
+    const ImVec2 table_size(680.0f * ui_scale_, row_height * (rows + 1.0f) + style.CellPadding.y * 2.0f);
+    if (ImGui::BeginTable("##ingredients", 4, kListFlags | ImGuiTableFlags_ScrollY, table_size)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Ingredient", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Addition");
@@ -427,31 +515,10 @@ void CellarDialogs::draw_knock_out() {
         ImGui::EndTable();
     }
 
-    ImGui::TextDisabled("Notes");
-    ImGui::InputTextMultiline("##notes", &text_, ImVec2(-FLT_MIN, 50.0f * ui_scale_));
+    ImGui::SetNextItemWidth(table_size.x);
+    ImGui::InputTextWithHint("##notes", "Notes", &text_);
 
-    const bool ready = volume_l_ > 0.0 && batches_.can_knock_out(brew_id_, target_id_, volume_l_).allowed;
-    if (!buttons("Knock out", ready)) return;
-    const app::KnockOut request{.brew_id = brew_id_,
-                                .vessel_id = target_id_,
-                                .at = at_,
-                                .volume_l = volume_l_,
-                                .og = has_og_ ? std::optional<double>(og_) : std::nullopt,
-                                .ingredients = ingredients_,
-                                .notes = text_};
-    attempt([&] { batches_.knock_out(request); });
-}
-
-void CellarDialogs::draw_cancel_brew() {
-    const domain::Batch* batch = batches_.find_active(batch_id_);
-    const domain::Element* brewhouse = floor_.find(element_id_);
-    if (!batch || !brewhouse) return close();
-
-    ImGui::Text("Cancel the brew of %s on %s?", domain::label(*batch).c_str(), brewhouse->name.c_str());
-    const bool only_brew = batch->status == domain::BatchStatus::Brewing && batch->brews.size() == 1;
-    note(only_brew ? "Nothing has been knocked out, so the batch is deleted and its code can be used again."
-                   : "The batch keeps its other brews.");
-    if (buttons("Cancel the brew", true, "Keep brewing")) attempt([this] { batches_.cancel_brew(brew_id_); });
+    return in_order && volume_l_ > 0.0 && check(target_id_).allowed;
 }
 
 void CellarDialogs::draw_transfer() {
@@ -558,7 +625,7 @@ void CellarDialogs::draw_dump() {
         time_picker("##at", at_);
         ImGui::EndTable();
     }
-    if (buttons("Dump")) attempt([this] { batches_.dump(element_id_, at_, text_); });
+    if (buttons("Dump", true, "Cancel", false)) attempt([this] { batches_.dump(element_id_, at_, text_); });
 }
 
 void CellarDialogs::draw_correct_volume() {
@@ -755,7 +822,7 @@ bool CellarDialogs::attempt(const std::function<void()>& action) {
     return true;
 }
 
-bool CellarDialogs::buttons(const char* confirm, bool enabled, const char* dismiss) {
+bool CellarDialogs::buttons(const char* confirm, bool enabled, const char* dismiss, bool enter_confirms) {
     if (!error_.empty()) {
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440.0f * ui_scale_);
         ImGui::TextColored(kErrorColor, "%s", rendered(error_, units_).c_str());
@@ -763,10 +830,19 @@ bool CellarDialogs::buttons(const char* confirm, bool enabled, const char* dismi
     }
     ImGui::Spacing();
     ImGui::BeginDisabled(!enabled);
-    const bool pressed = ImGui::Button(confirm);
+    bool pressed = ImGui::Button(confirm);
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button(dismiss) || ImGui::IsKeyPressed(ImGuiKey_Escape)) close();
+
+    // Enter saves, unless it's typing a new line in a notes box. A field
+    // being typed in has already taken its value by now.
+    const bool enter = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false);
+    if (enter_confirms && enabled && enter && !ImGui::IsAnyItemActive()) pressed = true;
+    if (enter_confirms && enabled) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("Enter saves");
+    }
     return pressed;
 }
 

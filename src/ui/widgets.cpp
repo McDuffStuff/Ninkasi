@@ -115,4 +115,13 @@ void wrapped_note(const char* text) {
     ImGui::PopTextWrapPos();
 }
 
+void raise_os_window() {
+    ImGuiViewport* viewport = ImGui::GetWindowViewport();
+    const ImGuiPlatformIO& platform = ImGui::GetPlatformIO();
+    // A viewport's OS window only exists from its second frame on.
+    if (viewport != ImGui::GetMainViewport() && viewport->PlatformWindowCreated && platform.Platform_SetWindowFocus) {
+        platform.Platform_SetWindowFocus(viewport);
+    }
+}
+
 } // namespace ninkasi::ui

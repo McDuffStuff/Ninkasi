@@ -45,11 +45,14 @@ void TaskViews::draw_window() {
     const ImVec2 top_right(main->WorkPos.x + main->WorkSize.x - 40.0f * ui_scale_, main->WorkPos.y + 80.0f * ui_scale_);
     ImGui::SetNextWindowPos(top_right, ImGuiCond_FirstUseEver, ImVec2(1.0f, 0.0f));
     ImGui::SetNextWindowSize(ImVec2(680.0f, 520.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    const bool raise = focus_;
     if (focus_) {
         ImGui::SetNextWindowFocus();
         focus_ = false;
     }
-    if (!ImGui::Begin("Tasks", &visible_)) {
+    const bool expanded = ImGui::Begin("Tasks", &visible_);
+    if (raise) raise_os_window();
+    if (!expanded) {
         ImGui::End();
         return;
     }
@@ -182,13 +185,11 @@ void TaskViews::draw_add_form(Draft& draft, std::optional<std::int64_t> fixed_el
         domain::Task task;
         task.title = draft.title;
         if (draft.has_due) task.due = draft.due;
-        // A task for a tank also belongs to the batch in it (or being brewed on it).
+        // A task for a tank also belongs to the batch in it.
         if (const std::int64_t element = fixed_element.value_or(draft.element_id); element != 0) {
             task.element_id = element;
             if (const std::optional<app::VesselContents> held = batches_.contents(element)) {
                 task.batch_id = held->batch_id;
-            } else if (const domain::Brew* brew = batches_.brew_at(element)) {
-                task.batch_id = brew->batch_id;
             }
         }
         try {

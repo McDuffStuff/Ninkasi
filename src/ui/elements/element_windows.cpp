@@ -107,6 +107,7 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
                             {0.5f, 0.5f});
     ImGui::SetNextWindowSize(ImVec2(640.0f, 540.0f) * ui_scale_, ImGuiCond_FirstUseEver);
 
+    const bool raise = window.focus;
     if (window.focus) {
         ImGui::SetNextWindowFocus();
         window.focus = false;
@@ -136,7 +137,9 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
     // "###" keeps the window's identity (position, docking) stable across renames.
     bool open = true;
     const std::string title = element.name + "###element_" + std::to_string(element.id);
-    if (ImGui::Begin(title.c_str(), &open, flags)) {
+    const bool expanded = ImGui::Begin(title.c_str(), &open, flags);
+    if (raise) raise_os_window();
+    if (expanded) {
         if (!window.loaded || window.batch_revision != batches_.revision() ||
             window.task_revision != tasks_.revision()) {
             refresh(window);
@@ -164,16 +167,8 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
                 }
             }
 
-            // A brewhouse: the brew under way, and what it has brewed.
+            // A brewhouse: what it has brewed.
             if (element.type == domain::ElementType::Brewhouse) {
-                const domain::Brew* brew = batches_.brew_at(element.id);
-                if (const domain::Batch* found = brew ? batches_.find_active(brew->batch_id) : nullptr) {
-                    const domain::Batch batch = *found;
-                    if (ImGui::BeginTabItem("Brew sheet")) {
-                        draw_brew_sheet(batch, units);
-                        ImGui::EndTabItem();
-                    }
-                }
                 if (ImGui::BeginTabItem("History")) {
                     draw_history_tab(window, units);
                     ImGui::EndTabItem();
@@ -257,7 +252,7 @@ void ElementWindows::draw_overview_tab(Window& window, const domain::Element& el
     const calc::UnitPreferences units = units_.with_overrides(element.unit_overrides);
     switch (element.type) {
     case domain::ElementType::Brewhouse:
-        draw_brewhouse_status(element, units);
+        draw_brewhouse_status(element);
         break;
     case domain::ElementType::Fermenter:
     case domain::ElementType::BriteTank:
@@ -381,134 +376,39 @@ void ElementWindows::draw_vessel_status(const domain::Element& element, const ca
     }
 }
 
-void ElementWindows::draw_brewhouse_status(const domain::Element& element, const calc::UnitPreferences& units) {
-    const domain::Brew* brewing = batches_.brew_at(element.id);
-    const domain::Batch* found = brewing ? batches_.find_active(brewing->batch_id) : nullptr;
-    if (!found) {
-        ImGui::TextUnformatted("Idle");
-        ImGui::Spacing();
-        if (ImGui::Button("Start brew...")) dialogs_.start_brew(element.id);
-        return;
+void ElementWindows::draw_brewhouse_status(const domain::Element& element) {
+    if (ImGui::Button("Log a brew...")) dialogs_.log_brew(element.id);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Record a brew, with its knock-out or with the knock-out to follow");
+
+    // Brews logged without their knock-out, oldest first.
+    const std::vector<domain::Brew> waiting = batches_.pending_brews(element.id);
+    if (waiting.empty()) return;
+    ImGui::SeparatorText("Waiting for knock-out");
+    if (!ImGui::BeginTable("##waiting", 3, kListFlags)) return;
+    ImGui::TableSetupColumn("Batch", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Brewed");
+    ImGui::TableSetupColumn("##actions");
+    for (const domain::Brew& brew : waiting) {
+        const domain::Batch* batch = batches_.find_active(brew.batch_id);
+        if (!batch) continue;
+        ImGui::PushID(static_cast<int>(brew.id));
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(domain::label(*batch).c_str());
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(time_text(brew.started_at).c_str());
+        ImGui::TableNextColumn();
+        if (ImGui::SmallButton("Log knock-out...")) dialogs_.knock_out(brew.id);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Delete...")) dialogs_.delete_brew(brew.id);
+        ImGui::PopID();
     }
-
-    // Copies: the buttons below can reload the service's batches.
-    const domain::Batch batch = *found;
-    const domain::Brew brew = *brewing;
-    const domain::RecipeStats predicted = domain::calculate(batch.recipe, calc_settings_);
-
-    beer_swatch(predicted.srm);
-    ImGui::SameLine();
-    ImGui::Text("Brewing %s", domain::label(batch).c_str());
-    std::string started =
-        "Started " + time_text(brew.started_at) + " (" + ago_text(brew.started_at, domain::now()) + " ago)";
-    if (batch.brews.size() > 1) started += " · brew " + std::to_string(batch.brews.size()) + " of the batch";
-    ImGui::TextDisabled("%s", started.c_str());
-    ImGui::Text("Aiming for %s at %s",
-                calc::format(predicted.volumes.fermenter_volume_l, units.unit_for(Measure::Volume)).c_str(),
-                calc::format(predicted.og, units.unit_for(Measure::Gravity)).c_str());
-    ImGui::Spacing();
-    if (ImGui::Button("Knock out...")) dialogs_.knock_out(element.id);
-    ImGui::SetItemTooltip("Record the wort going into a tank and confirm the ingredients used");
-    ImGui::SameLine();
-    if (ImGui::Button("Open batch") && on_open_batch) on_open_batch(batch.id);
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel brew...")) dialogs_.cancel_brew(element.id);
+    ImGui::EndTable();
 }
 
-// --- Brewhouse tabs ---------------------------------------------------------------
-
-void ElementWindows::draw_brew_sheet(const domain::Batch& batch, const calc::UnitPreferences& units) {
-    const domain::Recipe& recipe = batch.recipe;
-    const domain::RecipeStats stats = domain::calculate(recipe, calc_settings_);
-    const calc::Unit volume = units.unit_for(Measure::Volume);
-    const calc::Unit gravity = units.unit_for(Measure::Gravity);
-    const calc::Unit temperature = units.unit_for(Measure::Temperature);
-    const calc::Unit mass = units.unit_for(Measure::Mass);
-    const calc::Unit hop_mass = units.unit_for(Measure::HopMass);
-
-    ImGui::SeparatorText("Targets");
-    if (ImGui::BeginTable("##targets", 4, ImGuiTableFlags_SizingFixedFit)) {
-        const std::pair<const char*, std::string> cells[] = {
-            {"Strike water", calc::format(stats.volumes.strike_water_l, volume)},
-            {"Sparge water", calc::format(stats.volumes.sparge_water_l, volume)},
-            {"Pre-boil", calc::format(stats.volumes.pre_boil_volume_l, volume)},
-            {"Pre-boil gravity", calc::format(stats.pre_boil_gravity, gravity)},
-            {"Post-boil", calc::format(stats.volumes.post_boil_volume_l, volume)},
-            {"OG", calc::format(stats.og, gravity)},
-            {"Into the fermenter", calc::format(stats.volumes.fermenter_volume_l, volume)},
-            {"Boil", number_text(recipe.boil_time_min, 0, " min")},
-        };
-        for (const auto& [label, value] : cells) {
-            ImGui::TableNextColumn();
-            ImGui::TextDisabled("%s", label);
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(value.c_str());
-        }
-        ImGui::EndTable();
-    }
-
-    ImGui::SeparatorText("Mash");
-    for (const domain::FermentableAddition& addition : recipe.fermentables) {
-        if (!domain::is_mashed(addition.fermentable.type)) continue;
-        ImGui::BulletText("%s  %s", calc::format(addition.mass_kg, mass).c_str(), addition.fermentable.name.c_str());
-    }
-    for (const domain::MashStep& step : recipe.mash_steps) {
-        ImGui::BulletText("%s: %s for %s", step.name.c_str(), calc::format(step.temperature_c, temperature).c_str(),
-                          number_text(step.time_min, 0, " min").c_str());
-    }
-
-    // Kettle sugars, then hops in the order they go in, then other additions.
-    ImGui::SeparatorText("Boil and whirlpool");
-    for (const domain::FermentableAddition& addition : recipe.fermentables) {
-        if (domain::is_mashed(addition.fermentable.type)) continue;
-        ImGui::BulletText("%s  %s", calc::format(addition.mass_kg, mass).c_str(), addition.fermentable.name.c_str());
-    }
-    std::vector<const domain::HopAddition*> hot_side;
-    for (const domain::HopAddition& addition : recipe.hops) {
-        if (addition.use != calc::HopUse::DryHop) hot_side.push_back(&addition);
-    }
-    const auto stage = [](const domain::HopAddition& hop) {
-        switch (hop.use) {
-        case calc::HopUse::Mash:      return 0;
-        case calc::HopUse::FirstWort: return 1;
-        case calc::HopUse::Boil:      return 2;
-        default:                      return 3;  // whirlpool
-        }
-    };
-    std::stable_sort(hot_side.begin(), hot_side.end(),
-                     [&stage](const domain::HopAddition* a, const domain::HopAddition* b) {
-                         if (stage(*a) != stage(*b)) return stage(*a) < stage(*b);
-                         return a->time_min > b->time_min;  // longest boil first
-                     });
-    for (const domain::HopAddition* addition : hot_side) {
-        std::string when(domain::name(addition->use));
-        if (addition->use == calc::HopUse::Boil || addition->use == calc::HopUse::Whirlpool) {
-            when += ", " + number_text(addition->time_min, 0, " min");
-        }
-        ImGui::BulletText("%s  %s  (%s)", calc::format(addition->mass_kg, hop_mass).c_str(),
-                          addition->hop.name.c_str(), when.c_str());
-    }
-    for (const domain::MiscAddition& addition : recipe.miscs) {
-        if (addition.use == domain::MiscUse::Fermenter || addition.use == domain::MiscUse::Packaging) continue;
-        ImGui::BulletText("%s  %s  (%s)", addition.amount.c_str(), addition.name.c_str(),
-                          domain::name(addition.use).data());
-    }
-
-    ImGui::SeparatorText("Fermentation");
-    for (const domain::YeastAddition& addition : recipe.yeasts) {
-        ImGui::BulletText("Pitch %s", addition.yeast.name.c_str());
-    }
-    for (const domain::HopAddition& addition : recipe.hops) {
-        if (addition.use != calc::HopUse::DryHop) continue;
-        ImGui::BulletText("Dry hop %s  %s", calc::format(addition.mass_kg, hop_mass).c_str(),
-                          addition.hop.name.c_str());
-    }
-    for (const domain::MiscAddition& addition : recipe.miscs) {
-        if (addition.use != domain::MiscUse::Fermenter && addition.use != domain::MiscUse::Packaging) continue;
-        ImGui::BulletText("%s  %s  (%s)", addition.amount.c_str(), addition.name.c_str(),
-                          domain::name(addition.use).data());
-    }
-}
+// --- Brewhouse history ------------------------------------------------------------
 
 void ElementWindows::draw_history_tab(const Window& window, const calc::UnitPreferences& units) {
     if (window.history.empty()) {
@@ -542,7 +442,7 @@ void ElementWindows::draw_history_tab(const Window& window, const calc::UnitPref
         if (entry.brew.og) ImGui::TextUnformatted(calc::format(*entry.brew.og, gravity).c_str());
         ImGui::TableNextColumn();
         if (entry.brew.in_progress()) {
-            ImGui::TextColored(kWarningColor, "Brewing");
+            ImGui::TextColored(kWarningColor, "Knock-out to log");
         } else if (const domain::Element* vessel = entry.brew.vessel_id ? floor_.find(*entry.brew.vessel_id) : nullptr) {
             ImGui::TextUnformatted(vessel->name.c_str());
         }

@@ -68,11 +68,15 @@ void BrewingSettingsWindow::save() {
 void BrewingSettingsWindow::draw() {
     if (!visible_) return;
     ImGui::SetNextWindowSize(ImVec2(720.0f, 620.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    bool raise = false;
     if (focus_) {
         ImGui::SetNextWindowFocus();
         focus_ = false;
+        raise = true;
     }
-    if (ImGui::Begin("Brewing settings", &visible_)) {
+    const bool expanded = ImGui::Begin("Brewing settings", &visible_);
+    if (raise) raise_os_window();
+    if (expanded) {
         if (ImGui::BeginTabBar("##settings")) {
             if (ImGui::BeginTabItem("Calculations")) {
                 if (draw_calculations()) {

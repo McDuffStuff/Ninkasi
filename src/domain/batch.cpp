@@ -14,7 +14,7 @@ struct EnumText {
 };
 
 constexpr EnumText<BatchStatus> kBatchStatuses[] = {
-    {BatchStatus::Brewing,      "brewing",      "Brewing"},
+    {BatchStatus::Brewing,      "brewing",      "Awaiting knock-out"},
     {BatchStatus::Fermenting,   "fermenting",   "Fermenting"},
     {BatchStatus::Conditioning, "conditioning", "Conditioning"},
     {BatchStatus::Packaged,     "packaged",     "Packaged"},

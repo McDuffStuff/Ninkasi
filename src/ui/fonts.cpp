@@ -17,10 +17,10 @@ namespace {
 constexpr float kBaseFontSize = 16.0f;
 
 // Latin-1 plus the punctuation and symbols the UI uses (° · – — “ ” … − ≈).
+// Roboto has no arrows, so UI text must not use them.
 const ImWchar kGlyphRanges[] = {
     0x0020, 0x00FF,  // Basic Latin and Latin-1 Supplement
     0x2010, 0x2027,  // dashes, quotation marks, bullet, ellipsis
-    0x2190, 0x2193,  // arrows
     0x2212, 0x2212,  // minus sign
     0x2248, 0x2248,  // almost equal to
     0,

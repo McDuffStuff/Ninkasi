@@ -92,13 +92,16 @@ double BatchService::volume(std::int64_t batch_id) const {
     return total;
 }
 
-const domain::Brew* BatchService::brew_at(std::int64_t brewhouse_id) const {
+std::vector<domain::Brew> BatchService::pending_brews(std::optional<std::int64_t> brewhouse_id) const {
+    std::vector<domain::Brew> brews;
     for (const domain::Batch& batch : active_) {
         for (const domain::Brew& brew : batch.brews) {
-            if (brew.in_progress() && brew.brewhouse_id == brewhouse_id) return &brew;
+            if (brew.in_progress() && (!brewhouse_id || brew.brewhouse_id == brewhouse_id)) brews.push_back(brew);
         }
     }
-    return nullptr;
+    std::sort(brews.begin(), brews.end(),
+              [](const domain::Brew& a, const domain::Brew& b) { return a.started_at < b.started_at; });
+    return brews;
 }
 
 domain::VesselCondition BatchService::condition(std::int64_t vessel_id) const {
@@ -144,60 +147,61 @@ std::string BatchService::suggest_code() {
     return code;
 }
 
-std::int64_t BatchService::start_brew(const StartBrew& request) {
-    const domain::Element* brewhouse = floor_.find(request.brewhouse_id);
+std::int64_t BatchService::log_brew(const StartBrew& start, const std::optional<KnockOut>& knock_out) {
+    const domain::Element* brewhouse = floor_.find(start.brewhouse_id);
     if (!brewhouse || brewhouse->type != domain::ElementType::Brewhouse) fail("Brews are made on a brewhouse.");
-    if (brew_at(request.brewhouse_id)) fail(brewhouse->name + " already has a brew under way.");
 
-    domain::Brew brew;
-    brew.brewhouse_id = request.brewhouse_id;
-    brew.started_at = request.at;
+    // The batch: an active one getting another brew, or a new one.
+    domain::Batch batch;
     std::string text;
-
-    data::Transaction tx(db_);
-    if (request.add_to_batch) {
-        const domain::Batch& batch = active_batch(*request.add_to_batch);
-        brew.batch_id = batch.id;
-        text = "Started brew " + std::to_string(batch.brews.size() + 1) + " of " + domain::label(batch) + " on " +
+    if (start.add_to_batch) {
+        batch = active_batch(*start.add_to_batch);
+        text = "Brew " + std::to_string(batch.brews.size() + 1) + " of " + domain::label(batch) + " on " +
                brewhouse->name;
     } else {
-        const std::string code(trim(request.code));
+        const std::string code(trim(start.code));
         if (code.empty()) fail("Give the batch a code.");
         if (repository_.code_exists(code)) fail("There is already a batch " + domain::batch_label(code, "") + ".");
-        if (trim(request.recipe.name).empty()) fail("Choose a recipe to brew.");
-
-        domain::Batch batch;
+        if (trim(start.recipe.name).empty()) fail("Choose a recipe.");
         batch.code = code;
-        batch.recipe = request.recipe;
+        batch.recipe = start.recipe;
         batch.recipe.id = 0;
-        if (request.recipe.id != 0) batch.recipe_id = request.recipe.id;
+        if (start.recipe.id != 0) batch.recipe_id = start.recipe.id;
         batch.status = domain::BatchStatus::Brewing;
-        batch.created_at = request.at;
-        batch.id = repository_.insert_batch(batch);
-        brew.batch_id = batch.id;
-        text = "Started brewing " + domain::label(batch) + " on " + brewhouse->name;
+        batch.created_at = start.at;
+        text = "Brewed " + domain::label(batch) + " on " + brewhouse->name;
     }
-    const std::int64_t brew_id = repository_.insert_brew(brew, session_.user_id);
-    log("brew", brew.batch_id, request.brewhouse_id, std::nullopt, text, request.at);
+    if (knock_out) check_knock_out(*knock_out, start.add_to_batch, start.at);
+
+    domain::Brew brew;
+    brew.brewhouse_id = start.brewhouse_id;
+    brew.started_at = start.at;
+
+    data::Transaction tx(db_);
+    if (!start.add_to_batch) batch.id = repository_.insert_batch(batch);
+    brew.batch_id = batch.id;
+    brew.id = repository_.insert_brew(brew, session_.user_id);
+    log("brew", batch.id, start.brewhouse_id, std::nullopt, text, start.at);
+    if (knock_out) write_knock_out(batch, brew, *knock_out);
     tx.commit();
     reload();
-    return brew_id;
+    return brew.id;
 }
 
-void BatchService::cancel_brew(std::int64_t brew_id) {
+void BatchService::delete_brew(std::int64_t brew_id) {
     const auto [batch, brew] = find_brew(brew_id);
-    if (!brew || !brew->in_progress()) fail("That brew isn't under way.");
+    if (!brew || !brew->in_progress()) fail("Only a brew waiting for its knock-out can be deleted.");
     const std::string what = domain::label(*batch) + " on " + element_name(brew->brewhouse_id);
 
     data::Transaction tx(db_);
     if (batch->status == domain::BatchStatus::Brewing && batch->brews.size() == 1) {
-        // Nothing was made: forget the batch, keeping only an audit record.
+        // Nothing went into a tank: forget the batch, keeping only an audit record.
         repository_.remove_batch(batch->id);
-        data::record_audit(db_, session_.user_id, "batch.cancel", "batch", batch->id,
-                           "cancelled " + what + " before knock-out");
+        data::record_audit(db_, session_.user_id, "batch.delete", "batch", batch->id,
+                           "deleted " + what + " before its knock-out was logged");
     } else {
         repository_.remove_brew(brew_id);
-        log("brew", batch->id, brew->brewhouse_id, std::nullopt, "Cancelled a brew of " + what, domain::now());
+        log("brew", batch->id, brew->brewhouse_id, std::nullopt, "Deleted a brew of " + what, domain::now());
     }
     tx.commit();
     reload();
@@ -205,44 +209,34 @@ void BatchService::cancel_brew(std::int64_t brew_id) {
 
 Availability BatchService::can_knock_out(std::int64_t brew_id, std::int64_t vessel_id, double volume_l) const {
     const auto [batch, brew] = find_brew(brew_id);
-    if (!brew || !brew->in_progress()) return {false, "That brew isn't under way."};
+    if (!brew || !brew->in_progress()) return {false, "That brew's knock-out has already been logged."};
     return can_fill(vessel_id, volume_l, batch->id);
 }
 
 void BatchService::knock_out(const KnockOut& request) {
-    const auto [batch, current] = find_brew(request.brew_id);
-    if (!current || !current->in_progress()) fail("That brew isn't under way.");
+    const auto [batch, brew] = find_brew(request.brew_id);
+    if (!brew || !brew->in_progress()) fail("That brew's knock-out has already been logged.");
+    check_knock_out(request, batch->id, brew->started_at);
+
+    // Copies: the service's batches are reloaded once it's saved.
+    const domain::Batch batch_copy = *batch;
+    const domain::Brew brew_copy = *brew;
+    data::Transaction tx(db_);
+    write_knock_out(batch_copy, brew_copy, request);
+    tx.commit();
+    reload();
+}
+
+void BatchService::check_knock_out(const KnockOut& request, std::optional<std::int64_t> batch_id,
+                                   domain::Timestamp started_at) const {
     if (!(request.volume_l > 0.0)) fail("Enter the volume knocked out.");
     if (request.og && !(*request.og > 1.0 && *request.og < 1.2)) fail("That original gravity doesn't look right.");
+    if (request.at < started_at) fail("The knock-out can't be before the brew started.");
     for (const domain::IngredientUse& use : request.ingredients) {
         if (!(use.actual >= 0.0)) fail("Ingredient amounts can't be negative.");
     }
-    const Availability availability = can_fill(request.vessel_id, request.volume_l, batch->id);
+    const Availability availability = can_fill(request.vessel_id, request.volume_l, batch_id);
     if (!availability.allowed) fail(element_name(request.vessel_id) + ": " + availability.message);
-
-    domain::Brew brew = *current;
-    brew.vessel_id = request.vessel_id;
-    brew.knocked_out_at = request.at;
-    brew.volume_l = request.volume_l;
-    brew.og = request.og;
-    brew.notes = trim(request.notes);
-
-    std::string text = "Knocked out " + domain::volume_token(request.volume_l) + " of " + domain::label(*batch) +
-                       " into " + element_name(request.vessel_id);
-    if (request.og) text += " at " + domain::gravity_token(*request.og);
-
-    data::Transaction tx(db_);
-    repository_.update_brew(brew);
-    repository_.insert_ingredients(brew.id, request.ingredients);
-    record({0, request.at, batch->id, request.vessel_id, request.volume_l, VolumeReason::Brewed});
-    // Full now; it needs cleaning again once it's emptied.
-    repository_.set_condition(request.vessel_id, domain::VesselCondition::Clean);
-    if (batch->status == domain::BatchStatus::Brewing) {
-        repository_.set_status(batch->id, domain::BatchStatus::Fermenting, std::nullopt);
-    }
-    log("knock_out", batch->id, request.vessel_id, brew.brewhouse_id, with_note(text, brew.notes), request.at);
-    tx.commit();
-    reload();
 }
 
 // --- Cellar -----------------------------------------------------------------
@@ -504,6 +498,28 @@ std::pair<const domain::Batch*, const domain::Brew*> BatchService::find_brew(std
 std::string BatchService::element_name(std::optional<std::int64_t> element_id) const {
     const domain::Element* element = element_id ? floor_.find(*element_id) : nullptr;
     return element ? element->name : std::string("removed equipment");
+}
+
+void BatchService::write_knock_out(const domain::Batch& batch, domain::Brew brew, const KnockOut& request) {
+    brew.vessel_id = request.vessel_id;
+    brew.knocked_out_at = request.at;
+    brew.volume_l = request.volume_l;
+    brew.og = request.og;
+    brew.notes = trim(request.notes);
+
+    std::string text = "Knocked out " + domain::volume_token(request.volume_l) + " of " + domain::label(batch) +
+                       " into " + element_name(request.vessel_id);
+    if (request.og) text += " at " + domain::gravity_token(*request.og);
+
+    repository_.update_brew(brew);
+    repository_.insert_ingredients(brew.id, request.ingredients);
+    record({0, request.at, batch.id, request.vessel_id, request.volume_l, VolumeReason::Brewed});
+    // Full now; it needs cleaning again once it's emptied.
+    repository_.set_condition(request.vessel_id, domain::VesselCondition::Clean);
+    if (batch.status == domain::BatchStatus::Brewing) {
+        repository_.set_status(batch.id, domain::BatchStatus::Fermenting, std::nullopt);
+    }
+    log("knock_out", batch.id, request.vessel_id, brew.brewhouse_id, with_note(text, brew.notes), request.at);
 }
 
 void BatchService::record(const domain::VolumeEvent& event) {

@@ -1,6 +1,11 @@
 #pragma once
-// Batches of beer from brew day to packaging: brewing at the brewhouse,
-// moving beer between vessels, readings, and keeping vessels clean.
+// Batches of beer from brew day to packaging: brews, moving beer between
+// vessels, readings, and keeping vessels clean.
+//
+// Brews are logged after the fact, the way brewers keep records: a brew's
+// start and its knock-out can be logged together, or the knock-out a day
+// later. A brew waiting for its knock-out to be logged doesn't hold up the
+// brewhouse.
 //
 // Every action runs in one transaction and is written to the activity log
 // under the session's user. Every change in the volume of beer in a vessel is
@@ -12,7 +17,7 @@
 // - A vessel holds one batch at a time; a batch may be split across vessels.
 // - Beer only goes into fermenters and brite tanks that are in service, big
 //   enough, and empty (or, for another brew, holding the same batch).
-// - A brewhouse runs one brew at a time.
+// - A knock-out can't be before its brew started.
 //
 // Messages may contain quantity tokens; show them with
 // domain::render_quantities so they appear in the brewer's units.
@@ -66,7 +71,7 @@ struct StartBrew {
 // The end of a brew: the wort goes into a vessel and the brewer confirms
 // the ingredients actually used.
 struct KnockOut {
-    std::int64_t brew_id = 0;
+    std::int64_t brew_id = 0;  // ignored when logged with the brew's start
     std::int64_t vessel_id = 0;
     domain::Timestamp at{};
     double volume_l = 0.0;
@@ -108,8 +113,11 @@ public:
     std::vector<std::pair<std::int64_t, double>> locations(std::int64_t batch_id) const;
     // A batch's volume in all vessels.
     double volume(std::int64_t batch_id) const;
-    // The brew under way at a brewhouse, if any.
-    const domain::Brew* brew_at(std::int64_t brewhouse_id) const;
+    // Brews whose knock-out hasn't been logged yet, oldest first: at one
+    // brewhouse, or at any.
+    std::vector<domain::Brew> pending_brews(std::optional<std::int64_t> brewhouse_id = std::nullopt) const;
+    // A brew of an active batch, and its batch; nulls if there's none.
+    std::pair<const domain::Batch*, const domain::Brew*> find_brew(std::int64_t brew_id) const;
     domain::VesselCondition condition(std::int64_t vessel_id) const;
     // Grows with every change, so windows know when to re-read the database.
     std::uint64_t revision() const { return revision_; }
@@ -128,10 +136,17 @@ public:
 
     // The code after the most recent batch's.
     std::string suggest_code();
-    // Returns the new brew's id.
-    std::int64_t start_brew(const StartBrew& request);
-    // Cancelling a new batch's only brew deletes the batch, freeing its code.
-    void cancel_brew(std::int64_t brew_id);
+    // Logs a brew, with its knock-out if given, in one go: if the knock-out
+    // is refused nothing is saved. Returns the brew's id.
+    std::int64_t log_brew(const StartBrew& start, const std::optional<KnockOut>& knock_out);
+    // Logs just the start of a brew; its knock-out is logged later.
+    std::int64_t start_brew(const StartBrew& request) { return log_brew(request, std::nullopt); }
+    // Deletes a brew whose knock-out hasn't been logged. If it was a new
+    // batch's only brew the batch goes too, freeing its code.
+    void delete_brew(std::int64_t brew_id);
+    // Whether a vessel can take `volume_l` of a batch: it must be empty or,
+    // with `same_batch`, hold only that batch.
+    Availability can_fill(std::int64_t vessel_id, double volume_l, std::optional<std::int64_t> same_batch) const;
     Availability can_knock_out(std::int64_t brew_id, std::int64_t vessel_id, double volume_l) const;
     void knock_out(const KnockOut& request);
 
@@ -159,17 +174,16 @@ public:
                   domain::Timestamp at);
 
 private:
-    // Whether a vessel can take `volume_l` more of a batch: it must be empty
-    // or, with `same_batch`, hold only that batch.
-    Availability can_fill(std::int64_t vessel_id, double volume_l, std::optional<std::int64_t> same_batch) const;
+    // Throws if the knock-out can't be logged for a batch (nullopt: a new one).
+    void check_knock_out(const KnockOut& request, std::optional<std::int64_t> batch_id,
+                         domain::Timestamp started_at) const;
     // The vessel's element and contents; throws if it holds nothing.
     std::pair<const domain::Element*, VesselContents> occupied_vessel(std::int64_t vessel_id) const;
     const domain::Batch& active_batch(std::int64_t batch_id) const;
-    // The brew and its batch; nulls if the brew isn't part of an active batch.
-    std::pair<const domain::Batch*, const domain::Brew*> find_brew(std::int64_t brew_id) const;
     std::string element_name(std::optional<std::int64_t> element_id) const;
 
     // Writers for use inside a transaction.
+    void write_knock_out(const domain::Batch& batch, domain::Brew brew, const KnockOut& request);
     void record(const domain::VolumeEvent& event);
     void log(std::string_view kind, std::optional<std::int64_t> batch_id, std::optional<std::int64_t> element_id,
              std::optional<std::int64_t> other_element_id, const std::string& text, domain::Timestamp at);

@@ -98,11 +98,14 @@ void BatchWindows::draw() {
 void BatchWindows::draw_list() {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.6f));
     ImGui::SetNextWindowSize(ImVec2(940.0f, 480.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    const bool raise = list_focus_;
     if (list_focus_) {
         ImGui::SetNextWindowFocus();
         list_focus_ = false;
     }
-    if (!ImGui::Begin("Batches", &list_visible_)) {
+    const bool expanded = ImGui::Begin("Batches", &list_visible_);
+    if (raise) raise_os_window();
+    if (!expanded) {
         ImGui::End();
         return;
     }
@@ -217,6 +220,7 @@ bool BatchWindows::draw_window(Window& window) {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter() + ImVec2(stagger, stagger), ImGuiCond_FirstUseEver,
                             ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(820.0f, 600.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    const bool raise = window.focus;
     if (window.focus) {
         ImGui::SetNextWindowFocus();
         window.focus = false;
@@ -224,7 +228,9 @@ bool BatchWindows::draw_window(Window& window) {
 
     bool open = true;
     const std::string title = domain::label(*batch) + "###batch_" + std::to_string(batch->id);
-    if (ImGui::Begin(title.c_str(), &open)) {
+    const bool expanded = ImGui::Begin(title.c_str(), &open);
+    if (raise) raise_os_window();
+    if (expanded) {
         const domain::RecipeStats predicted = domain::calculate(batch->recipe, calc_settings_);
         if (ImGui::BeginTabBar("##tabs")) {
             if (ImGui::BeginTabItem("Overview")) {
@@ -344,7 +350,11 @@ void BatchWindows::draw_brews(const domain::Batch& batch) {
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(brew.og ? calc::format(*brew.og, gravity).c_str() : "--");
         } else {
-            ImGui::TextColored(kWarningColor, "Brewing");
+            ImGui::TextColored(kWarningColor, "Knock-out to log");
+            ImGui::TableNextColumn();
+            ImGui::PushID(static_cast<int>(brew.id));
+            if (ImGui::SmallButton("Log knock-out...")) dialogs_.knock_out(brew.id);
+            ImGui::PopID();
         }
         if (!brew.notes.empty()) ImGui::SetItemTooltip("%s", brew.notes.c_str());
     }

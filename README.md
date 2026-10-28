@@ -37,6 +37,7 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 ### People and signing in
 - A one-person brewery opens straight to the floor. Once an admin adds a second person in **File > People** (or anyone has a password), Ninkasi starts at a sign-in screen: choose your name, type your password if you have one, and press Enter. Your name in the top right corner has **Change my password...** and **Sign out**.
 - **Admins** can do everything. **Brewers** log the brewery's work (brews, transfers, readings, inventory, packaging, tasks and recipes) but don't manage people, set up equipment on the floor, change the units, brewing, TTB or backup settings, or restore backups.
+- **Forgot your password?** on the sign-in screen takes your recovery code and lets you choose a new password. You get the code when you first set your own password (or from **New recovery code...** under your name); it's shown only then, so write it down. Each code works once, and a new one replaces it. Otherwise an admin can set a new password in **File > People**.
 - While more than one person uses Ninkasi, every admin needs a password; brewers can go without. There is always at least one admin. Someone who leaves is made inactive rather than removed, so the records they made keep their name.
 - Each person keeps their own theme and window layout.
 - Passwords are hashed with Argon2id. They decide who can do what in Ninkasi; they don't encrypt the data, which anyone who can open the database file can read.

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <utility>
 
 namespace ninkasi::ui {
 
@@ -40,6 +41,11 @@ void PeopleWindow::change_my_password() {
     open_dialog(Dialog::OwnPassword, session_.user_id);
 }
 
+void PeopleWindow::new_recovery_code() {
+    stale_ = true;
+    open_dialog(Dialog::NewCode, session_.user_id);
+}
+
 const domain::User* PeopleWindow::find(std::int64_t id) const {
     const auto found =
         std::find_if(people_.begin(), people_.end(), [id](const domain::User& person) { return person.id == id; });
@@ -67,11 +73,23 @@ void PeopleWindow::open_dialog(Dialog dialog, std::int64_t person_id) {
 
 void PeopleWindow::close_dialog() {
     dialog_ = Dialog::None;
-    // Typed passwords shouldn't linger in memory.
+    // Passwords and codes shouldn't linger in memory.
     current_password_.clear();
     password_.clear();
     again_.clear();
+    recovery_code_.clear();
     ImGui::CloseCurrentPopup();
+}
+
+void PeopleWindow::show_code(std::string code) {
+    // The same popup stays open, now showing the code.
+    dialog_ = Dialog::ShowCode;
+    recovery_code_ = std::move(code);
+    current_password_.clear();
+    password_.clear();
+    again_.clear();
+    error_.clear();
+    stale_ = true;
 }
 
 void PeopleWindow::draw() {
@@ -112,6 +130,12 @@ void PeopleWindow::draw_list() {
                                           "sign in as you.");
         ImGui::PopTextWrapPos();
         if (ImGui::SmallButton("Set my password...")) open_dialog(Dialog::OwnPassword, session_.user_id);
+    } else if (me && !me->has_recovery_code) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(kWarningColor, "You have no recovery code. Without one, only another admin can replace a "
+                                          "password you forget.");
+        ImGui::PopTextWrapPos();
+        if (ImGui::SmallButton("Make a recovery code...")) open_dialog(Dialog::NewCode, session_.user_id);
     }
     ImGui::Spacing();
 
@@ -150,17 +174,20 @@ void PeopleWindow::draw_list() {
 
 void PeopleWindow::draw_dialog() {
     if (dialog_ == Dialog::None) return;
-    const char* title = dialog_ == Dialog::Add    ? "Add a person"
-                        : dialog_ == Dialog::Edit ? "Edit a person"
-                                                  : "Change my password";
+    const char* title = dialog_ == Dialog::Add           ? "Add a person"
+                        : dialog_ == Dialog::Edit        ? "Edit a person"
+                        : dialog_ == Dialog::OwnPassword ? "Change my password"
+                                                         : "Recovery code";
     const std::string popup = std::string(title) + kDialogId;
     if (open_popup_) {
         ImGui::OpenPopup(popup.c_str());
         open_popup_ = false;
     }
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    // A code being shown closes only once it's noted.
     bool keep_open = true;
-    if (!ImGui::BeginPopupModal(popup.c_str(), &keep_open, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (!ImGui::BeginPopupModal(popup.c_str(), dialog_ == Dialog::ShowCode ? nullptr : &keep_open,
+                                ImGuiWindowFlags_AlwaysAutoResize)) {
         // Closed with its X.
         dialog_ = Dialog::None;
         current_password_.clear();
@@ -172,6 +199,8 @@ void PeopleWindow::draw_dialog() {
     case Dialog::Add:         draw_add(); break;
     case Dialog::Edit:        draw_edit(); break;
     case Dialog::OwnPassword: draw_own_password(); break;
+    case Dialog::NewCode:     draw_new_code(); break;
+    case Dialog::ShowCode:    draw_show_code(); break;
     case Dialog::None:        break;
     }
     ImGui::EndPopup();
@@ -312,6 +341,7 @@ void PeopleWindow::draw_edit() {
 void PeopleWindow::draw_own_password() {
     const domain::User* me = find(session_.user_id);
     const bool has_password = me && me->has_password;
+    const bool has_code = me && me->has_recovery_code;
     const float field = 240.0f * ui_scale_;
     bool match = true;
     if (ImGui::BeginTable("##own_password", 2, ImGuiTableFlags_SizingFixedFit)) {
@@ -331,10 +361,40 @@ void PeopleWindow::draw_own_password() {
         users_.change_own_password(session_, current_password_, password_);
         status_ = password_.empty() ? "Your password is removed." : "Your password is changed.";
         stale_ = true;
-        close_dialog();
+        // A first password comes with a recovery code.
+        if (!password_.empty() && !has_code) {
+            show_code(users_.make_recovery_code(session_));
+        } else {
+            close_dialog();
+        }
     } catch (const std::exception& e) {
         error_ = e.what();
     }
+}
+
+void PeopleWindow::draw_new_code() {
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 400.0f * ui_scale_);
+    ImGui::TextUnformatted("A recovery code lets you choose a new password at the sign-in screen if you forget "
+                           "yours. A new code replaces any earlier one, which stops working.");
+    ImGui::PopTextWrapPos();
+    if (!buttons("Make a new code", true)) return;
+    try {
+        show_code(users_.make_recovery_code(session_));
+    } catch (const std::exception& e) {
+        error_ = e.what();
+    }
+}
+
+void PeopleWindow::draw_show_code() {
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 400.0f * ui_scale_);
+    ImGui::TextUnformatted("Your recovery code. Write it down and keep it somewhere safe; it's shown only now. If "
+                           "you forget your password, choose \"Forgot your password?\" on the sign-in screen and "
+                           "enter it.");
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    show_recovery_code(recovery_code_);
+    ImGui::Spacing();
+    if (ImGui::Button("I've written it down")) close_dialog();
 }
 
 } // namespace ninkasi::ui

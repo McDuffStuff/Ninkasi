@@ -1,6 +1,7 @@
 #include "ui/widgets.h"
 
 #include "calc/common.h"
+#include "ui/fonts.h"
 
 #include <cstdio>
 #include <unordered_map>
@@ -116,6 +117,16 @@ void wrapped_note(const char* text) {
     ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("%s", text);
     ImGui::PopTextWrapPos();
+}
+
+void show_recovery_code(const std::string& code) {
+    ImGui::PushTextWrapPos(-1.0f);  // all on one line
+    ImGui::PushFont(heading_font());
+    ImGui::TextUnformatted(code.c_str());
+    ImGui::PopFont();
+    ImGui::PopTextWrapPos();
+    if (ImGui::SmallButton("Copy")) ImGui::SetClipboardText(code.c_str());
+    ImGui::SetItemTooltip("To paste it into a password manager");
 }
 
 void raise_os_window() {

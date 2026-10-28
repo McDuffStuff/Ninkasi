@@ -59,6 +59,13 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
 
     // The day's backup, before anything changes.
     notice_ = std::move(startup_notice);
+    // An admin who forgets their password needs a recovery code to get back in.
+    const std::optional<domain::User> me = users_.person(session_.user_id);
+    if (session_.is_admin() && me && me->has_password && !me->has_recovery_code) {
+        notice_ += std::string(notice_.empty() ? "" : "\n\n") +
+                   "You have no recovery code, so only another admin could replace a password you forget. Make one "
+                   "from your name in the top right corner: New recovery code.";
+    }
     try {
         backups_.back_up_if_due();
     } catch (const std::exception& e) {
@@ -162,6 +169,11 @@ void AppShell::draw_account_menu() {
     ImGui::TextDisabled("%s", domain::name(session_.role).data());
     ImGui::Separator();
     if (ImGui::MenuItem("Change my password...")) people_window_.change_my_password();
+    const std::optional<domain::User> me = users_.person(session_.user_id);
+    const bool has_password = me && me->has_password;
+    if (ImGui::MenuItem("New recovery code...", nullptr, false, has_password)) people_window_.new_recovery_code();
+    ImGui::SetItemTooltip(has_password ? "For choosing a new password at the sign-in screen if you forget yours"
+                                       : "Set a password first");
     const bool can_sign_out = users_.sign_in_needed();
     if (ImGui::MenuItem("Sign out", nullptr, false, can_sign_out)) sign_out_requested_ = true;
     if (!can_sign_out) ImGui::SetItemTooltip("With one person and no password, Ninkasi opens without signing in.");

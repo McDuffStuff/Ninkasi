@@ -20,17 +20,23 @@ public:
     void show();
     // Opens the dialog for changing the signed-in person's own password.
     void change_my_password();
+    // Offers the signed-in person a new recovery code, and shows it.
+    void new_recovery_code();
     // Draws the window, if it's open, and any dialog opened from it.
     void draw();
 
 private:
-    enum class Dialog { None, Add, Edit, OwnPassword };
+    enum class Dialog { None, Add, Edit, OwnPassword, NewCode, ShowCode };
 
     void draw_list();
     void draw_dialog();
     void draw_add();
     void draw_edit();
     void draw_own_password();
+    void draw_new_code();
+    void draw_show_code();
+    // Shows `code` (just made) in the open dialog.
+    void show_code(std::string code);
     // "Password" and "Again" rows; whether the two match. `focus` puts the
     // keyboard in the first when the dialog opens.
     bool draw_new_password(const char* label, bool focus = false);
@@ -61,6 +67,7 @@ private:
     std::string current_password_;
     std::string password_;
     std::string again_;
+    std::string recovery_code_;  // being shown
     std::string error_;
 };
 

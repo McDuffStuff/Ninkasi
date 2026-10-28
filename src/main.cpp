@@ -15,6 +15,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <implot.h>
 
 #include <GLFW/glfw3.h>
 
@@ -84,6 +85,12 @@ int run(const Options& options) {
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // windows can leave the main window
 
+    // Charts: time axes in local time, with a 24-hour clock.
+    ImPlot::CreateContext();
+    ImPlotStyle& plot_style = ImPlot::GetStyle();
+    plot_style.UseLocalTime = true;
+    plot_style.Use24HourClock = true;
+
     // Window layout is saved next to the database. ImGui keeps the pointer,
     // so the string must outlive the context.
     const std::string ini_path = (options.db_path.parent_path() / "imgui.ini").string();
@@ -151,6 +158,7 @@ int run(const Options& options) {
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
+    ImPlot::DestroyContext();
     ImGui::DestroyContext();
     glfwDestroyWindow(window);
     glfwTerminate();

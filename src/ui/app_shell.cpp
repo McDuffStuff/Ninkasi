@@ -24,8 +24,13 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
       floor_(db, session_),
       recipes_(db, session_),
       library_(db, session_),
-      element_windows_(floor_, settings_, units_, ui_scale_),
-      floor_view_(floor_, element_windows_, settings_, units_, ui_scale_),
+      batches_(db, session_, floor_),
+      tasks_(db, session_),
+      dialogs_(batches_, floor_, recipes_, units_, calc_settings_, ui_scale_),
+      task_views_(tasks_, floor_, batches_, ui_scale_),
+      element_windows_(floor_, batches_, tasks_, dialogs_, task_views_, settings_, units_, calc_settings_, ui_scale_),
+      batch_windows_(batches_, floor_, dialogs_, settings_, units_, calc_settings_, ui_scale_),
+      floor_view_(floor_, batches_, tasks_, element_windows_, dialogs_, settings_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, settings_, units_, calc_settings_, ui_scale_),
       recipe_library_(recipes_, recipe_editors_, ui_scale_),
       ingredient_window_(library_, units_, ui_scale_),
@@ -35,6 +40,8 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
 
     recipe_editors_.on_saved = [this] { recipe_library_.refresh(); };
     element_windows_.on_open_recipes = [this] { recipe_library_.show(); };
+    element_windows_.on_open_batch = [this](std::int64_t batch_id) { batch_windows_.open(batch_id); };
+    floor_view_.on_open_batch = [this](std::int64_t batch_id) { batch_windows_.open(batch_id); };
 }
 
 void AppShell::files_dropped(std::vector<std::filesystem::path> files) {
@@ -55,10 +62,13 @@ void AppShell::draw() {
 
     if (show_floor_) floor_view_.draw(dockspace_id, &show_floor_);
     element_windows_.draw();
+    batch_windows_.draw();
+    task_views_.draw();
     recipe_editors_.draw();
     recipe_library_.draw();
     ingredient_window_.draw();
     brewing_settings_.draw();
+    dialogs_.draw();  // last: dialogs open over whatever asked for them
     if (show_about_) draw_about_window();
     if (show_imgui_demo_) ImGui::ShowDemoWindow(&show_imgui_demo_);
 }
@@ -72,6 +82,8 @@ void AppShell::draw_menu_bar() {
     }
     if (ImGui::BeginMenu("View")) {
         ImGui::MenuItem("Brewery Floor", nullptr, &show_floor_);
+        ImGui::MenuItem("Batches", nullptr, batch_windows_.list_visible());
+        ImGui::MenuItem("Tasks", nullptr, task_views_.window_visible());
         ImGui::Separator();
         if (ImGui::BeginMenu("Theme")) {
             if (ImGui::MenuItem("Dark", nullptr, theme_ == Theme::Dark)) set_theme(Theme::Dark);

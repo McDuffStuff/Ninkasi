@@ -1,5 +1,8 @@
 #include "ui/elements/element_windows.h"
 
+#include "calc/common.h"
+#include "ui/cellar/batch_views.h"
+#include "ui/display.h"
 #include "ui/element_style.h"
 #include "ui/widgets.h"
 
@@ -13,7 +16,12 @@ namespace ninkasi::ui {
 
 namespace {
 
+using calc::Measure;
+
 constexpr const char* kOpenWindowsKey = "floor.open_elements";
+
+constexpr ImGuiTableFlags kListFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                                       ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_PadOuterX;
 
 void label_cell(const char* label) {
     ImGui::TableNextRow();
@@ -23,11 +31,36 @@ void label_cell(const char* label) {
     ImGui::TableNextColumn();
 }
 
+ImVec4 condition_color(domain::VesselCondition condition) {
+    switch (condition) {
+    case domain::VesselCondition::Clean:        return kGoodColor;
+    case domain::VesselCondition::Dirty:        return kWarningColor;
+    case domain::VesselCondition::OutOfService: return kErrorColor;
+    }
+    return kGoodColor;
+}
+
+// A swatch of the beer's color, one text line high.
+void beer_swatch(double srm) {
+    const float size = ImGui::GetTextLineHeight();
+    ImGui::ColorButton("##beer", beer_color(srm), ImGuiColorEditFlags_NoTooltip, ImVec2(size, size));
+}
+
 } // namespace
 
-ElementWindows::ElementWindows(app::FloorService& floor, data::SettingsRepository& settings,
-                               const calc::UnitPreferences& units, float ui_scale)
-    : floor_(floor), settings_(settings), units_(units), ui_scale_(ui_scale) {
+ElementWindows::ElementWindows(app::FloorService& floor, app::BatchService& batches, const app::TaskService& tasks,
+                               CellarDialogs& dialogs, TaskViews& task_views, data::SettingsRepository& settings,
+                               const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings,
+                               float ui_scale)
+    : floor_(floor),
+      batches_(batches),
+      tasks_(tasks),
+      dialogs_(dialogs),
+      task_views_(task_views),
+      settings_(settings),
+      units_(units),
+      calc_settings_(calc_settings),
+      ui_scale_(ui_scale) {
     // Saved as comma-separated element ids, e.g. "3,7".
     const std::string saved = settings_.get_or(kOpenWindowsKey, "");
     const char* cursor = saved.c_str();
@@ -72,7 +105,7 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
     const float stagger = static_cast<float>(element.id % 6) * 28.0f * ui_scale_;
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter() + ImVec2(stagger, stagger), ImGuiCond_FirstUseEver,
                             {0.5f, 0.5f});
-    ImGui::SetNextWindowSize(ImVec2(440.0f, 360.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(640.0f, 540.0f) * ui_scale_, ImGuiCond_FirstUseEver);
 
     if (window.focus) {
         ImGui::SetNextWindowFocus();
@@ -104,10 +137,56 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
     bool open = true;
     const std::string title = element.name + "###element_" + std::to_string(element.id);
     if (ImGui::Begin(title.c_str(), &open, flags)) {
+        if (!window.loaded || window.batch_revision != batches_.revision() ||
+            window.task_revision != tasks_.revision()) {
+            refresh(window);
+        }
+        const calc::UnitPreferences units = units_.with_overrides(element.unit_overrides);
         draw_window_controls(window, element);
         if (ImGui::BeginTabBar("##tabs")) {
             if (ImGui::BeginTabItem("Overview")) {
                 draw_overview_tab(window, element);
+                ImGui::EndTabItem();
+            }
+
+            // A tank's batch: its readings over time.
+            const std::optional<app::VesselContents> held = batches_.contents(element.id);
+            if (const domain::Batch* found = held ? batches_.find_active(held->batch_id) : nullptr) {
+                const domain::Batch batch = *found;  // deleting a reading reloads the service's batches
+                if (ImGui::BeginTabItem("Fermentation")) {
+                    const domain::RecipeStats predicted = domain::calculate(batch.recipe, calc_settings_);
+                    draw_fermentation_chart(batch, predicted.fg, units, 260.0f * ui_scale_);
+                    ImGui::Spacing();
+                    if (const std::optional<std::int64_t> remove = draw_readings_table(batch, units)) {
+                        batches_.delete_reading(*remove);
+                    }
+                    ImGui::EndTabItem();
+                }
+            }
+
+            // A brewhouse: the brew under way, and what it has brewed.
+            if (element.type == domain::ElementType::Brewhouse) {
+                const domain::Brew* brew = batches_.brew_at(element.id);
+                if (const domain::Batch* found = brew ? batches_.find_active(brew->batch_id) : nullptr) {
+                    const domain::Batch batch = *found;
+                    if (ImGui::BeginTabItem("Brew sheet")) {
+                        draw_brew_sheet(batch, units);
+                        ImGui::EndTabItem();
+                    }
+                }
+                if (ImGui::BeginTabItem("History")) {
+                    draw_history_tab(window, units);
+                    ImGui::EndTabItem();
+                }
+            }
+
+            if (ImGui::BeginTabItem("Tasks")) {
+                task_views_.draw_element_tasks(element.id);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Log")) {
+                if (ImGui::SmallButton("Add note")) dialogs_.add_note(std::nullopt, element.id);
+                draw_activity(window.log, units);
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Units")) {
@@ -172,50 +251,307 @@ void ElementWindows::draw_window_controls(Window& window, const domain::Element&
     ImGui::Separator();
 }
 
+// --- Overview ---------------------------------------------------------------
+
 void ElementWindows::draw_overview_tab(Window& window, const domain::Element& element) {
+    const calc::UnitPreferences units = units_.with_overrides(element.unit_overrides);
+    switch (element.type) {
+    case domain::ElementType::Brewhouse:
+        draw_brewhouse_status(element, units);
+        break;
+    case domain::ElementType::Fermenter:
+    case domain::ElementType::BriteTank:
+        draw_vessel_status(element, units);
+        break;
+    case domain::ElementType::RecipeStation:
+        if (ImGui::Button("Open recipe library") && on_open_recipes) on_open_recipes();
+        ImGui::SameLine();
+        ImGui::TextDisabled("Design recipes and manage ingredients");
+        break;
+    default:
+        break;
+    }
+    ImGui::SeparatorText("Equipment");
+    draw_equipment_settings(window, element);
+}
+
+void ElementWindows::draw_equipment_settings(Window& window, const domain::Element& element) {
     const domain::ElementTypeInfo& type = domain::info(element.type);
     const calc::UnitPreferences units = units_.with_overrides(element.unit_overrides);
 
-    if (ImGui::BeginTable("##overview", 2, ImGuiTableFlags_SizingStretchProp)) {
-        ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 100.0f * ui_scale_);
-        ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch);
+    if (!ImGui::BeginTable("##equipment", 2, ImGuiTableFlags_SizingStretchProp)) return;
+    ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed, 100.0f * ui_scale_);
+    ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthStretch);
 
-        label_cell("Name");
-        if (!window.editing_name) window.name_edit = element.name;
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputText("##name", &window.name_edit);
-        window.editing_name = ImGui::IsItemActive();
-        // A blank name isn't saved; the field just shows the old name again.
-        if (ImGui::IsItemDeactivatedAfterEdit() && window.name_edit.find_first_not_of(" \t") != std::string::npos) {
-            floor_.rename(element.id, window.name_edit);
+    label_cell("Name");
+    if (!window.editing_name) window.name_edit = element.name;
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputText("##name", &window.name_edit);
+    window.editing_name = ImGui::IsItemActive();
+    // A blank name isn't saved; the field just shows the old name again.
+    if (ImGui::IsItemDeactivatedAfterEdit() && window.name_edit.find_first_not_of(" \t") != std::string::npos) {
+        floor_.rename(element.id, window.name_edit);
+    }
+
+    label_cell("Type");
+    ImGui::TextUnformatted(type.name.data());
+
+    if (type.is_vessel) {
+        label_cell("Capacity");
+        double capacity_l = element.capacity_l.value_or(0.0);
+        ImGui::SetNextItemWidth(120.0f * ui_scale_);
+        if (input_quantity("##capacity", capacity_l, units.unit_for(Measure::Volume))) {
+            floor_.set_capacity(element.id, capacity_l > 0.0 ? std::optional<double>(capacity_l) : std::nullopt);
         }
+    }
+    ImGui::EndTable();
+}
 
-        label_cell("Type");
-        ImGui::TextUnformatted(type.name.data());
+void ElementWindows::draw_vessel_status(const domain::Element& element, const calc::UnitPreferences& units) {
+    const calc::Unit volume = units.unit_for(Measure::Volume);
+    const std::optional<app::VesselContents> held = batches_.contents(element.id);
+    const domain::Batch* found = held ? batches_.find_active(held->batch_id) : nullptr;
 
-        if (type.is_vessel) {
-            label_cell("Capacity");
-            double capacity_l = element.capacity_l.value_or(0.0);
-            ImGui::SetNextItemWidth(120.0f * ui_scale_);
-            if (input_quantity("##capacity", capacity_l, units.unit_for(calc::Measure::Volume))) {
-                floor_.set_capacity(element.id, capacity_l > 0.0 ? std::optional<double>(capacity_l) : std::nullopt);
-            }
+    if (!found) {
+        // Empty: whether it's ready for beer, and buttons to change that.
+        const domain::VesselCondition condition = batches_.condition(element.id);
+        ImGui::TextUnformatted("Empty");
+        ImGui::SameLine();
+        ImGui::TextColored(condition_color(condition), "· %s", domain::name(condition).data());
+        ImGui::Spacing();
+        const auto set = [&](domain::VesselCondition to) { batches_.set_condition(element.id, to, domain::now()); };
+        if (condition == domain::VesselCondition::Clean) {
+            if (ImGui::Button("Needs cleaning")) set(domain::VesselCondition::Dirty);
+            ImGui::SameLine();
+            if (ImGui::Button("Out of service")) set(domain::VesselCondition::OutOfService);
+            ImGui::SetItemTooltip("Under repair or otherwise unavailable: nothing can be put in it");
+        } else if (ImGui::Button(condition == domain::VesselCondition::Dirty ? "Mark clean" : "Back in service")) {
+            set(domain::VesselCondition::Clean);
+        }
+        return;
+    }
 
-            label_cell("Contents");
-            ImGui::TextUnformatted("Empty");
+    // Drawn from a copy: the buttons below can reload the service's batches.
+    const domain::Batch batch = *found;
+    const double contents_l = held->volume_l;
+    const domain::RecipeStats predicted = domain::calculate(batch.recipe, calc_settings_);
+
+    beer_swatch(predicted.srm);
+    ImGui::SameLine();
+    ImGui::TextUnformatted(domain::label(batch).c_str());
+    if (!batch.recipe.style.empty()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", batch.recipe.style.c_str());
+    }
+    ImGui::TextDisabled("%s · %s", domain::name(batch.status).data(), batch_age_text(batch).c_str());
+
+    // How full the tank is.
+    std::string fill = calc::format(contents_l, volume);
+    float fraction = 1.0f;
+    if (element.capacity_l && *element.capacity_l > 0.0) {
+        fraction = static_cast<float>(std::clamp(contents_l / *element.capacity_l, 0.0, 1.0));
+        fill += " of " + calc::format(*element.capacity_l, volume);
+    }
+    ImGui::ProgressBar(fraction, ImVec2(-FLT_MIN, 0.0f), fill.c_str());
+    ImGui::Spacing();
+    draw_batch_figures(batch, predicted, units, calc_settings_.abv_formula);
+    ImGui::Spacing();
+
+    if (ImGui::Button("Log reading")) dialogs_.log_reading(batch.id, element.id);
+    ImGui::SameLine();
+    if (ImGui::Button("Transfer...")) dialogs_.transfer(element.id);
+    ImGui::SameLine();
+    if (ImGui::Button("Package...")) dialogs_.package(element.id);
+    ImGui::SameLine();
+    if (ImGui::Button("Open batch") && on_open_batch) on_open_batch(batch.id);
+
+    if (ImGui::SmallButton("Add note")) dialogs_.add_note(batch.id, element.id);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Correct volume...")) dialogs_.correct_volume(element.id);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Dump...")) dialogs_.dump(element.id);
+    if (batch.status == domain::BatchStatus::Fermenting || batch.status == domain::BatchStatus::Conditioning) {
+        ImGui::SameLine();
+        const bool fermenting = batch.status == domain::BatchStatus::Fermenting;
+        if (ImGui::SmallButton(fermenting ? "Start conditioning" : "Back to fermenting")) {
+            batches_.set_status(batch.id,
+                                fermenting ? domain::BatchStatus::Conditioning : domain::BatchStatus::Fermenting,
+                                domain::now());
+        }
+    }
+}
+
+void ElementWindows::draw_brewhouse_status(const domain::Element& element, const calc::UnitPreferences& units) {
+    const domain::Brew* brewing = batches_.brew_at(element.id);
+    const domain::Batch* found = brewing ? batches_.find_active(brewing->batch_id) : nullptr;
+    if (!found) {
+        ImGui::TextUnformatted("Idle");
+        ImGui::Spacing();
+        if (ImGui::Button("Start brew...")) dialogs_.start_brew(element.id);
+        return;
+    }
+
+    // Copies: the buttons below can reload the service's batches.
+    const domain::Batch batch = *found;
+    const domain::Brew brew = *brewing;
+    const domain::RecipeStats predicted = domain::calculate(batch.recipe, calc_settings_);
+
+    beer_swatch(predicted.srm);
+    ImGui::SameLine();
+    ImGui::Text("Brewing %s", domain::label(batch).c_str());
+    std::string started =
+        "Started " + time_text(brew.started_at) + " (" + ago_text(brew.started_at, domain::now()) + " ago)";
+    if (batch.brews.size() > 1) started += " · brew " + std::to_string(batch.brews.size()) + " of the batch";
+    ImGui::TextDisabled("%s", started.c_str());
+    ImGui::Text("Aiming for %s at %s",
+                calc::format(predicted.volumes.fermenter_volume_l, units.unit_for(Measure::Volume)).c_str(),
+                calc::format(predicted.og, units.unit_for(Measure::Gravity)).c_str());
+    ImGui::Spacing();
+    if (ImGui::Button("Knock out...")) dialogs_.knock_out(element.id);
+    ImGui::SetItemTooltip("Record the wort going into a tank and confirm the ingredients used");
+    ImGui::SameLine();
+    if (ImGui::Button("Open batch") && on_open_batch) on_open_batch(batch.id);
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel brew...")) dialogs_.cancel_brew(element.id);
+}
+
+// --- Brewhouse tabs ---------------------------------------------------------------
+
+void ElementWindows::draw_brew_sheet(const domain::Batch& batch, const calc::UnitPreferences& units) {
+    const domain::Recipe& recipe = batch.recipe;
+    const domain::RecipeStats stats = domain::calculate(recipe, calc_settings_);
+    const calc::Unit volume = units.unit_for(Measure::Volume);
+    const calc::Unit gravity = units.unit_for(Measure::Gravity);
+    const calc::Unit temperature = units.unit_for(Measure::Temperature);
+    const calc::Unit mass = units.unit_for(Measure::Mass);
+    const calc::Unit hop_mass = units.unit_for(Measure::HopMass);
+
+    ImGui::SeparatorText("Targets");
+    if (ImGui::BeginTable("##targets", 4, ImGuiTableFlags_SizingFixedFit)) {
+        const std::pair<const char*, std::string> cells[] = {
+            {"Strike water", calc::format(stats.volumes.strike_water_l, volume)},
+            {"Sparge water", calc::format(stats.volumes.sparge_water_l, volume)},
+            {"Pre-boil", calc::format(stats.volumes.pre_boil_volume_l, volume)},
+            {"Pre-boil gravity", calc::format(stats.pre_boil_gravity, gravity)},
+            {"Post-boil", calc::format(stats.volumes.post_boil_volume_l, volume)},
+            {"OG", calc::format(stats.og, gravity)},
+            {"Into the fermenter", calc::format(stats.volumes.fermenter_volume_l, volume)},
+            {"Boil", number_text(recipe.boil_time_min, 0, " min")},
+        };
+        for (const auto& [label, value] : cells) {
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", label);
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(value.c_str());
         }
         ImGui::EndTable();
     }
 
-    ImGui::Spacing();
-    if (element.type == domain::ElementType::RecipeStation) {
-        if (ImGui::Button("Open recipe library") && on_open_recipes) on_open_recipes();
-        ImGui::SameLine();
-        ImGui::TextDisabled("Design recipes and manage ingredients");
-    } else {
-        wrapped_note("Batches, logs and tasks for this equipment arrive with batch tracking (Phase 4).");
+    ImGui::SeparatorText("Mash");
+    for (const domain::FermentableAddition& addition : recipe.fermentables) {
+        if (!domain::is_mashed(addition.fermentable.type)) continue;
+        ImGui::BulletText("%s  %s", calc::format(addition.mass_kg, mass).c_str(), addition.fermentable.name.c_str());
+    }
+    for (const domain::MashStep& step : recipe.mash_steps) {
+        ImGui::BulletText("%s: %s for %s", step.name.c_str(), calc::format(step.temperature_c, temperature).c_str(),
+                          number_text(step.time_min, 0, " min").c_str());
+    }
+
+    // Kettle sugars, then hops in the order they go in, then other additions.
+    ImGui::SeparatorText("Boil and whirlpool");
+    for (const domain::FermentableAddition& addition : recipe.fermentables) {
+        if (domain::is_mashed(addition.fermentable.type)) continue;
+        ImGui::BulletText("%s  %s", calc::format(addition.mass_kg, mass).c_str(), addition.fermentable.name.c_str());
+    }
+    std::vector<const domain::HopAddition*> hot_side;
+    for (const domain::HopAddition& addition : recipe.hops) {
+        if (addition.use != calc::HopUse::DryHop) hot_side.push_back(&addition);
+    }
+    const auto stage = [](const domain::HopAddition& hop) {
+        switch (hop.use) {
+        case calc::HopUse::Mash:      return 0;
+        case calc::HopUse::FirstWort: return 1;
+        case calc::HopUse::Boil:      return 2;
+        default:                      return 3;  // whirlpool
+        }
+    };
+    std::stable_sort(hot_side.begin(), hot_side.end(),
+                     [&stage](const domain::HopAddition* a, const domain::HopAddition* b) {
+                         if (stage(*a) != stage(*b)) return stage(*a) < stage(*b);
+                         return a->time_min > b->time_min;  // longest boil first
+                     });
+    for (const domain::HopAddition* addition : hot_side) {
+        std::string when(domain::name(addition->use));
+        if (addition->use == calc::HopUse::Boil || addition->use == calc::HopUse::Whirlpool) {
+            when += ", " + number_text(addition->time_min, 0, " min");
+        }
+        ImGui::BulletText("%s  %s  (%s)", calc::format(addition->mass_kg, hop_mass).c_str(),
+                          addition->hop.name.c_str(), when.c_str());
+    }
+    for (const domain::MiscAddition& addition : recipe.miscs) {
+        if (addition.use == domain::MiscUse::Fermenter || addition.use == domain::MiscUse::Packaging) continue;
+        ImGui::BulletText("%s  %s  (%s)", addition.amount.c_str(), addition.name.c_str(),
+                          domain::name(addition.use).data());
+    }
+
+    ImGui::SeparatorText("Fermentation");
+    for (const domain::YeastAddition& addition : recipe.yeasts) {
+        ImGui::BulletText("Pitch %s", addition.yeast.name.c_str());
+    }
+    for (const domain::HopAddition& addition : recipe.hops) {
+        if (addition.use != calc::HopUse::DryHop) continue;
+        ImGui::BulletText("Dry hop %s  %s", calc::format(addition.mass_kg, hop_mass).c_str(),
+                          addition.hop.name.c_str());
+    }
+    for (const domain::MiscAddition& addition : recipe.miscs) {
+        if (addition.use != domain::MiscUse::Fermenter && addition.use != domain::MiscUse::Packaging) continue;
+        ImGui::BulletText("%s  %s  (%s)", addition.amount.c_str(), addition.name.c_str(),
+                          domain::name(addition.use).data());
     }
 }
+
+void ElementWindows::draw_history_tab(const Window& window, const calc::UnitPreferences& units) {
+    if (window.history.empty()) {
+        wrapped_note("Brews made on this brewhouse will be listed here.");
+        return;
+    }
+    const calc::Unit volume = units.unit_for(Measure::Volume);
+    const calc::Unit gravity = units.unit_for(Measure::Gravity);
+    if (!ImGui::BeginTable("##history", 5, kListFlags | ImGuiTableFlags_ScrollY)) return;
+    ImGui::TableSetupScrollFreeze(0, 1);
+    ImGui::TableSetupColumn("Started");
+    ImGui::TableSetupColumn("Batch", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Volume");
+    ImGui::TableSetupColumn("OG");
+    ImGui::TableSetupColumn("Into");
+    ImGui::TableHeadersRow();
+    for (const data::BrewSummary& entry : window.history) {
+        ImGui::PushID(static_cast<int>(entry.brew.id));
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(time_text(entry.brew.started_at).c_str());
+        ImGui::TableNextColumn();
+        if (ImGui::Selectable(domain::batch_label(entry.code, entry.name).c_str(), false,
+                              ImGuiSelectableFlags_SpanAllColumns) &&
+            on_open_batch) {
+            on_open_batch(entry.brew.batch_id);
+        }
+        ImGui::TableNextColumn();
+        if (!entry.brew.in_progress()) ImGui::TextUnformatted(calc::format(entry.brew.volume_l, volume).c_str());
+        ImGui::TableNextColumn();
+        if (entry.brew.og) ImGui::TextUnformatted(calc::format(*entry.brew.og, gravity).c_str());
+        ImGui::TableNextColumn();
+        if (entry.brew.in_progress()) {
+            ImGui::TextColored(kWarningColor, "Brewing");
+        } else if (const domain::Element* vessel = entry.brew.vessel_id ? floor_.find(*entry.brew.vessel_id) : nullptr) {
+            ImGui::TextUnformatted(vessel->name.c_str());
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndTable();
+}
+
+// --- Units ----------------------------------------------------------------------
 
 void ElementWindows::draw_units_tab(const domain::Element& element) {
     wrapped_note("Units for this equipment only. \"Brewery default\" follows the Units menu.");
@@ -248,6 +584,20 @@ void ElementWindows::draw_units_tab(const domain::Element& element) {
         ImGui::PopID();
     }
     ImGui::EndTable();
+}
+
+// --- Window management ------------------------------------------------------------
+
+void ElementWindows::refresh(Window& window) {
+    window.log = batches_.element_activity(window.element_id);
+    window.history.clear();
+    const domain::Element* element = floor_.find(window.element_id);
+    if (element && element->type == domain::ElementType::Brewhouse) {
+        window.history = batches_.brewhouse_history(window.element_id);
+    }
+    window.batch_revision = batches_.revision();
+    window.task_revision = tasks_.revision();
+    window.loaded = true;
 }
 
 void ElementWindows::maximize(Window& window) {

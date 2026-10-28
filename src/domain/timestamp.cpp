@@ -111,6 +111,15 @@ int days_between(Date from, Date to) {
     return static_cast<int>((to_sys_days(to) - to_sys_days(from)).count());
 }
 
+int weekday(Date date) {
+    return static_cast<int>(chr::weekday(to_sys_days(date)).c_encoding());
+}
+
+int days_in_month(int year, int month) {
+    const chr::year_month_day_last last(chr::year(year), chr::month_day_last(chr::month(static_cast<unsigned>(month))));
+    return static_cast<int>(static_cast<unsigned>(last.day()));
+}
+
 std::string to_iso8601(Date date) {
     char text[16];
     std::snprintf(text, sizeof text, "%04d-%02d-%02d", date.year, date.month, date.day);

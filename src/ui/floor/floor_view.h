@@ -1,37 +1,49 @@
 #pragma once
 // The Brewery Floor: a pan-and-zoom canvas showing the equipment where the
-// brewer placed it.
+// brewer placed it. Tanks fill with the color of the beer in them and show
+// its batch and latest gravity; badges count open tasks.
 //
-// Viewing (the default): hover for a summary, click for details, drag empty
-// space or middle-drag to pan, scroll to zoom.
+// Viewing (the default): hover for a summary, click for details, right-click
+// for actions, drag empty space or middle-drag to pan, scroll to zoom.
 // Editing ("Edit layout"): drag to move, drag the corner handle to resize,
 // double-click for details, Delete to remove.
 
+#include "app/batch_service.h"
 #include "app/floor_service.h"
+#include "app/task_service.h"
 #include "calc/units.h"
 #include "data/settings_repository.h"
 #include "domain/element.h"
+#include "domain/recipe_math.h"
 
 #include <imgui.h>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
+#include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace ninkasi::ui {
 
+class CellarDialogs;
 class ElementWindows;
 
 class FloorView {
 public:
-    FloorView(app::FloorService& floor, ElementWindows& windows, data::SettingsRepository& settings,
-              const calc::UnitPreferences& units, float ui_scale);
+    FloorView(app::FloorService& floor, app::BatchService& batches, app::TaskService& tasks, ElementWindows& windows,
+              CellarDialogs& dialogs, data::SettingsRepository& settings, const calc::UnitPreferences& units,
+              const domain::CalcSettings& calc_settings, float ui_scale);
     ~FloorView();  // remembers where the brewer was looking
 
     FloorView(const FloorView&) = delete;
     FloorView& operator=(const FloorView&) = delete;
 
     void draw(ImGuiID dockspace_id, bool* open);
+
+    // Called by "Open batch" in the right-click menu.
+    std::function<void(std::int64_t batch_id)> on_open_batch;
 
 private:
     struct FloorPoint {
@@ -62,6 +74,16 @@ private:
     std::optional<std::int64_t> hit_test(ImVec2 screen) const;
     bool over_resize_handle(const domain::Element& element, ImVec2 screen) const;
 
+    // What a vessel shows: the batch in it (or being brewed in it) and how full it is.
+    struct Contents {
+        const domain::Batch* batch = nullptr;
+        double fill = 0.0;  // 0–1 of the capacity
+        bool brewing = false;
+    };
+    Contents contents_of(const domain::Element& element) const;
+    // The beer's predicted color, worked out once per batch.
+    double batch_srm(const domain::Batch& batch) const;
+
     void draw_toolbar();
     void draw_canvas();
     void handle_mouse(bool canvas_hovered, std::optional<std::int64_t> hovered);
@@ -69,9 +91,14 @@ private:
     void handle_keyboard();
     void draw_background(ImDrawList* draw_list) const;
     void draw_element(ImDrawList* draw_list, const domain::Element& element, bool hovered) const;
+    void draw_fill(ImDrawList* draw_list, const Shape& shape, float inset, double fill, ImU32 color) const;
+    void draw_labels(ImDrawList* draw_list, const domain::Element& element, const Shape& shape,
+                     const Contents& contents) const;
+    void draw_task_badge(ImDrawList* draw_list, const domain::Element& element, const Shape& shape) const;
     void draw_empty_hint(ImDrawList* draw_list) const;
     void draw_tooltip(std::optional<std::int64_t> hovered);
     void draw_context_menu();
+    void draw_element_actions(const domain::Element& element);
     void draw_delete_confirmation();
 
     void zoom_at(ImVec2 screen, double factor);
@@ -81,10 +108,18 @@ private:
     void save_view();
 
     app::FloorService& floor_;
+    app::BatchService& batches_;
+    app::TaskService& tasks_;
     ElementWindows& windows_;
+    CellarDialogs& dialogs_;
     data::SettingsRepository& settings_;
     const calc::UnitPreferences& units_;
+    const domain::CalcSettings& calc_settings_;
     float ui_scale_;
+
+    // Predicted beer color by batch id, cleared when batches change.
+    mutable std::unordered_map<std::int64_t, double> srm_cache_;
+    mutable std::uint64_t srm_revision_ = 0;
 
     // The floor position at the canvas's top-left corner, and the zoom.
     double offset_x_ = -40.0;
@@ -115,6 +150,7 @@ private:
     std::optional<std::int64_t> context_element_;
     FloorPoint context_point_;
     std::int64_t delete_id_ = 0;
+    std::optional<std::string> delete_blocker_;  // why it can't be deleted
     bool open_delete_popup_ = false;
 };
 

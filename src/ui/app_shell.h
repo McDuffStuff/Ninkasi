@@ -1,20 +1,25 @@
 #pragma once
 // The top-level UI: main menu bar, dockspace, and the windows docked into it.
 
+#include "app/batch_service.h"
 #include "app/floor_service.h"
 #include "app/ingredient_library.h"
 #include "app/recipe_service.h"
 #include "app/session.h"
+#include "app/task_service.h"
 #include "calc/units.h"
 #include "data/database.h"
 #include "data/settings_repository.h"
 #include "domain/recipe_math.h"
+#include "ui/cellar/batch_windows.h"
+#include "ui/cellar/cellar_dialogs.h"
 #include "ui/elements/element_windows.h"
 #include "ui/floor/floor_view.h"
 #include "ui/recipes/brewing_settings_window.h"
 #include "ui/recipes/ingredient_library_window.h"
 #include "ui/recipes/recipe_editors.h"
 #include "ui/recipes/recipe_library_window.h"
+#include "ui/tasks/task_views.h"
 #include "ui/theme.h"
 
 #include <filesystem>
@@ -60,7 +65,12 @@ private:
     app::FloorService floor_;
     app::RecipeService recipes_;
     app::IngredientLibrary library_;
+    app::BatchService batches_;
+    app::TaskService tasks_;
+    CellarDialogs dialogs_;
+    TaskViews task_views_;
     ElementWindows element_windows_;
+    BatchWindows batch_windows_;
     FloorView floor_view_;
     RecipeEditors recipe_editors_;
     RecipeLibraryWindow recipe_library_;

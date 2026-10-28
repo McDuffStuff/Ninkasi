@@ -52,3 +52,12 @@ TEST_CASE("dates parse, compare and count days") {
 
     CHECK(local_date(from_local({2026, 7, 14, 23, 59})) == Date{2026, 7, 14});
 }
+
+TEST_CASE("calendar facts for the date picker") {
+    CHECK(weekday({2026, 10, 27}) == 2);  // a Tuesday
+    CHECK(weekday({2026, 11, 1}) == 0);   // a Sunday
+    CHECK(days_in_month(2026, 2) == 28);
+    CHECK(days_in_month(2028, 2) == 29);
+    CHECK(days_in_month(2026, 12) == 31);
+    CHECK(days_in_month(2026, 11) == 30);
+}

@@ -85,6 +85,11 @@ ninkasi_embed_file(${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf ${NINKASI_FO
 add_executable(ninkasi
     src/main.cpp
     src/ui/app_shell.cpp
+    src/ui/cellar/batch_views.cpp
+    src/ui/cellar/batch_windows.cpp
+    src/ui/cellar/cellar_dialogs.cpp
+    src/ui/date_widgets.cpp
+    src/ui/display.cpp
     src/ui/element_style.cpp
     src/ui/elements/element_windows.cpp
     src/ui/file_dialog.cpp
@@ -95,6 +100,7 @@ add_executable(ninkasi
     src/ui/recipes/recipe_editors.cpp
     src/ui/recipes/recipe_library_window.cpp
     src/ui/recipes/recipe_sections.cpp
+    src/ui/tasks/task_views.cpp
     src/ui/theme.cpp
     src/ui/widgets.cpp
     ${NINKASI_FONT_SOURCE}

@@ -53,6 +53,9 @@ Date local_date(Timestamp time);
 Date add_days(Date date, int days);
 // Whole days from `from` to `to`: positive when `to` is later.
 int days_between(Date from, Date to);
+// 0 for Sunday through 6 for Saturday.
+int weekday(Date date);
+int days_in_month(int year, int month);
 
 // "2026-10-30", the form stored in the database.
 std::string to_iso8601(Date date);

@@ -30,6 +30,10 @@ std::vector<domain::User> UserService::people() {
     return repository_.load_all();
 }
 
+std::optional<domain::User> UserService::person(std::int64_t id) {
+    return repository_.find(id);
+}
+
 domain::User UserService::get(std::int64_t id) {
     std::optional<domain::User> user = repository_.find(id);
     if (!user) throw std::invalid_argument("there is no person with id " + std::to_string(id));
@@ -185,10 +189,46 @@ void UserService::replace_password(const Session& by, const domain::User& user, 
     const std::optional<std::string> hash = stored(password);
     data::Transaction tx(db_);
     repository_.set_password_hash(user.id, hash);
+    if (!hash) repository_.set_recovery_hash(user.id, std::nullopt);  // nothing left to recover
     check_rules(by);
     data::record_audit(db_, by.user_id, "user.password", kEntity, user.id,
                        user.name + (hash ? ": password set" : ": password removed"));
     tx.commit();
+}
+
+std::string UserService::make_recovery_code(const Session& by) {
+    const domain::User user = get(by.user_id);
+    if (!user.has_password) throw std::invalid_argument("Set a password first; a recovery code replaces a forgotten one.");
+
+    const std::string code = new_recovery_code();
+    const std::string hash = hash_password(normalize_recovery_code(code), cost_);
+    data::Transaction tx(db_);
+    repository_.set_recovery_hash(user.id, hash);
+    data::record_audit(db_, by.user_id, "user.recovery_code", kEntity, user.id, user.name + ": new recovery code");
+    tx.commit();
+    return code;
+}
+
+std::optional<PasswordRecovery> UserService::recover(std::int64_t user_id, std::string_view code,
+                                                     std::string_view new_password) {
+    if (new_password.empty()) throw std::invalid_argument("Choose a new password.");
+    const std::optional<domain::User> user = repository_.find(user_id);
+    if (!user || !user->active) return std::nullopt;
+    const std::optional<std::string> code_hash = repository_.recovery_hash(user_id);
+    if (!code_hash || !verify_password(normalize_recovery_code(code), *code_hash)) return std::nullopt;
+
+    // The code is used up: a new one replaces it.
+    const std::string new_code = new_recovery_code();
+    const std::string new_code_hash = hash_password(normalize_recovery_code(new_code), cost_);
+    const std::string password_hash = hash_password(new_password, cost_);
+    data::Transaction tx(db_);
+    repository_.set_password_hash(user_id, password_hash);
+    repository_.set_recovery_hash(user_id, new_code_hash);
+    repository_.record_sign_in(user_id, domain::now());
+    data::record_audit(db_, user_id, "user.recover", kEntity, user_id,
+                       user->name + ": new password chosen with a recovery code");
+    tx.commit();
+    return PasswordRecovery{session_for(*user), new_code};
 }
 
 void UserService::set_active(const Session& by, std::int64_t id, bool active) {

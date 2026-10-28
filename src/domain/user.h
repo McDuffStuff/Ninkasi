@@ -24,6 +24,7 @@ struct User {
     std::string name;
     Role role = Role::Brewer;
     bool has_password = false;
+    bool has_recovery_code = false;  // for choosing a new password if they forget theirs
     // Someone who leaves is made inactive rather than deleted, so the records
     // they made keep their name. Inactive people can't sign in.
     bool active = true;

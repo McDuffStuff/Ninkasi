@@ -29,4 +29,14 @@ std::string hash_password(std::string_view password, const PasswordCost& cost = 
 // wrong password, and for anything that isn't an Argon2id hash.
 bool verify_password(std::string_view password, const std::string& encoded);
 
+// A new recovery code: 20 random letters and digits in groups of four, like
+// "K7QF-3M9X-TR2D-8HWC-P4NZ" (about 99 bits). It leaves out 0, 1, I, L and
+// O, which are easy to misread. Throws std::runtime_error if the operating
+// system can't supply random bytes.
+std::string new_recovery_code();
+
+// A recovery code as typed, reduced to what's compared: letters and digits
+// only, in upper case, so spaces, dashes and case don't matter.
+std::string normalize_recovery_code(std::string_view typed);
+
 } // namespace ninkasi::app

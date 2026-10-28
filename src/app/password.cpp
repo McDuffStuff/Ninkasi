@@ -24,6 +24,11 @@ constexpr std::uint32_t kSaltBytes = 16;
 constexpr std::uint32_t kHashBytes = 32;
 constexpr std::uint32_t kLanes = 1;  // one thread; signing in needn't be faster
 
+constexpr std::string_view kCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+constexpr int kCodeLetters = 20;
+// Random bytes at or above this would favour the alphabet's first letters.
+constexpr unsigned kUnbiasedLimit = static_cast<unsigned>(256 - 256 % kCodeAlphabet.size());
+
 // Fills `out` from the operating system's cryptographic random source.
 void random_bytes(unsigned char* out, std::size_t count) {
 #ifdef _WIN32
@@ -64,6 +69,32 @@ std::string hash_password(std::string_view password, const PasswordCost& cost) {
 bool verify_password(std::string_view password, const std::string& encoded) {
     if (encoded.rfind("$argon2id$", 0) != 0) return false;
     return argon2id_verify(encoded.c_str(), password.data(), password.size()) == ARGON2_OK;
+}
+
+std::string new_recovery_code() {
+    std::string code;
+    int letters = 0;
+    while (letters < kCodeLetters) {
+        unsigned char byte = 0;
+        random_bytes(&byte, 1);
+        if (byte >= kUnbiasedLimit) continue;
+        if (letters > 0 && letters % 4 == 0) code += '-';
+        code += kCodeAlphabet[byte % kCodeAlphabet.size()];
+        ++letters;
+    }
+    return code;
+}
+
+std::string normalize_recovery_code(std::string_view typed) {
+    std::string normalized;
+    for (const char c : typed) {
+        if (c >= 'a' && c <= 'z') {
+            normalized += static_cast<char>(c - 'a' + 'A');
+        } else if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+            normalized += c;
+        }
+    }
+    return normalized;
 }
 
 } // namespace ninkasi::app

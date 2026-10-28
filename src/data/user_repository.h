@@ -26,6 +26,8 @@ public:
     std::optional<std::int64_t> find_by_name(std::string_view name);
     // nullopt if the person has no password.
     std::optional<std::string> password_hash(std::int64_t id);
+    // nullopt if the person has no recovery code.
+    std::optional<std::string> recovery_hash(std::int64_t id);
     // Whoever signed in most recently, if anyone has.
     std::optional<std::int64_t> last_signed_in();
 
@@ -33,6 +35,7 @@ public:
     void set_name(std::int64_t id, std::string_view name);
     void set_role(std::int64_t id, domain::Role role);
     void set_password_hash(std::int64_t id, const std::optional<std::string>& password_hash);
+    void set_recovery_hash(std::int64_t id, const std::optional<std::string>& recovery_hash);
     void set_active(std::int64_t id, bool active);
     void record_sign_in(std::int64_t id, domain::Timestamp at);
 

@@ -349,6 +349,11 @@ constexpr Migration kMigrations[] = {
             WHERE key IN ('ui.theme', 'floor.view', 'floor.open_elements', 'batches.open_windows',
                           'recipes.open_editors', 'recipes.editor_tab');
     )sql"},
+    {11, R"sql(
+        -- A recovery code lets someone who forgot their password choose a new
+        -- one at the sign-in screen. Hashed like the password.
+        ALTER TABLE users ADD COLUMN recovery_hash TEXT;
+    )sql"},
 };
 
 } // namespace

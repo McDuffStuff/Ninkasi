@@ -6,8 +6,8 @@ namespace ninkasi::data {
 
 namespace {
 
-constexpr const char* kColumns = "SELECT id, display_name, role, password_hash IS NOT NULL, active, last_sign_in "
-                                 "FROM users ";
+constexpr const char* kColumns = "SELECT id, display_name, role, password_hash IS NOT NULL, active, last_sign_in, "
+                                 "recovery_hash IS NOT NULL FROM users ";
 
 // The name as stored in `username`: lower case, for comparing names.
 std::string username_for(std::string_view name) {
@@ -26,6 +26,7 @@ domain::User read_user(const Statement& stmt) {
     user.has_password = stmt.column_int64(3) != 0;
     user.active = stmt.column_int64(4) != 0;
     if (!stmt.column_is_null(5)) user.last_sign_in = domain::parse_iso8601(stmt.column_text(5));
+    user.has_recovery_code = stmt.column_int64(6) != 0;
     return user;
 }
 
@@ -67,6 +68,13 @@ std::optional<std::string> UserRepository::password_hash(std::int64_t id) {
     return stmt.column_text(0);
 }
 
+std::optional<std::string> UserRepository::recovery_hash(std::int64_t id) {
+    auto stmt = db_.prepare("SELECT recovery_hash FROM users WHERE id = ?;");
+    stmt.bind(1, id);
+    if (!stmt.step() || stmt.column_is_null(0)) return std::nullopt;
+    return stmt.column_text(0);
+}
+
 std::optional<std::int64_t> UserRepository::last_signed_in() {
     auto stmt = db_.prepare(
         "SELECT id FROM users WHERE last_sign_in IS NOT NULL ORDER BY last_sign_in DESC, id DESC LIMIT 1;");
@@ -98,6 +106,13 @@ void UserRepository::set_role(std::int64_t id, domain::Role role) {
 void UserRepository::set_password_hash(std::int64_t id, const std::optional<std::string>& password_hash) {
     auto stmt = db_.prepare("UPDATE users SET password_hash = ? WHERE id = ?;");
     bind_hash(stmt, 1, password_hash);
+    stmt.bind(2, id);
+    stmt.execute();
+}
+
+void UserRepository::set_recovery_hash(std::int64_t id, const std::optional<std::string>& recovery_hash) {
+    auto stmt = db_.prepare("UPDATE users SET recovery_hash = ? WHERE id = ?;");
+    bind_hash(stmt, 1, recovery_hash);
     stmt.bind(2, id);
     stmt.execute();
 }

@@ -174,6 +174,58 @@ TEST_CASE("people change their own password by giving the current one") {
     CHECK_FALSE(brewery.person(sam)->has_password);
 }
 
+TEST_CASE("a recovery code sets a new password at the sign-in screen, once") {
+    Brewery brewery;
+    const std::int64_t admin = brewery.admin.user_id;
+    CHECK_THROWS_AS(brewery.users.make_recovery_code(brewery.admin), std::invalid_argument);  // no password yet
+    brewery.users.set_password(brewery.admin, admin, "forgotten");
+    const std::string code = brewery.users.make_recovery_code(brewery.admin);
+    CHECK(brewery.person(admin)->has_recovery_code);
+
+    // A wrong code changes nothing.
+    CHECK_FALSE(brewery.users.recover(admin, "AAAA-AAAA-AAAA-AAAA-AAAA", "new pass"));
+    CHECK(brewery.users.sign_in(admin, "forgotten"));
+    CHECK_THROWS_AS(brewery.users.recover(admin, code, ""), std::invalid_argument);
+
+    // Typed in lower case without dashes, it still works.
+    std::string typed;
+    for (const char c : code) {
+        if (c != '-') typed += static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+    }
+    const std::optional<app::PasswordRecovery> recovered = brewery.users.recover(admin, typed, "new pass");
+    REQUIRE(recovered);
+    CHECK(recovered->session.user_id == admin);
+    CHECK(recovered->session.is_admin());
+    CHECK_FALSE(brewery.users.sign_in(admin, "forgotten"));
+    CHECK(brewery.users.sign_in(admin, "new pass"));
+
+    // The code is used up; the new one works instead.
+    CHECK(recovered->new_code != code);
+    CHECK_FALSE(brewery.users.recover(admin, code, "again"));
+    CHECK(brewery.users.recover(admin, recovered->new_code, "again"));
+}
+
+TEST_CASE("a new recovery code replaces the old one, and removing the password removes it") {
+    Brewery brewery;
+    const std::int64_t sam = brewery.add_brewer("Sam", "sam pass");
+    const app::Session session = *brewery.users.sign_in(sam, "sam pass");
+    const std::string first = brewery.users.make_recovery_code(session);
+    const std::string second = brewery.users.make_recovery_code(session);
+    CHECK_FALSE(brewery.users.recover(sam, first, "new"));
+
+    brewery.users.change_own_password(session, "sam pass", "");
+    CHECK_FALSE(brewery.person(sam)->has_recovery_code);
+    CHECK_FALSE(brewery.users.recover(sam, second, "new"));
+}
+
+TEST_CASE("inactive people can't recover a password") {
+    Brewery brewery;
+    const std::int64_t sam = brewery.add_brewer("Sam", "sam pass");
+    const std::string code = brewery.users.make_recovery_code(*brewery.users.sign_in(sam, "sam pass"));
+    brewery.users.set_active(brewery.admin, sam, false);
+    CHECK_FALSE(brewery.users.recover(sam, code, "new"));
+}
+
 TEST_CASE("brewers can't manage people") {
     Brewery brewery;
     const std::int64_t sam = brewery.add_brewer("Sam");

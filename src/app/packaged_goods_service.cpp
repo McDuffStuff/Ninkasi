@@ -1,5 +1,7 @@
 #include "app/packaged_goods_service.h"
 
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
 #include <string>
 
@@ -13,6 +15,12 @@ namespace {
 
 std::size_t index_of(domain::PackageType type) {
     return static_cast<std::size_t>(type);
+}
+
+bool same_name(std::string_view a, std::string_view b) {
+    return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](char x, char y) {
+        return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+    });
 }
 
 // "There are only 6 dirty sixtels.", for a request for more kegs than there are.
@@ -41,6 +49,87 @@ std::vector<data::KegMovementRow> PackagedGoodsService::keg_history(int limit) {
 
 std::vector<data::PackagedMovementRow> PackagedGoodsService::packaged_history(int limit) {
     return repository_.packaged_movements(limit);
+}
+
+std::vector<domain::PackagedStock> PackagedGoodsService::packaged_ever(int limit) {
+    return repository_.packaged_ever(limit);
+}
+
+// --- Packaged beer ----------------------------------------------------------------
+
+std::optional<domain::PackagedProduct> PackagedGoodsService::product(std::string_view beer, domain::PackageType type,
+                                                                     double unit_volume_l) const {
+    for (domain::PackagedProduct& product : domain::combine_by_beer(packaged_)) {
+        if (product.type == type && product.unit_volume_l == unit_volume_l && same_name(product.beer, beer)) {
+            return std::move(product);
+        }
+    }
+    return std::nullopt;
+}
+
+void PackagedGoodsService::take(const domain::PackagedProduct& product, int count, domain::PackagedReason reason,
+                                domain::Timestamp at, std::string_view note) {
+    int left = count;
+    for (const domain::PackagedStock& batch : product.batches) {
+        const int taken = std::min(left, batch.count);
+        if (taken <= 0) continue;
+        record_packaged(batch.batch_id, product.type, product.unit_volume_l, -taken, reason, at, note);
+        left -= taken;
+    }
+}
+
+void PackagedGoodsService::remove(const PackagedRemoval& removal) {
+    if (domain::adds_packages(removal.reason)) fail("That doesn't take beer out of packaged goods.");
+    if (removal.count <= 0) fail("Enter how many were taken out.");
+    const std::optional<domain::PackagedProduct> found = product(removal.beer, removal.type, removal.unit_volume_l);
+    const int on_hand = found ? found->count : 0;
+    if (removal.count > on_hand) {
+        fail(std::string(on_hand == 1 ? "There is only " : "There are only ") +
+             domain::count_text(removal.type, on_hand) + " of " + removal.beer + ".");
+    }
+
+    data::Transaction tx(db_);
+    take(*found, removal.count, removal.reason, removal.at, removal.note);
+    if (domain::is_keg(removal.type) && domain::keg_comes_back(removal.reason)) {
+        record(removal.type, domain::KegState::Dirty, removal.count, domain::KegReason::Emptied, removal.at,
+               std::nullopt, found->beer + ": " + std::string(domain::name(removal.reason)));
+    }
+    tx.commit();
+    refresh();
+}
+
+void PackagedGoodsService::count(std::string_view beer, domain::PackageType type, double unit_volume_l, int counted,
+                                 domain::Timestamp at, std::string_view note) {
+    if (counted < 0) fail("A count can't be negative.");
+    const std::optional<domain::PackagedProduct> found = product(beer, type, unit_volume_l);
+    if (!found) fail("There is no " + std::string(beer) + " in that package to count.");
+    const int change = counted - found->count;
+    if (change == 0) return;
+
+    data::Transaction tx(db_);
+    if (change < 0) {
+        take(*found, -change, domain::PackagedReason::Shortage, at, note);
+    } else {
+        record_packaged(found->batches.back().batch_id, type, unit_volume_l, change, domain::PackagedReason::Overage, at,
+                        note);
+    }
+    tx.commit();
+    refresh();
+}
+
+void PackagedGoodsService::return_packages(std::int64_t batch_id, domain::PackageType type, double unit_volume_l,
+                                           int count, domain::Timestamp at, std::string_view note) {
+    if (count <= 0) fail("Enter how many came back.");
+    const std::vector<domain::PackagedStock> ever = repository_.packaged_ever(100000);
+    const bool packaged = std::any_of(ever.begin(), ever.end(), [&](const domain::PackagedStock& entry) {
+        return entry.batch_id == batch_id && entry.type == type && entry.unit_volume_l == unit_volume_l;
+    });
+    if (!packaged) fail("That batch was never packaged that way.");
+
+    data::Transaction tx(db_);
+    record_packaged(batch_id, type, unit_volume_l, count, domain::PackagedReason::Returned, at, note);
+    tx.commit();
+    refresh();
 }
 
 // --- Kegs -----------------------------------------------------------------------
@@ -124,6 +213,20 @@ void PackagedGoodsService::write_fill(domain::PackageType type, int count, std::
         record(type, domain::KegState::Dirty, -draw.dirty, domain::KegReason::Filled, at, batch_id,
                "Cleaned without being logged");
     }
+}
+
+void PackagedGoodsService::record_packaged(std::int64_t batch_id, domain::PackageType type, double unit_volume_l,
+                                           int quantity, domain::PackagedReason reason, domain::Timestamp at,
+                                           std::string_view note) {
+    domain::PackagedMovement movement;
+    movement.at = at;
+    movement.batch_id = batch_id;
+    movement.type = type;
+    movement.unit_volume_l = unit_volume_l;
+    movement.quantity = quantity;
+    movement.reason = reason;
+    movement.note = std::string(note);
+    repository_.insert_packaged_movement(movement, session_.user_id);
 }
 
 void PackagedGoodsService::write_packaged(std::int64_t batch_id, std::optional<std::int64_t> vessel_id,

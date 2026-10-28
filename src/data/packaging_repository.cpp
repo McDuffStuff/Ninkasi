@@ -95,6 +95,27 @@ std::vector<domain::PackagedStock> PackagingRepository::packaged_stock() {
     return stock;
 }
 
+std::vector<domain::PackagedStock> PackagingRepository::packaged_ever(int limit) {
+    auto stmt = db_.prepare(
+        "SELECT p.batch_id, b.code, b.name, p.package, p.unit_volume_l, SUM(p.quantity), MIN(p.at) "
+        "FROM packaged_movements p JOIN batches b ON b.id = p.batch_id WHERE p.reason = 'packaged' "
+        "GROUP BY p.batch_id, p.package, p.unit_volume_l ORDER BY MIN(p.at) DESC, p.batch_id DESC LIMIT ?;");
+    stmt.bind(1, limit);
+    std::vector<domain::PackagedStock> lines;
+    while (stmt.step()) {
+        domain::PackagedStock entry;
+        entry.batch_id = stmt.column_int64(0);
+        entry.batch_code = stmt.column_text(1);
+        entry.beer = stmt.column_text(2);
+        entry.type = domain::package_type_from_key(stmt.column_text(3)).value_or(domain::PackageType::HalfBarrel);
+        entry.unit_volume_l = stmt.column_double(4);
+        entry.count = static_cast<int>(stmt.column_int64(5));
+        entry.packaged_at = column_time(stmt, 6);
+        lines.push_back(std::move(entry));
+    }
+    return lines;
+}
+
 std::vector<PackagedMovementRow> PackagingRepository::packaged_movements(int limit) {
     auto stmt = db_.prepare(
         "SELECT p.id, p.at, p.batch_id, p.package, p.unit_volume_l, p.quantity, p.reason, p.vessel_id, p.note, "

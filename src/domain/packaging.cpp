@@ -33,10 +33,25 @@ constexpr EnumText<KegReason> kReasonTexts[] = {
     {KegReason::Cleaned, "cleaned", "Cleaned"},
     {KegReason::Filled,  "filled",  "Filled"},
     {KegReason::Removed, "removed", "Removed"},
+    {KegReason::Emptied, "emptied", "Emptied"},
 };
 
 constexpr EnumText<PackagedReason> kPackagedTexts[] = {
-    {PackagedReason::Packaged, "packaged", "Packaged"},
+    {PackagedReason::Packaged,           "packaged",       "Packaged"},
+    {PackagedReason::Sold,               "sold",           "Sold"},
+    {PackagedReason::Taproom,            "taproom",        "To the taproom"},
+    {PackagedReason::Exported,           "exported",       "Exported"},
+    {PackagedReason::Supplies,           "supplies",       "Ship or aircraft supplies"},
+    {PackagedReason::Research,           "research",       "Research or testing"},
+    {PackagedReason::SameOwnership,      "same_ownership", "To another of our breweries"},
+    {PackagedReason::Unfit,              "unfit",          "Unfit, used in manufacturing"},
+    {PackagedReason::ConsumedOnPremises, "consumed",       "Drunk at the brewery"},
+    {PackagedReason::LabSamples,         "lab_samples",    "Lab samples"},
+    {PackagedReason::Destroyed,          "destroyed",      "Destroyed"},
+    {PackagedReason::Lost,               "lost",           "Lost or stolen"},
+    {PackagedReason::Shortage,           "shortage",       "Count shortage"},
+    {PackagedReason::Overage,            "overage",        "Count overage"},
+    {PackagedReason::Returned,           "returned",       "Returned"},
 };
 
 std::string lowercase(std::string text) {
@@ -61,6 +76,23 @@ std::optional<E> from_key(std::string_view key, const EnumText<E> (&table)[N]) {
 }
 
 } // namespace
+
+bool adds_packages(PackagedReason reason) {
+    return reason == PackagedReason::Packaged || reason == PackagedReason::Overage ||
+           reason == PackagedReason::Returned;
+}
+
+bool keg_comes_back(PackagedReason reason) {
+    switch (reason) {
+    case PackagedReason::Taproom:
+    case PackagedReason::ConsumedOnPremises:
+    case PackagedReason::Research:
+    case PackagedReason::LabSamples:
+    case PackagedReason::Unfit:
+    case PackagedReason::Destroyed: return true;
+    default:                        return false;
+    }
+}
 
 bool is_keg(PackageType type) {
     return type == PackageType::HalfBarrel || type == PackageType::Sixtel;

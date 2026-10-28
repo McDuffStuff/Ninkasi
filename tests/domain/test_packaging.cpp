@@ -65,8 +65,15 @@ TEST_CASE("package and keg keys round-trip") {
         CHECK(keys.insert(std::string(key(type))).second);
         CHECK(package_type_from_key(key(type)) == type);
     }
-    for (KegReason reason : {KegReason::Added, KegReason::Cleaned, KegReason::Filled, KegReason::Removed}) {
+    for (KegReason reason :
+         {KegReason::Added, KegReason::Cleaned, KegReason::Filled, KegReason::Removed, KegReason::Emptied}) {
         CHECK(keg_reason_from_key(key(reason)) == reason);
+    }
+    std::set<std::string> reasons;
+    for (int i = 0; i <= static_cast<int>(PackagedReason::Returned); ++i) {
+        const auto reason = static_cast<PackagedReason>(i);
+        CHECK(reasons.insert(std::string(key(reason))).second);
+        CHECK(packaged_reason_from_key(key(reason)) == reason);
     }
     CHECK(keg_state_from_key(key(KegState::Clean)) == KegState::Clean);
     CHECK_FALSE(package_type_from_key("growler").has_value());

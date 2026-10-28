@@ -3,7 +3,9 @@
 //
 // Packaged beer is counted in packages (half-barrels, sixtels, cans) by
 // batch, in the packaged goods ledger (packaged_movements). Packaging (see
-// BatchService) adds to it.
+// BatchService) adds to it; beer leaves it when it's sold, sent to the
+// taproom, exported, destroyed and so on, oldest batch first. Each reason is
+// a line of the TTB report of operations.
 //
 // Empty kegs are kept in the keg cleaner, counted by size: kegs arrive dirty
 // (new, or back from customers), are cleaned, and are filled when beer is
@@ -31,6 +33,18 @@
 
 namespace ninkasi::app {
 
+// Packages of one beer, in one kind and size of package (a row of
+// domain::combine_by_beer), taken out of packaged goods.
+struct PackagedRemoval {
+    std::string beer;
+    domain::PackageType type = domain::PackageType::HalfBarrel;
+    double unit_volume_l = 0.0;
+    int count = 0;
+    domain::PackagedReason reason = domain::PackagedReason::Sold;
+    domain::Timestamp at{};
+    std::string note;
+};
+
 class PackagedGoodsService {
 public:
     PackagedGoodsService(data::Database& db, Session session);
@@ -48,6 +62,23 @@ public:
 
     std::vector<data::KegMovementRow> keg_history(int limit = 500);
     std::vector<data::PackagedMovementRow> packaged_history(int limit = 500);
+    // Every batch and package ever packaged, newest first, for returns.
+    std::vector<domain::PackagedStock> packaged_ever(int limit = 200);
+
+    // --- Packaged beer --------------------------------------------------------
+    // Each throws std::invalid_argument, saving nothing, if it can't be done.
+
+    // Takes packages out, oldest batch first. Kegs emptied at the brewery
+    // (see domain::keg_comes_back) go back to the keg cleaner dirty. Throws
+    // if there aren't that many.
+    void remove(const PackagedRemoval& removal);
+    // A stock count of one beer in one package: a shortage comes out oldest
+    // batch first, an overage goes onto the newest batch.
+    void count(std::string_view beer, domain::PackageType type, double unit_volume_l, int counted,
+               domain::Timestamp at, std::string_view note);
+    // Packages of a batch returned to the brewery after they were removed.
+    void return_packages(std::int64_t batch_id, domain::PackageType type, double unit_volume_l, int count,
+                         domain::Timestamp at, std::string_view note);
 
     // --- Kegs -----------------------------------------------------------------
     // Each throws std::invalid_argument, saving nothing, if no kegs are given,
@@ -82,6 +113,15 @@ private:
     static void check(std::span<const domain::KegCount> kegs);
     void record(domain::PackageType type, domain::KegState state, int quantity, domain::KegReason reason,
                 domain::Timestamp at, std::optional<std::int64_t> batch_id, std::string_view note);
+    // A row of the packaged goods ledger.
+    void record_packaged(std::int64_t batch_id, domain::PackageType type, double unit_volume_l, int quantity,
+                         domain::PackagedReason reason, domain::Timestamp at, std::string_view note);
+    // The product on hand matching a beer and package, if there is any.
+    std::optional<domain::PackagedProduct> product(std::string_view beer, domain::PackageType type,
+                                                   double unit_volume_l) const;
+    // Writes `count` packages of a product out, oldest batch first.
+    void take(const domain::PackagedProduct& product, int count, domain::PackagedReason reason, domain::Timestamp at,
+              std::string_view note);
 
     data::Database& db_;
     Session session_;

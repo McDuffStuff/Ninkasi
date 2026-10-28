@@ -40,6 +40,9 @@ public:
     void insert_packaged_movement(const domain::PackagedMovement& movement, std::int64_t user_id);
     // What's on hand, oldest first.
     std::vector<domain::PackagedStock> packaged_stock();
+    // Every batch and package ever packaged, newest first, with how many
+    // were packaged (for returns).
+    std::vector<domain::PackagedStock> packaged_ever(int limit);
     // Newest first.
     std::vector<PackagedMovementRow> packaged_movements(int limit);
 

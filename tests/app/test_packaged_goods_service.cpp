@@ -82,3 +82,83 @@ TEST_CASE("more kegs than there are can't be cleaned or removed") {
     const std::vector<KegCount> cans{{PackageType::Can, 10}};
     CHECK_THROWS_AS(room.goods.add_kegs(cans, day(3), ""), std::invalid_argument);
 }
+
+namespace {
+
+// Packaged beer to sell: two batches of Red Ale in half-barrels and one in
+// cans, packaged on days 1, 2 and 3.
+struct Cooler : KegRoom {
+    double half = domain::keg_volume_l(PackageType::HalfBarrel);
+    std::int64_t batch40 = batch("40");
+    std::int64_t batch41 = batch("41");
+
+    Cooler() {
+        data::Transaction tx(db);
+        goods.write_packaged(batch40, std::nullopt, PackageType::HalfBarrel, half, 10, day(1), "");
+        goods.write_packaged(batch41, std::nullopt, PackageType::HalfBarrel, half, 6, day(2), "");
+        goods.write_packaged(batch41, std::nullopt, PackageType::Can, 0.473, 96, day(3), "");
+        tx.commit();
+        goods.refresh();
+    }
+
+    std::int64_t batch(const std::string& code) {
+        db.exec("INSERT INTO batches (code, name, recipe, status) VALUES ('" + code +
+                "', 'Red Ale', '{}', 'packaged');");
+        return db.last_insert_id();
+    }
+
+    int on_hand(std::int64_t batch_id, PackageType type) const {
+        for (const domain::PackagedStock& entry : goods.packaged()) {
+            if (entry.batch_id == batch_id && entry.type == type) return entry.count;
+        }
+        return 0;
+    }
+};
+
+} // namespace
+
+TEST_CASE("beer leaves packaged goods oldest batch first") {
+    Cooler cooler;
+    cooler.goods.remove({.beer = "red ale", .type = PackageType::HalfBarrel, .unit_volume_l = cooler.half,
+                         .count = 12, .reason = domain::PackagedReason::Sold, .at = day(4)});
+    CHECK(cooler.on_hand(cooler.batch40, PackageType::HalfBarrel) == 0);
+    CHECK(cooler.on_hand(cooler.batch41, PackageType::HalfBarrel) == 4);
+    // Sold kegs leave with the beer.
+    CHECK(cooler.goods.kegs(PackageType::HalfBarrel).dirty == 0);
+
+    CHECK_THROWS_WITH_AS(cooler.goods.remove({.beer = "Red Ale", .type = PackageType::HalfBarrel,
+                                              .unit_volume_l = cooler.half, .count = 5,
+                                              .reason = domain::PackagedReason::Sold, .at = day(5)}),
+                         "There are only 4 half-barrels of Red Ale.", std::invalid_argument);
+    CHECK_THROWS_AS(cooler.goods.remove({.beer = "Red Ale", .type = PackageType::Can, .unit_volume_l = 0.355,
+                                         .count = 1, .reason = domain::PackagedReason::Sold, .at = day(5)}),
+                    std::invalid_argument);
+}
+
+TEST_CASE("kegs emptied at the brewery go back to the keg cleaner") {
+    Cooler cooler;
+    cooler.goods.remove({.beer = "Red Ale", .type = PackageType::HalfBarrel, .unit_volume_l = cooler.half,
+                         .count = 2, .reason = domain::PackagedReason::Taproom, .at = day(4)});
+    CHECK(cooler.goods.kegs(PackageType::HalfBarrel).dirty == 2);
+    cooler.goods.remove({.beer = "Red Ale", .type = PackageType::Can, .unit_volume_l = 0.473, .count = 24,
+                         .reason = domain::PackagedReason::Destroyed, .at = day(4)});
+    CHECK(cooler.on_hand(cooler.batch41, PackageType::Can) == 72);
+}
+
+TEST_CASE("counts and returns adjust packaged goods") {
+    Cooler cooler;
+    cooler.goods.count("Red Ale", PackageType::HalfBarrel, cooler.half, 14, day(4), "two missing");
+    CHECK(cooler.on_hand(cooler.batch40, PackageType::HalfBarrel) == 8);  // oldest first
+    cooler.goods.count("Red Ale", PackageType::HalfBarrel, cooler.half, 15, day(5), "");
+    CHECK(cooler.on_hand(cooler.batch41, PackageType::HalfBarrel) == 7);  // newest gets the extra
+
+    cooler.goods.return_packages(cooler.batch40, PackageType::HalfBarrel, cooler.half, 1, day(6), "flat");
+    CHECK(cooler.on_hand(cooler.batch40, PackageType::HalfBarrel) == 9);
+    CHECK_THROWS_AS(cooler.goods.return_packages(cooler.batch40, PackageType::Sixtel,
+                                                 domain::keg_volume_l(PackageType::Sixtel), 1, day(6), ""),
+                    std::invalid_argument);
+
+    const std::vector<data::PackagedMovementRow> log = cooler.goods.packaged_history();
+    REQUIRE_FALSE(log.empty());
+    CHECK(log.front().movement.reason == domain::PackagedReason::Returned);
+}

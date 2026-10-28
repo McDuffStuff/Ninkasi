@@ -45,6 +45,7 @@ enum class KegReason {
     Cleaned,  // dirty kegs cleaned (a pair of rows: out of dirty, into clean)
     Filled,   // filled when beer was packaged
     Removed,  // lost, damaged or retired
+    Emptied,  // full kegs emptied at the brewery (taproom, samples, dumped): back dirty
 };
 
 // One row of the keg ledger.
@@ -86,10 +87,41 @@ KegDraw plan_keg_draw(KegCounts empty, int count);
 
 // --- Packaged beer ------------------------------------------------------------
 
-// Why the number of packages of beer changed.
+// Why the number of packages of beer changed. Each is a line of the TTB
+// Brewer's Report of Operations (see domain/ttb.h).
 enum class PackagedReason {
-    Packaged,  // filled from a tank
+    Packaged,            // filled from a tank
+    Sold,                // removed for consumption or sale: taxed
+    Taproom,             // removed for the brewery's own taproom: taxed
+    Exported,            // removed without tax for export
+    Supplies,            // removed without tax as supplies for vessels or aircraft
+    Research,            // removed without tax for research, development or testing
+    SameOwnership,       // removed without tax to another brewery of the same ownership
+    Unfit,               // unfit for sale, removed for use in manufacturing
+    ConsumedOnPremises,  // drunk at the brewery without being sold, e.g. tasting room samples
+    LabSamples,          // laboratory samples
+    Destroyed,           // destroyed at the brewery
+    Lost,                // a recorded loss, including theft
+    Shortage,            // a count found fewer than recorded
+    Overage,             // a count found more than recorded
+    Returned,            // came back to the brewery after being removed
 };
+
+// The reasons beer is taken out of packaged goods, in the order the remove
+// dialog offers them. Counts and returns have their own dialogs.
+inline constexpr std::array kRemovalReasons = {
+    PackagedReason::Sold,          PackagedReason::Taproom,  PackagedReason::ConsumedOnPremises,
+    PackagedReason::Exported,      PackagedReason::Research, PackagedReason::LabSamples,
+    PackagedReason::SameOwnership, PackagedReason::Supplies, PackagedReason::Unfit,
+    PackagedReason::Destroyed,     PackagedReason::Lost,
+};
+
+// Packaged, a count overage and returns add packages; everything else takes them away.
+bool adds_packages(PackagedReason reason);
+// Whether kegs taken out for this reason are emptied at the brewery, so come
+// straight back to the keg cleaner dirty. Kegs sold, exported or sent
+// elsewhere come back when the customer returns them (Add kegs).
+bool keg_comes_back(PackagedReason reason);
 
 // One row of the packaged goods ledger.
 struct PackagedMovement {

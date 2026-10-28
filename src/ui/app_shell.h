@@ -16,6 +16,7 @@
 #include "ui/cellar/cellar_dialogs.h"
 #include "ui/elements/element_windows.h"
 #include "ui/floor/floor_view.h"
+#include "ui/inventory/inventory_views.h"
 #include "ui/recipes/brewing_settings_window.h"
 #include "ui/recipes/ingredient_library_window.h"
 #include "ui/recipes/recipe_editors.h"
@@ -71,6 +72,7 @@ private:
     app::TaskService tasks_;
     CellarDialogs dialogs_;
     TaskViews task_views_;
+    InventoryViews inventory_views_;
     ElementWindows element_windows_;
     BatchWindows batch_windows_;
     FloorView floor_view_;

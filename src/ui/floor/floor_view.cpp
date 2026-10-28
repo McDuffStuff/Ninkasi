@@ -6,6 +6,7 @@
 #include "ui/display.h"
 #include "ui/element_style.h"
 #include "ui/elements/element_windows.h"
+#include "ui/inventory/inventory_views.h"
 
 #include <algorithm>
 #include <cmath>
@@ -53,11 +54,13 @@ ImVec4 urgency_color(domain::TaskUrgency urgency) {
 } // namespace
 
 FloorView::FloorView(app::FloorService& floor, app::BatchService& batches, app::TaskService& tasks,
-                     ElementWindows& windows, CellarDialogs& dialogs, data::SettingsRepository& settings,
-                     const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings, float ui_scale)
+                     const app::InventoryService& inventory, ElementWindows& windows, CellarDialogs& dialogs,
+                     data::SettingsRepository& settings, const calc::UnitPreferences& units,
+                     const domain::CalcSettings& calc_settings, float ui_scale)
     : floor_(floor),
       batches_(batches),
       tasks_(tasks),
+      inventory_(inventory),
       windows_(windows),
       dialogs_(dialogs),
       settings_(settings),
@@ -447,6 +450,18 @@ void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& elemen
                 lines.push_back({"Out of service", small, to_u32(kErrorColor)});
             }
         }
+        if (element.type == domain::ElementType::DryStorage || element.type == domain::ElementType::ColdStorage) {
+            // How many items are kept here, and how many are running low.
+            int kept = 0;
+            int low = 0;
+            for (const app::ItemStock& entry : inventory_.stock()) {
+                if (entry.item.location_id != element.id) continue;
+                ++kept;
+                if (entry.low() || entry.on_hand < 0.0) ++low;
+            }
+            if (kept > 0) lines.push_back({std::to_string(kept) + (kept == 1 ? " item" : " items"), small, muted});
+            if (low > 0) lines.push_back({std::to_string(low) + " low", small, to_u32(kWarningColor)});
+        }
         if (element.type == domain::ElementType::Brewhouse) {
             const std::size_t waiting = batches_.pending_brews(element.id).size();
             if (waiting == 1) {
@@ -582,6 +597,20 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
                 ImGui::SameLine();
                 ImGui::Text("%s, brewed %s", domain::label(*waiting).c_str(), time_text(brew.started_at).c_str());
             }
+        }
+    }
+
+    // Storage: what's running low.
+    if (element->type == domain::ElementType::DryStorage || element->type == domain::ElementType::ColdStorage) {
+        bool header = false;
+        for (const app::ItemStock& entry : inventory_.stock()) {
+            if (entry.item.location_id != element->id || !(entry.low() || entry.on_hand < 0.0)) continue;
+            if (!header) {
+                ImGui::Separator();
+                ImGui::TextColored(kWarningColor, "Low stock");
+                header = true;
+            }
+            ImGui::Text("%s: %s", entry.item.name.c_str(), stock_text(entry.item, entry.on_hand, units_).c_str());
         }
     }
 

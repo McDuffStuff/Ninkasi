@@ -11,6 +11,7 @@
 
 #include "app/batch_service.h"
 #include "app/floor_service.h"
+#include "app/inventory_service.h"
 #include "app/task_service.h"
 #include "calc/units.h"
 #include "data/settings_repository.h"
@@ -32,8 +33,9 @@ class ElementWindows;
 
 class FloorView {
 public:
-    FloorView(app::FloorService& floor, app::BatchService& batches, app::TaskService& tasks, ElementWindows& windows,
-              CellarDialogs& dialogs, data::SettingsRepository& settings, const calc::UnitPreferences& units,
+    FloorView(app::FloorService& floor, app::BatchService& batches, app::TaskService& tasks,
+              const app::InventoryService& inventory, ElementWindows& windows, CellarDialogs& dialogs,
+              data::SettingsRepository& settings, const calc::UnitPreferences& units,
               const domain::CalcSettings& calc_settings, float ui_scale);
     ~FloorView();  // remembers where the brewer was looking
 
@@ -103,6 +105,7 @@ private:
     app::FloorService& floor_;
     app::BatchService& batches_;
     app::TaskService& tasks_;
+    const app::InventoryService& inventory_;
     ElementWindows& windows_;
     CellarDialogs& dialogs_;
     data::SettingsRepository& settings_;

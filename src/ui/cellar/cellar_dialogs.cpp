@@ -5,6 +5,7 @@
 #include "ui/cellar/batch_views.h"
 #include "ui/date_widgets.h"
 #include "ui/display.h"
+#include "ui/inventory/inventory_views.h"
 #include "ui/widgets.h"
 
 #include <imgui_stdlib.h>
@@ -46,11 +47,12 @@ std::string where_text(const app::BatchService& batches, const app::FloorService
 } // namespace
 
 CellarDialogs::CellarDialogs(app::BatchService& batches, const app::FloorService& floor, app::RecipeService& recipes,
-                             const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings,
-                             float ui_scale)
+                             const app::InventoryService& inventory, const calc::UnitPreferences& units,
+                             const domain::CalcSettings& calc_settings, float ui_scale)
     : batches_(batches),
       floor_(floor),
       recipes_(recipes),
+      inventory_(inventory),
       units_(units),
       calc_settings_(calc_settings),
       ui_scale_(ui_scale) {}
@@ -466,20 +468,21 @@ bool CellarDialogs::draw_knock_out_fields(const domain::Recipe& recipe, std::opt
     ImGui::TextUnformatted("Ingredients used");
     ImGui::SameLine();
     if (ImGui::SmallButton("Reset to the recipe")) ingredients_ = domain::planned_ingredients(recipe);
-    note("Change any amount that differs from what actually went in. Inventory will be deducted from these "
-         "amounts once it is tracked.");
+    note("Change any amount that differs from what actually went in. These amounts are taken out of inventory.");
 
     // A fixed size, scrolling past eight rows: the dialog sizes itself to fit.
     const ImGuiStyle& style = ImGui::GetStyle();
     const float row_height = ImGui::GetFrameHeight() + style.CellPadding.y * 2.0f;
     const float rows = static_cast<float>(std::min<std::size_t>(std::max<std::size_t>(ingredients_.size(), 1), 8));
     const ImVec2 table_size(680.0f * ui_scale_, row_height * (rows + 1.0f) + style.CellPadding.y * 2.0f);
-    if (ImGui::BeginTable("##ingredients", 4, kListFlags | ImGuiTableFlags_ScrollY, table_size)) {
+    const std::vector<domain::InventoryItem> stocked = inventory_.items();
+    if (ImGui::BeginTable("##ingredients", 5, kListFlags | ImGuiTableFlags_ScrollY, table_size)) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Ingredient", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Addition");
         ImGui::TableSetupColumn("Recipe");
         ImGui::TableSetupColumn("Used", ImGuiTableColumnFlags_WidthFixed, 150.0f * ui_scale_);
+        ImGui::TableSetupColumn("On hand");
         ImGui::TableHeadersRow();
         for (std::size_t i = 0; i < ingredients_.size(); ++i) {
             domain::IngredientUse& use = ingredients_[i];
@@ -509,6 +512,21 @@ bool CellarDialogs::draw_knock_out_fields(const domain::Recipe& recipe, std::opt
                 ImGui::SetNextItemWidth(90.0f * ui_scale_);
                 edit_quantity("##used", use.actual, *amount_unit(use, units));
                 break;
+            }
+            // What inventory holds of it, red if it's not enough.
+            ImGui::TableNextColumn();
+            if (const domain::InventoryItem* item = domain::find_stock_for(use, stocked)) {
+                const double on_hand = inventory_.find(item->id)->on_hand;
+                const std::string text = stock_text(*item, on_hand, units);
+                if (on_hand < use.actual) {
+                    ImGui::TextColored(kErrorColor, "%s", text.c_str());
+                    ImGui::SetItemTooltip("Not enough on record. It's taken anyway; the shortfall shows as "
+                                          "negative stock until the delivery it came from is logged.");
+                } else {
+                    ImGui::TextUnformatted(text.c_str());
+                }
+            } else if (use.amount_kind != domain::AmountKind::Text) {
+                ImGui::TextDisabled("not stocked");
             }
             ImGui::PopID();
         }

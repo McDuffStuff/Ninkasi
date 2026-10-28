@@ -17,6 +17,7 @@
 #include "domain/element.h"
 #include "domain/recipe_math.h"
 #include "ui/cellar/cellar_dialogs.h"
+#include "ui/inventory/inventory_views.h"
 #include "ui/tasks/task_views.h"
 
 #include <imgui.h>
@@ -31,7 +32,8 @@ namespace ninkasi::ui {
 class ElementWindows {
 public:
     ElementWindows(app::FloorService& floor, app::BatchService& batches, const app::TaskService& tasks,
-                   CellarDialogs& dialogs, TaskViews& task_views, data::SettingsRepository& settings,
+                   CellarDialogs& dialogs, TaskViews& task_views, InventoryViews& inventory_views,
+                   data::SettingsRepository& settings,
                    const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings, float ui_scale);
 
     // Opens the element's window, or brings it to the front if already open.
@@ -84,6 +86,7 @@ private:
     const app::TaskService& tasks_;
     CellarDialogs& dialogs_;
     TaskViews& task_views_;
+    InventoryViews& inventory_views_;
     data::SettingsRepository& settings_;
     const calc::UnitPreferences& units_;
     const domain::CalcSettings& calc_settings_;

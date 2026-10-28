@@ -49,7 +49,8 @@ void beer_swatch(double srm) {
 } // namespace
 
 ElementWindows::ElementWindows(app::FloorService& floor, app::BatchService& batches, const app::TaskService& tasks,
-                               CellarDialogs& dialogs, TaskViews& task_views, data::SettingsRepository& settings,
+                               CellarDialogs& dialogs, TaskViews& task_views, InventoryViews& inventory_views,
+                               data::SettingsRepository& settings,
                                const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings,
                                float ui_scale)
     : floor_(floor),
@@ -57,6 +58,7 @@ ElementWindows::ElementWindows(app::FloorService& floor, app::BatchService& batc
       tasks_(tasks),
       dialogs_(dialogs),
       task_views_(task_views),
+      inventory_views_(inventory_views),
       settings_(settings),
       units_(units),
       calc_settings_(calc_settings),
@@ -181,6 +183,18 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
                 }
             }
 
+            // Storage: what's kept there, and what came in and went out.
+            if (element.type == domain::ElementType::DryStorage ||
+                element.type == domain::ElementType::ColdStorage) {
+                if (ImGui::BeginTabItem("Stock")) {
+                    inventory_views_.draw_storage_stock(element.id);
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("In and out")) {
+                    inventory_views_.draw_storage_log(element.id);
+                    ImGui::EndTabItem();
+                }
+            }
             if (ImGui::BeginTabItem("Tasks")) {
                 task_views_.draw_element_tasks(element.id);
                 ImGui::EndTabItem();

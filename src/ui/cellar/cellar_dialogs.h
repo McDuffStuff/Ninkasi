@@ -11,6 +11,7 @@
 
 #include "app/batch_service.h"
 #include "app/floor_service.h"
+#include "app/inventory_service.h"
 #include "app/recipe_service.h"
 #include "calc/units.h"
 #include "data/recipe_repository.h"
@@ -30,7 +31,8 @@ namespace ninkasi::ui {
 class CellarDialogs {
 public:
     CellarDialogs(app::BatchService& batches, const app::FloorService& floor, app::RecipeService& recipes,
-                  const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings, float ui_scale);
+                  const app::InventoryService& inventory, const calc::UnitPreferences& units,
+                  const domain::CalcSettings& calc_settings, float ui_scale);
 
     // A brew on the brewhouse, with or without its knock-out.
     void log_brew(std::int64_t brewhouse_id);
@@ -96,6 +98,7 @@ private:
     app::BatchService& batches_;
     const app::FloorService& floor_;
     app::RecipeService& recipes_;
+    const app::InventoryService& inventory_;
     const calc::UnitPreferences& units_;
     const domain::CalcSettings& calc_settings_;
     float ui_scale_;

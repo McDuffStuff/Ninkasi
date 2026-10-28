@@ -119,14 +119,15 @@ constexpr MeasureRow kMeasures[] = {
     {Measure::MaltColor,    Dimension::Color,       "malt_color",    "Malt color",      Unit::Lovibond,   Unit::Ebc},
 };
 
+static_assert(std::size(kMeasures) == kMeasureCount, "kMeasures must list every measure");
+
 constexpr bool measures_match_enum_order() {
-    if (std::size(kMeasures) != kMeasureCount) return false;
     for (std::size_t i = 0; i < std::size(kMeasures); ++i) {
         if (static_cast<std::size_t>(kMeasures[i].measure) != i) return false;
     }
     return true;
 }
-static_assert(measures_match_enum_order(), "kMeasures must list every measure in enum order");
+static_assert(measures_match_enum_order(), "kMeasures must follow the enum's order");
 
 const UnitRow& row(Unit unit) {
     return kUnits[static_cast<std::size_t>(unit)];

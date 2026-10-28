@@ -354,6 +354,16 @@ constexpr Migration kMigrations[] = {
         -- one at the sign-in screen. Hashed like the password.
         ALTER TABLE users ADD COLUMN recovery_hash TEXT;
     )sql"},
+    {12, R"sql(
+        -- Formulas an admin has adjusted (see calc/formulas.h). The originals
+        -- are part of Ninkasi, so deleting a row puts a formula back.
+        CREATE TABLE formula_adjustments (
+            formula    TEXT PRIMARY KEY,  -- the formula's key, such as 'abv_simple'
+            latex      TEXT NOT NULL,
+            user_id    INTEGER NOT NULL REFERENCES users(id),
+            changed_at TEXT NOT NULL
+        );
+    )sql"},
 };
 
 } // namespace

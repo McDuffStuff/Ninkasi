@@ -64,6 +64,7 @@ add_library(ninkasi_core STATIC
     src/data/batch_repository.cpp
     src/data/database.cpp
     src/data/element_repository.cpp
+    src/data/formula_repository.cpp
     src/data/ingredient_repository.cpp
     src/data/inventory_repository.cpp
     src/data/migrations.cpp
@@ -81,6 +82,7 @@ add_library(ninkasi_core STATIC
     src/app/csv.cpp
     src/app/export_service.cpp
     src/app/floor_service.cpp
+    src/app/formula_service.cpp
     src/app/ingredient_library.cpp
     src/app/inventory_service.cpp
     src/app/packaged_goods_service.cpp
@@ -165,6 +167,7 @@ if(NINKASI_BUILD_TESTS)
         tests/app/test_beerjson_import.cpp
         tests/app/test_export_service.cpp
         tests/app/test_floor_service.cpp
+        tests/app/test_formula_service.cpp
         tests/app/test_inventory_service.cpp
         tests/app/test_packaged_goods_service.cpp
         tests/app/test_password.cpp

@@ -69,6 +69,7 @@ add_library(ninkasi_core STATIC
     src/data/settings_repository.cpp
     src/data/task_repository.cpp
     src/data/ttb_repository.cpp
+    src/app/backup_service.cpp
     src/app/batch_service.cpp
     src/app/beerjson_import.cpp
     src/app/calc_settings.cpp
@@ -144,6 +145,7 @@ if(NINKASI_BUILD_TESTS)
     enable_testing()
     add_executable(ninkasi_tests
         tests/test_main.cpp
+        tests/app/test_backup_service.cpp
         tests/app/test_batch_service.cpp
         tests/app/test_beerjson_import.cpp
         tests/app/test_floor_service.cpp

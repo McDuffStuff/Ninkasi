@@ -42,6 +42,7 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
     element_windows_.on_open_recipes = [this] { recipe_library_.show(); };
     element_windows_.on_open_batch = [this](std::int64_t batch_id) { batch_windows_.open(batch_id); };
     floor_view_.on_open_batch = [this](std::int64_t batch_id) { batch_windows_.open(batch_id); };
+    floor_view_.on_open_recipes = [this] { recipe_library_.show(); };
 }
 
 void AppShell::files_dropped(std::vector<std::filesystem::path> files) {

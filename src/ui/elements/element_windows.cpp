@@ -105,7 +105,10 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
     const float stagger = static_cast<float>(element.id % 6) * 28.0f * ui_scale_;
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter() + ImVec2(stagger, stagger), ImGuiCond_FirstUseEver,
                             {0.5f, 0.5f});
-    ImGui::SetNextWindowSize(ImVec2(640.0f, 540.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    // A recipe station only has its name; everything else has tabs of detail.
+    const ImVec2 size = element.type == domain::ElementType::RecipeStation ? ImVec2(480.0f, 200.0f)
+                                                                           : ImVec2(640.0f, 540.0f);
+    ImGui::SetNextWindowSize(size * ui_scale_, ImGuiCond_FirstUseEver);
 
     const bool raise = window.focus;
     if (window.focus) {
@@ -146,7 +149,10 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
         }
         const calc::UnitPreferences units = units_.with_overrides(element.unit_overrides);
         draw_window_controls(window, element);
-        if (ImGui::BeginTabBar("##tabs")) {
+        if (element.type == domain::ElementType::RecipeStation) {
+            // Just its name: the recipe library is what it's for.
+            draw_overview_tab(window, element);
+        } else if (ImGui::BeginTabBar("##tabs")) {
             if (ImGui::BeginTabItem("Overview")) {
                 draw_overview_tab(window, element);
                 ImGui::EndTabItem();

@@ -3,8 +3,9 @@
 // brewer placed it. Tanks show the beer in them with its latest gravity,
 // temperature and volume; badges count open tasks.
 //
-// Viewing (the default): hover for a summary, click for details, right-click
-// for actions, drag empty space or middle-drag to pan, scroll to zoom.
+// Viewing (the default): hover for a summary, click for details (a recipe
+// station opens the recipe library), right-click for actions, drag empty
+// space or middle-drag to pan, scroll to zoom.
 // Editing ("Edit layout"): drag to move, drag the corner handle to resize,
 // double-click for details, Delete to remove.
 
@@ -43,6 +44,8 @@ public:
 
     // Called by "Open batch" in the right-click menu.
     std::function<void(std::int64_t batch_id)> on_open_batch;
+    // Called when a recipe station is clicked.
+    std::function<void()> on_open_recipes;
 
 private:
     struct FloorPoint {
@@ -88,6 +91,9 @@ private:
     void draw_element_actions(const domain::Element& element);
     void draw_delete_confirmation();
 
+    // What clicking equipment opens: the recipe library for a recipe
+    // station, otherwise its details window.
+    void open_element(std::int64_t id);
     void zoom_at(ImVec2 screen, double factor);
     void fit_to_view();
     void add_element(domain::ElementType type, FloorPoint center);

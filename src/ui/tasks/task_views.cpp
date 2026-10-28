@@ -209,6 +209,7 @@ void TaskViews::element_combo(const char* label, std::int64_t& element_id) {
     if (!ImGui::BeginCombo(label, chosen ? chosen->name.c_str() : "No equipment")) return;
     if (ImGui::Selectable("No equipment", !chosen)) element_id = 0;
     for (const domain::Element& element : floor_.elements()) {
+        if (element.type == domain::ElementType::RecipeStation) continue;  // it has no tasks
         ImGui::PushID(static_cast<int>(element.id));
         if (ImGui::Selectable(element.name.c_str(), element.id == element_id)) element_id = element.id;
         ImGui::PopID();

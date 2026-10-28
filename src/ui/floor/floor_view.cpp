@@ -313,7 +313,7 @@ void FloorView::finish_drag() {
         }
     } else if (drag_ == Drag::Pan && was_click && !edit_mode_ && pressed_element_ &&
                drag_button_ == ImGuiMouseButton_Left) {
-        windows_.open(*pressed_element_);
+        open_element(*pressed_element_);
     }
     drag_ = Drag::None;
     drag_id_ = 0;
@@ -604,7 +604,10 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
         if (tasks.size() > 4) ImGui::TextDisabled("and %zu more", tasks.size() - 4);
     }
     ImGui::Separator();
-    ImGui::TextDisabled("%s", edit_mode_ ? "Double-click for details" : "Click for details · right-click for actions");
+    const bool station = element->type == domain::ElementType::RecipeStation;
+    ImGui::TextDisabled("%s", edit_mode_ ? "Double-click for details"
+                              : station  ? "Click to open the recipe library"
+                                         : "Click for details · right-click for actions");
     ImGui::EndTooltip();
 }
 
@@ -619,6 +622,9 @@ void FloorView::draw_context_menu() {
         const domain::Element copy = *element;
         ImGui::TextDisabled("%s", copy.name.c_str());
         ImGui::Separator();
+        if (copy.type == domain::ElementType::RecipeStation) {
+            if (ImGui::MenuItem("Open recipe library")) open_element(copy.id);
+        }
         if (ImGui::MenuItem("Open details")) windows_.open(copy.id);
         draw_element_actions(copy);
         ImGui::Separator();
@@ -677,6 +683,8 @@ void FloorView::draw_element_actions(const domain::Element& element) {
         }
     }
 
+    // Notes go on the equipment's log; a recipe station has none.
+    if (element.type == domain::ElementType::RecipeStation) return;
     const std::optional<app::VesselContents> held = batches_.contents(element.id);
     if (ImGui::MenuItem("Add note...")) {
         dialogs_.add_note(held ? std::optional<std::int64_t>(held->batch_id) : std::nullopt, element.id);
@@ -754,6 +762,15 @@ void FloorView::fit_to_view() {
                        kMinZoom, kMaxZoom);
     offset_x_ = (left + right) / 2.0 - canvas_size_.x / (2.0 * scale());
     offset_y_ = (top + bottom) / 2.0 - canvas_size_.y / (2.0 * scale());
+}
+
+void FloorView::open_element(std::int64_t id) {
+    const domain::Element* element = floor_.find(id);
+    if (element && element->type == domain::ElementType::RecipeStation && on_open_recipes) {
+        on_open_recipes();
+    } else {
+        windows_.open(id);
+    }
 }
 
 void FloorView::add_element(domain::ElementType type, FloorPoint center) {

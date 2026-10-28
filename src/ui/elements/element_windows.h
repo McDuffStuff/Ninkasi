@@ -4,8 +4,8 @@
 // once), or maximized. The open windows are remembered between runs.
 //
 // Tanks show the batch they hold with its readings, a brewhouse logs brews
-// and lists those waiting for their knock-out, and every piece of equipment
-// has its tasks and log.
+// and lists those waiting for their knock-out, Inventory shows the stock, the
+// keg cleaner its kegs, and every piece of equipment has its tasks and log.
 
 #include "app/batch_service.h"
 #include "app/floor_service.h"
@@ -18,6 +18,7 @@
 #include "domain/recipe_math.h"
 #include "ui/cellar/cellar_dialogs.h"
 #include "ui/inventory/inventory_views.h"
+#include "ui/packaging/packaging_views.h"
 #include "ui/tasks/task_views.h"
 
 #include <imgui.h>
@@ -33,7 +34,7 @@ class ElementWindows {
 public:
     ElementWindows(app::FloorService& floor, app::BatchService& batches, const app::TaskService& tasks,
                    CellarDialogs& dialogs, TaskViews& task_views, InventoryViews& inventory_views,
-                   data::SettingsRepository& settings,
+                   PackagingViews& packaging_views, data::SettingsRepository& settings,
                    const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings, float ui_scale);
 
     // Opens the element's window, or brings it to the front if already open.
@@ -87,6 +88,7 @@ private:
     CellarDialogs& dialogs_;
     TaskViews& task_views_;
     InventoryViews& inventory_views_;
+    PackagingViews& packaging_views_;
     data::SettingsRepository& settings_;
     const calc::UnitPreferences& units_;
     const domain::CalcSettings& calc_settings_;

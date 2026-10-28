@@ -12,6 +12,7 @@
 #include "app/batch_service.h"
 #include "app/floor_service.h"
 #include "app/inventory_service.h"
+#include "app/packaged_goods_service.h"
 #include "app/task_service.h"
 #include "calc/units.h"
 #include "data/settings_repository.h"
@@ -30,11 +31,13 @@ namespace ninkasi::ui {
 
 class CellarDialogs;
 class ElementWindows;
+class PackagingViews;
 
 class FloorView {
 public:
     FloorView(app::FloorService& floor, app::BatchService& batches, app::TaskService& tasks,
-              const app::InventoryService& inventory, ElementWindows& windows, CellarDialogs& dialogs,
+              const app::InventoryService& inventory, const app::PackagedGoodsService& goods,
+              ElementWindows& windows, CellarDialogs& dialogs, PackagingViews& packaging_views,
               data::SettingsRepository& settings, const calc::UnitPreferences& units,
               const domain::CalcSettings& calc_settings, float ui_scale);
     ~FloorView();  // remembers where the brewer was looking
@@ -106,8 +109,10 @@ private:
     app::BatchService& batches_;
     app::TaskService& tasks_;
     const app::InventoryService& inventory_;
+    const app::PackagedGoodsService& goods_;
     ElementWindows& windows_;
     CellarDialogs& dialogs_;
+    PackagingViews& packaging_views_;
     data::SettingsRepository& settings_;
     const calc::UnitPreferences& units_;
     const domain::CalcSettings& calc_settings_;

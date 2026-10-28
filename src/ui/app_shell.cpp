@@ -25,16 +25,18 @@ AppShell::AppShell(data::Database& db, app::Session session, std::string db_path
       recipes_(db, session_),
       library_(db, session_),
       inventory_(db, session_),
+      packaged_goods_(db, session_),
       batches_(db, session_, floor_, inventory_),
       tasks_(db, session_),
       dialogs_(batches_, floor_, recipes_, inventory_, units_, calc_settings_, ui_scale_),
       task_views_(tasks_, floor_, batches_, ui_scale_),
       inventory_views_(inventory_, floor_, library_, units_, ui_scale_),
-      element_windows_(floor_, batches_, tasks_, dialogs_, task_views_, inventory_views_, settings_, units_,
-                       calc_settings_, ui_scale_),
+      packaging_views_(packaged_goods_, ui_scale_),
+      element_windows_(floor_, batches_, tasks_, dialogs_, task_views_, inventory_views_, packaging_views_,
+                       settings_, units_, calc_settings_, ui_scale_),
       batch_windows_(batches_, floor_, dialogs_, settings_, units_, calc_settings_, ui_scale_),
-      floor_view_(floor_, batches_, tasks_, inventory_, element_windows_, dialogs_, settings_, units_,
-                  calc_settings_, ui_scale_),
+      floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
+                  packaging_views_, settings_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, settings_, units_, calc_settings_, ui_scale_),
       recipe_library_(recipes_, recipe_editors_, ui_scale_),
       ingredient_window_(library_, units_, ui_scale_),
@@ -70,6 +72,7 @@ void AppShell::draw() {
     batch_windows_.draw();
     task_views_.draw();
     inventory_views_.draw();
+    packaging_views_.draw();
     recipe_editors_.draw();
     recipe_library_.draw();
     ingredient_window_.draw();

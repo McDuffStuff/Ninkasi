@@ -5,6 +5,7 @@
 #include "app/floor_service.h"
 #include "app/ingredient_library.h"
 #include "app/inventory_service.h"
+#include "app/packaged_goods_service.h"
 #include "app/recipe_service.h"
 #include "app/session.h"
 #include "app/task_service.h"
@@ -17,6 +18,7 @@
 #include "ui/elements/element_windows.h"
 #include "ui/floor/floor_view.h"
 #include "ui/inventory/inventory_views.h"
+#include "ui/packaging/packaging_views.h"
 #include "ui/recipes/brewing_settings_window.h"
 #include "ui/recipes/ingredient_library_window.h"
 #include "ui/recipes/recipe_editors.h"
@@ -68,11 +70,13 @@ private:
     app::RecipeService recipes_;
     app::IngredientLibrary library_;
     app::InventoryService inventory_;
+    app::PackagedGoodsService packaged_goods_;
     app::BatchService batches_;
     app::TaskService tasks_;
     CellarDialogs dialogs_;
     TaskViews task_views_;
     InventoryViews inventory_views_;
+    PackagingViews packaging_views_;
     ElementWindows element_windows_;
     BatchWindows batch_windows_;
     FloorView floor_view_;

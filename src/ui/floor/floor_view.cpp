@@ -7,6 +7,7 @@
 #include "ui/element_style.h"
 #include "ui/elements/element_windows.h"
 #include "ui/inventory/inventory_views.h"
+#include "ui/packaging/packaging_views.h"
 
 #include <algorithm>
 #include <cmath>
@@ -54,15 +55,18 @@ ImVec4 urgency_color(domain::TaskUrgency urgency) {
 } // namespace
 
 FloorView::FloorView(app::FloorService& floor, app::BatchService& batches, app::TaskService& tasks,
-                     const app::InventoryService& inventory, ElementWindows& windows, CellarDialogs& dialogs,
+                     const app::InventoryService& inventory, const app::PackagedGoodsService& goods,
+                     ElementWindows& windows, CellarDialogs& dialogs, PackagingViews& packaging_views,
                      data::SettingsRepository& settings, const calc::UnitPreferences& units,
                      const domain::CalcSettings& calc_settings, float ui_scale)
     : floor_(floor),
       batches_(batches),
       tasks_(tasks),
       inventory_(inventory),
+      goods_(goods),
       windows_(windows),
       dialogs_(dialogs),
+      packaging_views_(packaging_views),
       settings_(settings),
       units_(units),
       calc_settings_(calc_settings),
@@ -461,6 +465,17 @@ void FloorView::draw_labels(ImDrawList* draw_list, const domain::Element& elemen
             if (kept > 0) lines.push_back({std::to_string(kept) + (kept == 1 ? " item" : " items"), small, muted});
             if (low > 0) lines.push_back({std::to_string(low) + " low", small, to_u32(kWarningColor)});
         }
+        if (element.type == domain::ElementType::KegCleaner) {
+            // Empty kegs: dirty ones are waiting to be cleaned.
+            int dirty = 0;
+            int clean = 0;
+            for (domain::PackageType keg : domain::kKegTypes) {
+                dirty += goods_.kegs(keg).dirty;
+                clean += goods_.kegs(keg).clean;
+            }
+            if (dirty > 0) lines.push_back({std::to_string(dirty) + " dirty", small, to_u32(kWarningColor)});
+            if (clean > 0) lines.push_back({std::to_string(clean) + " clean", small, muted});
+        }
         if (element.type == domain::ElementType::Brewhouse) {
             const std::size_t waiting = batches_.pending_brews(element.id).size();
             if (waiting == 1) {
@@ -599,6 +614,15 @@ void FloorView::draw_tooltip(std::optional<std::int64_t> hovered) {
         }
     }
 
+    // The keg cleaner: its kegs by size.
+    if (element->type == domain::ElementType::KegCleaner) {
+        ImGui::Separator();
+        for (domain::PackageType keg : domain::kKegTypes) {
+            const domain::KegCounts kegs = goods_.kegs(keg);
+            ImGui::Text("%s: %d dirty, %d clean", domain::name(keg).data(), kegs.dirty, kegs.clean);
+        }
+    }
+
     // Inventory: what's running low.
     if (element->type == domain::ElementType::Inventory) {
         bool header = false;
@@ -709,6 +733,15 @@ void FloorView::draw_element_actions(const domain::Element& element) {
                 set(domain::VesselCondition::OutOfService);
             }
         }
+    }
+
+    if (element.type == domain::ElementType::KegCleaner) {
+        ImGui::Separator();
+        if (ImGui::MenuItem("Clean kegs...")) packaging_views_.clean_kegs();
+        int dirty = 0;
+        for (domain::PackageType type : domain::kKegTypes) dirty += goods_.kegs(type).dirty;
+        if (ImGui::MenuItem("Clean all", nullptr, false, dirty > 0)) packaging_views_.clean_all();
+        if (ImGui::MenuItem("Add kegs...")) packaging_views_.add_kegs();
     }
 
     // Notes go on the equipment's log; a recipe station has none.

@@ -50,7 +50,7 @@ void beer_swatch(double srm) {
 
 ElementWindows::ElementWindows(app::FloorService& floor, app::BatchService& batches, const app::TaskService& tasks,
                                CellarDialogs& dialogs, TaskViews& task_views, InventoryViews& inventory_views,
-                               data::SettingsRepository& settings,
+                               PackagingViews& packaging_views, data::SettingsRepository& settings,
                                const calc::UnitPreferences& units, const domain::CalcSettings& calc_settings,
                                float ui_scale)
     : floor_(floor),
@@ -59,6 +59,7 @@ ElementWindows::ElementWindows(app::FloorService& floor, app::BatchService& batc
       dialogs_(dialogs),
       task_views_(task_views),
       inventory_views_(inventory_views),
+      packaging_views_(packaging_views),
       settings_(settings),
       units_(units),
       calc_settings_(calc_settings),
@@ -168,6 +169,22 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
             if (inventory && ImGui::BeginTabItem("In and out")) {
                 inventory_views_.draw_log();
                 ImGui::EndTabItem();
+            }
+
+            // The keg cleaner opens on its dirty kegs.
+            if (element.type == domain::ElementType::KegCleaner) {
+                if (ImGui::BeginTabItem("Dirty kegs")) {
+                    packaging_views_.draw_dirty_kegs();
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Clean kegs")) {
+                    packaging_views_.draw_clean_kegs();
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Keg log")) {
+                    packaging_views_.draw_keg_history();
+                    ImGui::EndTabItem();
+                }
             }
             if (ImGui::BeginTabItem("Overview")) {
                 draw_overview_tab(window, element);

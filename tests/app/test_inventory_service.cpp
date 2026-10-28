@@ -37,8 +37,9 @@ struct Stores {
         return inventory.add_item(item);
     }
 
+    // A one-line invoice.
     std::int64_t receive(std::int64_t item_id, double quantity, int on_day) {
-        return inventory.receive({.item_id = item_id, .at = day(on_day), .quantity = quantity});
+        return inventory.receive({.received_at = day(on_day), .lines = {{.item_id = item_id, .quantity = quantity}}});
     }
 
     double on_hand(std::int64_t item_id) const { return inventory.find(item_id)->on_hand; }
@@ -52,21 +53,81 @@ struct Stores {
 
 } // namespace
 
-TEST_CASE("receiving stock adds a lot") {
+TEST_CASE("an invoice adds a lot for each line") {
     Stores stores;
     const std::int64_t malt = stores.item("Pale malt");
+    const std::int64_t hops = stores.item("Citra");
     CHECK(stores.on_hand(malt) == 0.0);
 
-    stores.inventory.receive({.item_id = malt, .at = day(1), .quantity = 500.0, .supplier = " Briess ",
-                              .lot_code = "L123", .cost = 650.0});
-    CHECK(stores.on_hand(malt) == 500.0);
+    const std::int64_t invoice = stores.inventory.receive(
+        {.received_at = day(1),
+         .supplier = " Country Malt ",
+         .number = "INV-881",
+         .lines = {{.item_id = malt, .quantity = 500.0, .cost = 650.0, .lot_code = "L123"},
+                   {.item_id = hops, .quantity = 5.0, .cost = 120.0},
+                   {.item_id = malt, .quantity = 250.0}}});
+    CHECK(stores.on_hand(malt) == 750.0);
+    CHECK(stores.on_hand(hops) == 5.0);
     const std::vector<data::LotRow> lots = stores.inventory.lots(malt);
-    REQUIRE(lots.size() == 1);
+    REQUIRE(lots.size() == 2);
     CHECK(lots[0].remaining == 500.0);
-    CHECK(lots[0].lot.supplier == "Briess");
+    CHECK(lots[0].lot.supplier == "Country Malt");
+    CHECK(lots[0].lot.lot_code == "L123");
     CHECK(lots[0].lot.cost == 650.0);
+    CHECK(lots[0].lot.invoice_id == invoice);
 
-    CHECK_THROWS_AS(stores.receive(malt, 0.0, 2), std::invalid_argument);
+    const std::vector<data::InvoiceRow> invoices = stores.inventory.invoices();
+    REQUIRE(invoices.size() == 1);
+    CHECK(invoices[0].number == "INV-881");
+    CHECK(invoices[0].lines == 3);
+    CHECK(invoices[0].total == 770.0);
+    const std::vector<data::InvoiceLineRow> lines = stores.inventory.invoice_lines(invoice);
+    REQUIRE(lines.size() == 3);
+    CHECK(lines[1].item_name == "Citra");
+
+    // The log says which delivery stock came from.
+    const std::vector<data::MovementRow> history = stores.inventory.movements(hops);
+    REQUIRE(history.size() == 1);
+    CHECK(history[0].supplier == "Country Malt");
+    CHECK(history[0].invoice_number == "INV-881");
+}
+
+TEST_CASE("an invoice with a mistake saves nothing") {
+    Stores stores;
+    const std::int64_t malt = stores.item("Pale malt");
+    const std::int64_t hops = stores.item("Citra");
+    CHECK_THROWS_AS(stores.inventory.receive({.received_at = day(1)}), std::invalid_argument);
+    CHECK_THROWS_AS(stores.inventory.receive({.received_at = day(1),
+                                              .lines = {{.item_id = malt, .quantity = 500.0},
+                                                        {.item_id = hops, .quantity = 0.0}}}),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(stores.receive(malt, -1.0, 1), std::invalid_argument);
+    CHECK(stores.on_hand(malt) == 0.0);
+    CHECK(stores.inventory.invoices().empty());
+}
+
+TEST_CASE("cans are counted and say what they hold") {
+    Stores stores;
+    domain::InventoryItem cans;
+    cans.name = "16 oz cans";
+    cans.category = domain::ItemCategory::Can;
+    cans.unit = domain::StockUnit::Count;
+    CHECK_THROWS_AS(stores.inventory.add_item(cans), std::invalid_argument);
+    cans.fill_volume_l = 0.473;
+    const std::int64_t id = stores.inventory.add_item(cans);
+    CHECK(stores.inventory.find(id)->item.fill_volume_l == 0.473);
+
+    cans.id = id;
+    cans.unit = domain::StockUnit::Mass;
+    CHECK_THROWS_AS(stores.inventory.update_item(cans), std::invalid_argument);
+
+    // Only cans keep a fill volume.
+    domain::InventoryItem labels;
+    labels.name = "Labels";
+    labels.category = domain::ItemCategory::Packaging;
+    labels.unit = domain::StockUnit::Count;
+    labels.fill_volume_l = 1.0;
+    CHECK_FALSE(stores.inventory.find(stores.inventory.add_item(labels))->item.fill_volume_l);
 }
 
 TEST_CASE("stock is used first in, first out") {

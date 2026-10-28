@@ -1,5 +1,5 @@
 #pragma once
-// Reads and writes inventory items, lots and the stock ledger.
+// Reads and writes inventory items, invoices, lots and the stock ledger.
 // InventoryService decides what may be written; this only stores it.
 
 #include "data/database.h"
@@ -26,7 +26,29 @@ struct MovementRow {
     domain::ItemCategory category = domain::ItemCategory::Other;
     domain::StockUnit unit = domain::StockUnit::Mass;
     std::string lot_code;
+    std::string supplier;        // of the lot
+    std::string invoice_number;  // the lot arrived on
     std::string batch_code;
+};
+
+// An invoice as listed: how many lines it had and what they cost.
+struct InvoiceRow {
+    std::int64_t id = 0;
+    domain::Timestamp received_at{};
+    std::string supplier;
+    std::string number;
+    std::string note;
+    std::string user;            // who logged it
+    int lines = 0;
+    std::optional<double> total;  // the lines' costs added up; nullopt if none has a cost
+};
+
+// A line of an invoice: the lot it arrived as, and enough of its item to show it.
+struct InvoiceLineRow {
+    domain::Lot lot;
+    std::string item_name;
+    domain::ItemCategory category = domain::ItemCategory::Other;
+    domain::StockUnit unit = domain::StockUnit::Mass;
 };
 
 class InventoryRepository {
@@ -42,7 +64,12 @@ public:
     bool has_history(std::int64_t item_id);
     bool name_taken(const std::string& name, std::int64_t except_id);
 
-    // --- Lots ---------------------------------------------------------------
+    // --- Invoices and lots ---------------------------------------------------
+    // Inserts the invoice itself, not its lines, and returns its id.
+    std::int64_t insert_invoice(const domain::Invoice& invoice, std::int64_t user_id);
+    // Newest first.
+    std::vector<InvoiceRow> invoices(int limit);
+    std::vector<InvoiceLineRow> invoice_lines(std::int64_t invoice_id);
     std::int64_t insert_lot(const domain::Lot& lot);
     // An item's lots, oldest first, with what's left of each.
     std::vector<LotRow> lots(std::int64_t item_id);

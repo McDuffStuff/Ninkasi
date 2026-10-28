@@ -23,6 +23,7 @@ constexpr EnumText<ItemCategory> kCategoryTexts[] = {
     {ItemCategory::Yeast,     "yeast",     "Yeast"},
     {ItemCategory::Adjunct,   "adjunct",   "Sugars & adjuncts"},
     {ItemCategory::Chemical,  "chemical",  "Salts & chemicals"},
+    {ItemCategory::Can,       "can",       "Cans"},
     {ItemCategory::Packaging, "packaging", "Packaging"},
     {ItemCategory::Other,     "other",     "Other"},
 };

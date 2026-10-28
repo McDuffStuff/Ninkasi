@@ -509,14 +509,13 @@ void InventoryViews::draw_receive() {
 
     if (!buttons("Receive", entry && quantity_ > 0.0)) return;
     try {
-        inventory_.receive({.item_id = item_id_,
-                            .at = at_,
-                            .quantity = quantity_,
-                            .supplier = supplier_,
-                            .lot_code = lot_code_,
-                            .cost = has_cost_ ? std::optional<double>(cost_) : std::nullopt,
-                            .best_before = has_best_before_ ? std::optional<domain::Date>(best_before_) : std::nullopt,
-                            .note = note_});
+        domain::InvoiceLine line{.item_id = item_id_,
+                                 .quantity = quantity_,
+                                 .cost = has_cost_ ? std::optional<double>(cost_) : std::nullopt,
+                                 .lot_code = lot_code_,
+                                 .best_before = has_best_before_ ? std::optional<domain::Date>(best_before_)
+                                                                 : std::nullopt};
+        inventory_.receive({.received_at = at_, .supplier = supplier_, .note = note_, .lines = {line}});
         selected_ = item_id_;
         close();
     } catch (const std::exception& e) {

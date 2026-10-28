@@ -1,6 +1,6 @@
 #pragma once
-// Inventory: the things a brewery stocks, the lots they arrive in, and every
-// movement of stock in and out.
+// Inventory: the things a brewery stocks, the invoices and lots they arrive
+// in, and every movement of stock in and out.
 //
 // Stock is drawn first in, first out: from the oldest lot that has any left.
 // Records are often entered after the fact, so stock can be used before its
@@ -20,7 +20,16 @@
 
 namespace ninkasi::domain {
 
-enum class ItemCategory { Grain, Hop, Yeast, Adjunct, Chemical, Packaging, Other };
+enum class ItemCategory {
+    Grain,
+    Hop,
+    Yeast,
+    Adjunct,
+    Chemical,
+    Can,        // empty cans, filled when beer is packaged
+    Packaging,  // lids, labels, carriers...
+    Other,
+};
 
 // How an item is measured.
 enum class StockUnit {
@@ -29,9 +38,9 @@ enum class StockUnit {
     Count,   // each: packs, cases, labels...
 };
 
-inline constexpr std::array kItemCategories = {ItemCategory::Grain,    ItemCategory::Hop,       ItemCategory::Yeast,
-                                               ItemCategory::Adjunct,  ItemCategory::Chemical,  ItemCategory::Packaging,
-                                               ItemCategory::Other};
+inline constexpr std::array kItemCategories = {ItemCategory::Grain,    ItemCategory::Hop,      ItemCategory::Yeast,
+                                               ItemCategory::Adjunct,  ItemCategory::Chemical, ItemCategory::Can,
+                                               ItemCategory::Packaging, ItemCategory::Other};
 inline constexpr std::array kStockUnits = {StockUnit::Mass, StockUnit::Volume, StockUnit::Count};
 
 struct InventoryItem {
@@ -39,6 +48,7 @@ struct InventoryItem {
     std::string name;
     ItemCategory category = ItemCategory::Grain;
     StockUnit unit = StockUnit::Mass;
+    std::optional<double> fill_volume_l;  // cans: what one holds (cans are counted)
     std::int64_t library_id = 0;          // the ingredient library entry it stocks; 0 if none
     std::optional<double> reorder_level;  // low stock below this
     std::string notes;
@@ -47,10 +57,11 @@ struct InventoryItem {
     bool operator==(const InventoryItem&) const = default;
 };
 
-// One delivery of an item.
+// One delivery of an item: a line of an invoice.
 struct Lot {
     std::int64_t id = 0;
     std::int64_t item_id = 0;
+    std::optional<std::int64_t> invoice_id;  // the invoice it arrived on
     Timestamp received_at{};
     double quantity = 0.0;            // as received
     std::string supplier;
@@ -58,6 +69,25 @@ struct Lot {
     std::optional<double> cost;       // what the delivery cost, in the brewery's currency
     std::optional<Date> best_before;
     std::string note;
+};
+
+// One item on an invoice, which arrives as a lot.
+struct InvoiceLine {
+    std::int64_t item_id = 0;
+    double quantity = 0.0;
+    std::optional<double> cost;  // the line's total, in the brewery's currency
+    std::string lot_code;        // the supplier's lot number
+    std::optional<Date> best_before;
+};
+
+// A delivery as the supplier invoiced it: everything on it arrives together.
+struct Invoice {
+    std::int64_t id = 0;
+    Timestamp received_at{};
+    std::string supplier;
+    std::string number;  // the supplier's invoice number
+    std::string note;
+    std::vector<InvoiceLine> lines;
 };
 
 // Why stock changed. Stored keys: never change one once shipped.

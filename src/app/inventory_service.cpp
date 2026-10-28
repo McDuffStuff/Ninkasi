@@ -49,6 +49,14 @@ std::vector<data::LotRow> InventoryService::lots(std::int64_t item_id) {
     return repository_.lots(item_id);
 }
 
+std::vector<data::InvoiceRow> InventoryService::invoices(int limit) {
+    return repository_.invoices(limit);
+}
+
+std::vector<data::InvoiceLineRow> InventoryService::invoice_lines(std::int64_t invoice_id) {
+    return repository_.invoice_lines(invoice_id);
+}
+
 std::vector<data::MovementRow> InventoryService::movements(std::optional<std::int64_t> item_id, int limit) {
     return repository_.movements(item_id, limit);
 }
@@ -60,6 +68,13 @@ domain::InventoryItem InventoryService::checked(domain::InventoryItem item) {
     if (item.name.empty()) fail("Give the item a name.");
     if (repository_.name_taken(item.name, item.id)) fail("There is already an item called " + item.name + ".");
     if (item.reorder_level && !(*item.reorder_level >= 0.0)) fail("The reorder level can't be negative.");
+    if (item.category == domain::ItemCategory::Can) {
+        // Packaging takes cans by the count and needs what each holds.
+        if (item.unit != domain::StockUnit::Count) fail("Cans are counted.");
+        if (!item.fill_volume_l || !(*item.fill_volume_l > 0.0)) fail("Enter how much a can holds.");
+    } else {
+        item.fill_volume_l.reset();
+    }
     return item;
 }
 
@@ -108,43 +123,56 @@ void InventoryService::remove_item(std::int64_t item_id) {
 
 // --- Stock ----------------------------------------------------------------------
 
-std::int64_t InventoryService::receive(const Receipt& receipt) {
-    existing(receipt.item_id);
-    if (!(receipt.quantity > 0.0)) fail("Enter the quantity received.");
-    if (receipt.cost && !(*receipt.cost >= 0.0)) fail("The cost can't be negative.");
+std::int64_t InventoryService::receive(const domain::Invoice& invoice) {
+    if (invoice.lines.empty()) fail("Add the items received.");
+    for (const domain::InvoiceLine& line : invoice.lines) {
+        const ItemStock& entry = existing(line.item_id);
+        if (!(line.quantity > 0.0)) fail("Enter how much " + entry.item.name + " was received.");
+        if (line.cost && !(*line.cost >= 0.0)) fail("The cost of " + entry.item.name + " can't be negative.");
+    }
 
-    domain::Lot lot;
-    lot.item_id = receipt.item_id;
-    lot.received_at = receipt.at;
-    lot.quantity = receipt.quantity;
-    lot.supplier = trimmed(receipt.supplier);
-    lot.lot_code = trimmed(receipt.lot_code);
-    lot.cost = receipt.cost;
-    lot.best_before = receipt.best_before;
-    lot.note = trimmed(receipt.note);
+    domain::Invoice saved = invoice;
+    saved.supplier = trimmed(invoice.supplier);
+    saved.number = trimmed(invoice.number);
+    saved.note = trimmed(invoice.note);
 
     data::Transaction tx(db_);
+    const std::int64_t invoice_id = repository_.insert_invoice(saved, session_.user_id);
+    for (const domain::InvoiceLine& line : saved.lines) {
+        domain::Lot lot;
+        lot.item_id = line.item_id;
+        lot.invoice_id = invoice_id;
+        lot.received_at = saved.received_at;
+        lot.quantity = line.quantity;
+        lot.supplier = saved.supplier;
+        lot.lot_code = trimmed(line.lot_code);
+        lot.cost = line.cost;
+        lot.best_before = line.best_before;
+        add_lot(lot);
+    }
+    tx.commit();
+    refresh();
+    return invoice_id;
+}
+
+void InventoryService::add_lot(const domain::Lot& lot) {
     const std::int64_t lot_id = repository_.insert_lot(lot);
-    repository_.insert_movement({.at = receipt.at, .item_id = receipt.item_id, .lot_id = lot_id,
-                                 .quantity = receipt.quantity, .reason = domain::StockReason::Received,
-                                 .note = lot.note},
+    repository_.insert_movement({.at = lot.received_at, .item_id = lot.item_id, .lot_id = lot_id,
+                                 .quantity = lot.quantity, .reason = domain::StockReason::Received},
                                 std::nullopt, session_.user_id);
 
     // Stock used before this delivery was logged came out of it: move the
     // shortfall onto the lot.
-    const double shortfall = -repository_.unlotted(receipt.item_id);
+    const double shortfall = -repository_.unlotted(lot.item_id);
     if (shortfall > kNegligible) {
-        const double settled = std::min(shortfall, receipt.quantity);
-        repository_.insert_movement({.at = receipt.at, .item_id = receipt.item_id, .lot_id = lot_id,
+        const double settled = std::min(shortfall, lot.quantity);
+        repository_.insert_movement({.at = lot.received_at, .item_id = lot.item_id, .lot_id = lot_id,
                                      .quantity = -settled, .reason = domain::StockReason::Settled},
                                     std::nullopt, session_.user_id);
-        repository_.insert_movement({.at = receipt.at, .item_id = receipt.item_id, .lot_id = std::nullopt,
+        repository_.insert_movement({.at = lot.received_at, .item_id = lot.item_id, .lot_id = std::nullopt,
                                      .quantity = settled, .reason = domain::StockReason::Settled},
                                     std::nullopt, session_.user_id);
     }
-    tx.commit();
-    refresh();
-    return lot_id;
 }
 
 void InventoryService::count(std::int64_t item_id, double counted, domain::Timestamp at, std::string_view note) {

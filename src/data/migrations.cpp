@@ -267,6 +267,24 @@ constexpr Migration kMigrations[] = {
         -- one, so inventory_items.location_id is no longer used.
         UPDATE elements SET type = 'dry_storage' WHERE type = 'cold_storage';
     )sql"},
+    {7, R"sql(
+        -- Deliveries are logged as invoices; each line arrives as a lot.
+        CREATE TABLE invoices (
+            id          INTEGER PRIMARY KEY,
+            received_at TEXT NOT NULL,
+            supplier    TEXT NOT NULL DEFAULT '',
+            number      TEXT NOT NULL DEFAULT '',      -- the supplier's invoice number
+            note        TEXT NOT NULL DEFAULT '',
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE INDEX invoices_by_date ON invoices (received_at);
+        ALTER TABLE inventory_lots ADD COLUMN invoice_id INTEGER REFERENCES invoices(id);
+        CREATE INDEX lots_by_invoice ON inventory_lots (invoice_id);
+
+        -- Cans: what one holds, in liters.
+        ALTER TABLE inventory_items ADD COLUMN fill_volume_l REAL;
+    )sql"},
 };
 
 } // namespace

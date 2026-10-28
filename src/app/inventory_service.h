@@ -1,6 +1,6 @@
 #pragma once
-// Inventory: what the brewery stocks, deliveries received, stock counts,
-// and stock used or discarded. Brews draw on it at knock-out (see
+// Inventory: what the brewery stocks, deliveries received (logged as
+// invoices), stock counts, and stock used or discarded. Brews draw on it at knock-out (see
 // BatchService), from the amounts the brewer confirmed.
 //
 // Every change is a row in the stock ledger (stock_movements); stock is
@@ -37,18 +37,6 @@ struct ItemStock {
     bool low() const { return item.reorder_level && on_hand < *item.reorder_level; }
 };
 
-// A delivery.
-struct Receipt {
-    std::int64_t item_id = 0;
-    domain::Timestamp at{};
-    double quantity = 0.0;
-    std::string supplier;
-    std::string lot_code;
-    std::optional<double> cost;
-    std::optional<domain::Date> best_before;
-    std::string note;
-};
-
 class InventoryService {
 public:
     InventoryService(data::Database& db, Session session);
@@ -66,13 +54,17 @@ public:
     // --- From the database ----------------------------------------------------
 
     std::vector<data::LotRow> lots(std::int64_t item_id);
+    // Newest first.
+    std::vector<data::InvoiceRow> invoices(int limit = 200);
+    std::vector<data::InvoiceLineRow> invoice_lines(std::int64_t invoice_id);
     // Newest first: of one item, or of everything.
     std::vector<data::MovementRow> movements(std::optional<std::int64_t> item_id, int limit = 500);
 
     // --- Items ----------------------------------------------------------------
 
     // Each throws std::invalid_argument if the name is blank or another item
-    // already has it. add_item returns the new id.
+    // already has it, or if a can isn't counted or doesn't say what it holds.
+    // add_item returns the new id.
     std::int64_t add_item(const domain::InventoryItem& item);
     void update_item(const domain::InventoryItem& item);
     // Deletes an item that has never been stocked; archives one with history.
@@ -80,9 +72,11 @@ public:
 
     // --- Stock ----------------------------------------------------------------
 
-    // Records a delivery as a new lot. Stock used before it was logged is
-    // settled from it. Throws if the quantity isn't positive. Returns the lot's id.
-    std::int64_t receive(const Receipt& receipt);
+    // Records a delivery: the invoice, and a lot for each of its lines.
+    // Stock used before it was logged is settled from it. Throws, saving
+    // nothing, if it has no lines or a line's quantity isn't positive.
+    // Returns the invoice's id.
+    std::int64_t receive(const domain::Invoice& invoice);
     // Replaces the recorded stock with what was counted.
     void count(std::int64_t item_id, double counted, domain::Timestamp at, std::string_view note);
     // Takes stock out for something other than a brew: used or discarded.
@@ -101,6 +95,8 @@ public:
     void refresh();
 
 private:
+    // Writes a lot and its arrival in the ledger, settling any shortfall.
+    void add_lot(const domain::Lot& lot);
     // Writes the ledger rows taking `quantity` of an item, first in, first out.
     void draw(std::int64_t item_id, double quantity, domain::StockReason reason, domain::Timestamp at,
               std::optional<std::int64_t> batch_id, std::optional<std::int64_t> brew_ingredient_id,

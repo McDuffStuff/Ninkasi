@@ -155,6 +155,13 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
             // Just its name: the recipe library is what it's for.
             draw_overview_tab(window, element);
         } else if (ImGui::BeginTabBar("##tabs")) {
+            // Storage opens on what's kept there.
+            const bool storage = element.type == domain::ElementType::DryStorage ||
+                                 element.type == domain::ElementType::ColdStorage;
+            if (storage && ImGui::BeginTabItem("Stock")) {
+                inventory_views_.draw_storage_stock(element.id);
+                ImGui::EndTabItem();
+            }
             if (ImGui::BeginTabItem("Overview")) {
                 draw_overview_tab(window, element);
                 ImGui::EndTabItem();
@@ -183,17 +190,10 @@ bool ElementWindows::draw_window(Window& window, const domain::Element& element)
                 }
             }
 
-            // Storage: what's kept there, and what came in and went out.
-            if (element.type == domain::ElementType::DryStorage ||
-                element.type == domain::ElementType::ColdStorage) {
-                if (ImGui::BeginTabItem("Stock")) {
-                    inventory_views_.draw_storage_stock(element.id);
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("In and out")) {
-                    inventory_views_.draw_storage_log(element.id);
-                    ImGui::EndTabItem();
-                }
+            // Storage: what came in and went out.
+            if (storage && ImGui::BeginTabItem("In and out")) {
+                inventory_views_.draw_storage_log(element.id);
+                ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Tasks")) {
                 task_views_.draw_element_tasks(element.id);

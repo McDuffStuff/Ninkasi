@@ -53,6 +53,7 @@ add_library(ninkasi_core STATIC
     src/domain/recipe.cpp
     src/domain/recipe_math.cpp
     src/domain/timestamp.cpp
+    src/domain/ttb.cpp
     src/data/activity_log.cpp
     src/data/audit_log.cpp
     src/data/batch_repository.cpp
@@ -165,6 +166,7 @@ if(NINKASI_BUILD_TESTS)
         tests/domain/test_packaging.cpp
         tests/domain/test_recipe_math.cpp
         tests/domain/test_timestamp.cpp
+        tests/domain/test_ttb.cpp
     )
     target_include_directories(ninkasi_tests PRIVATE tests)
     target_link_libraries(ninkasi_tests PRIVATE ninkasi_core doctest)

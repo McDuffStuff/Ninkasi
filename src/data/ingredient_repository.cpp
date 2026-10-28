@@ -9,6 +9,7 @@ namespace {
 constexpr std::string_view kFermentable = "fermentable";
 constexpr std::string_view kHop = "hop";
 constexpr std::string_view kYeast = "yeast";
+constexpr std::string_view kWater = "water";
 
 // Loads every ingredient of `kind`, parsing each body with `parse`.
 template <typename T, typename Parse>
@@ -34,13 +35,19 @@ std::vector<domain::LibraryItem<domain::Yeast>> IngredientRepository::yeasts() {
     return load<domain::Yeast>(db_, kYeast, yeast_from_json);
 }
 
+std::vector<domain::LibraryItem<domain::WaterSource>> IngredientRepository::waters() {
+    return load<domain::WaterSource>(db_, kWater, water_source_from_json);
+}
+
 std::int64_t IngredientRepository::insert(const domain::Fermentable& f) { return insert(kFermentable, f.name, to_json(f)); }
 std::int64_t IngredientRepository::insert(const domain::Hop& h) { return insert(kHop, h.name, to_json(h)); }
 std::int64_t IngredientRepository::insert(const domain::Yeast& y) { return insert(kYeast, y.name, to_json(y)); }
+std::int64_t IngredientRepository::insert(const domain::WaterSource& w) { return insert(kWater, w.name, to_json(w)); }
 
 void IngredientRepository::update(std::int64_t id, const domain::Fermentable& f) { update(id, f.name, to_json(f)); }
 void IngredientRepository::update(std::int64_t id, const domain::Hop& h) { update(id, h.name, to_json(h)); }
 void IngredientRepository::update(std::int64_t id, const domain::Yeast& y) { update(id, y.name, to_json(y)); }
+void IngredientRepository::update(std::int64_t id, const domain::WaterSource& w) { update(id, w.name, to_json(w)); }
 
 void IngredientRepository::remove(std::int64_t id) {
     auto stmt = db_.prepare("DELETE FROM ingredients WHERE id = ?;");

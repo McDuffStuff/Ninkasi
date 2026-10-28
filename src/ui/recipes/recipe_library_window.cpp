@@ -51,8 +51,9 @@ std::optional<std::string> read_file(const std::filesystem::path& path) {
 
 } // namespace
 
-RecipeLibraryWindow::RecipeLibraryWindow(app::RecipeService& recipes, RecipeEditors& editors, float ui_scale)
-    : recipes_(recipes), editors_(editors), ui_scale_(ui_scale) {}
+RecipeLibraryWindow::RecipeLibraryWindow(app::RecipeService& recipes, app::IngredientLibrary& library,
+                                         RecipeEditors& editors, float ui_scale)
+    : recipes_(recipes), library_(library), editors_(editors), ui_scale_(ui_scale) {}
 
 void RecipeLibraryWindow::show() {
     visible_ = true;
@@ -115,7 +116,7 @@ void RecipeLibraryWindow::draw_list() {
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button("Import BeerJSON...")) {
-        import_files(open_files_dialog("Import BeerJSON recipes", "BeerJSON recipes", "*.json"));
+        import_files(open_files_dialog("Import BeerJSON recipes and water profiles", "BeerJSON files", "*.json"));
     }
     ImGui::SetItemTooltip("You can also drop BeerJSON files onto Ninkasi");
     ImGui::SameLine();
@@ -232,8 +233,14 @@ void RecipeLibraryWindow::import_files(const std::vector<std::filesystem::path>&
                 last_imported = recipes_.create(recipe);
                 import_report_.push_back("Imported \"" + recipe.name + "\" from " + file_name);
             }
+            for (const domain::WaterSource& water : result.waters) {
+                library_.add(water);
+                import_report_.push_back("Added the water profile \"" + water.name + "\" to the ingredient library");
+            }
             for (const std::string& warning : result.warnings) import_report_.push_back("    " + warning);
-            if (result.recipes.empty()) import_report_.push_back(file_name + ": no recipes in the file");
+            if (result.recipes.empty() && result.waters.empty()) {
+                import_report_.push_back(file_name + ": no recipes or water profiles in the file");
+            }
         } catch (const std::exception& e) {
             import_report_.push_back(file_name + ": " + e.what());
         }

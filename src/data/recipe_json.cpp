@@ -244,6 +244,7 @@ json water_json(const Water& w) {
         acids.push_back({{"acid", std::string(calc::info(acid.acid).key)}, {"volume_l", acid.volume_l}});
     }
     return {{"source", water_profile_json(w.source)},
+            {"source_name", w.source_name},
             {"salts", salts},
             {"mash_acids", acids},
             {"target_mash_ph", w.target_mash_ph}};
@@ -254,6 +255,7 @@ Water read_water(const json& j) {
     if (const auto source = j.find("source"); source != j.end() && source->is_object()) {
         w.source = read_water_profile(*source);
     }
+    w.source_name = field(j, "source_name", std::string());
     each(j, "salts", [&](const json& s) {
         if (const auto salt = calc::salt_from_key(field(s, "salt", std::string()))) {
             w.salts.push_back({*salt, field(s, "mass_kg", 0.0)});
@@ -265,6 +267,18 @@ Water read_water(const json& j) {
         }
     });
     w.target_mash_ph = field(j, "target_mash_ph", w.target_mash_ph);
+    return w;
+}
+
+json water_source_json(const WaterSource& w) {
+    return {{"name", w.name}, {"ions", water_profile_json(w.ions)}, {"notes", w.notes}};
+}
+
+WaterSource read_water_source(const json& j) {
+    WaterSource w;
+    w.name = field(j, "name", std::string());
+    if (const auto ions = j.find("ions"); ions != j.end() && ions->is_object()) w.ions = read_water_profile(*ions);
+    w.notes = field(j, "notes", std::string());
     return w;
 }
 
@@ -445,6 +459,11 @@ Hop hop_from_json(std::string_view text) { return read_json<Hop>(text, "hop", re
 
 std::string to_json(const Yeast& yeast) { return yeast_json(yeast).dump(); }
 Yeast yeast_from_json(std::string_view text) { return read_json<Yeast>(text, "yeast", read_yeast); }
+
+std::string to_json(const WaterSource& water) { return water_source_json(water).dump(); }
+WaterSource water_source_from_json(std::string_view text) {
+    return read_json<WaterSource>(text, "water profile", read_water_source);
+}
 
 std::string to_json(const CalcSettings& settings) { return calc_settings_json(settings).dump(); }
 CalcSettings calc_settings_from_json(std::string_view text) {

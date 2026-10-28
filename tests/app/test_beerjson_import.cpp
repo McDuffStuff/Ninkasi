@@ -190,3 +190,47 @@ TEST_CASE("BeerJSON problems are reported") {
     CHECK(mentions(result.warnings, "Mystery has an amount in an unknown unit (\"stone\")"));
     CHECK(mentions(result.warnings, "Mystery has no yield"));
 }
+
+TEST_CASE("BeerJSON water additions become the recipe's source water, blended by volume") {
+    const char* recipe = R"({"recipes": [{"name": "Watered",
+        "batch_size": {"value": 20, "unit": "l"},
+        "ingredients": {"water_additions": [
+          {"name": "City tap", "amount": {"value": 30, "unit": "l"},
+           "calcium": {"value": 40, "unit": "ppm"}, "magnesium": {"value": 10, "unit": "mg/l"},
+           "sodium": {"value": 20, "unit": "ppm"}, "chloride": {"value": 30, "unit": "ppm"},
+           "sulfate": {"value": 60, "unit": "ppm"}, "bicarbonate": {"value": 120, "unit": "ppm"},
+           "carbonate": {"value": 5, "unit": "ppm"}},
+          {"name": "RO", "amount": {"value": 10, "unit": "l"},
+           "calcium": {"value": 0, "unit": "ppm"}, "magnesium": {"value": 0, "unit": "ppm"},
+           "sodium": {"value": 4000, "unit": "ppb"}, "chloride": {"value": 2, "unit": "ppm"},
+           "sulfate": {"value": 0, "unit": "ppm"}, "bicarbonate": {"value": 0, "unit": "ppm"}}
+        ]}}]})";
+    const app::BeerJsonImport result = app::import_beerjson(recipe, brewery_defaults());
+    REQUIRE(result.recipes.size() == 1);
+    const domain::Water& water = result.recipes[0].water;
+    CHECK(water.source_name == "City tap + RO");
+    // Three parts tap to one part RO.
+    CHECK(water.source.calcium == near(30.0, 1e-9));
+    CHECK(water.source.sodium == near(16.0, 1e-9));  // 4000 ppb is 4 ppm
+    CHECK(water.source.bicarbonate == near(90.0, 1e-9));
+    CHECK(mentions(result.warnings, "City tap's carbonate isn't used"));
+    CHECK_FALSE(mentions(result.warnings, "water profiles aren't imported"));
+}
+
+TEST_CASE("BeerJSON water profiles are read for the library, even without recipes") {
+    const char* waters = R"({"beerjson": {"version": 1.0, "waters": [
+          {"name": "Burton-style", "notes": "Hard",
+           "calcium": {"value": 275, "unit": "ppm"}, "magnesium": {"value": 40, "unit": "ppm"},
+           "sodium": {"value": 25, "unit": "ppm"}, "chloride": {"value": 35, "unit": "ppm"},
+           "sulfate": {"value": 610, "unit": "ppm"}, "bicarbonate": {"value": 270, "unit": "ppm"}},
+          {"name": "Soft", "calcium": {"value": 7, "unit": "furlongs"}}
+        ]}})";
+    const app::BeerJsonImport result = app::import_beerjson(waters, brewery_defaults());
+    CHECK(result.recipes.empty());
+    REQUIRE(result.waters.size() == 2);
+    CHECK(result.waters[0].name == "Burton-style");
+    CHECK(result.waters[0].notes == "Hard");
+    CHECK(result.waters[0].ions.sulfate == near(610.0, 1e-9));
+    CHECK(result.waters[1].ions.calcium == 0.0);
+    CHECK(mentions(result.warnings, "Water profile \"Soft\": unknown unit \"furlongs\" for calcium"));
+}

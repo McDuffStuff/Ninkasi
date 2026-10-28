@@ -134,8 +134,19 @@ struct Equipment {
     bool operator==(const Equipment&) const = default;
 };
 
+// A named water: the brewery's water report, a classic brewing water, or
+// one from another brewer's BeerJSON. Kept in the ingredient library.
+struct WaterSource {
+    std::string name;
+    calc::WaterProfile ions;  // ppm
+    std::string notes;
+
+    bool operator==(const WaterSource&) const = default;
+};
+
 struct Water {
     calc::WaterProfile source;
+    std::string source_name;  // the water profile it came from; empty when typed in
     std::vector<calc::SaltAddition> salts;       // dissolved in all of the brewing water
     std::vector<calc::AcidAddition> mash_acids;  // added to the mash
     double target_mash_ph = 5.4;

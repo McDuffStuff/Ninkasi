@@ -64,6 +64,7 @@ void IngredientLibraryWindow::reload() {
     fermentables_ = library_.fermentables();
     hops_ = library_.hops();
     yeasts_ = library_.yeasts();
+    waters_ = library_.waters();
 }
 
 void IngredientLibraryWindow::draw() {
@@ -99,6 +100,10 @@ void IngredientLibraryWindow::draw() {
             }
             if (ImGui::BeginTabItem("Yeasts")) {
                 draw_yeasts();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Water")) {
+                draw_waters();
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
@@ -316,5 +321,62 @@ void IngredientLibraryWindow::draw_yeasts() {
     }
 }
 
+void IngredientLibraryWindow::draw_waters() {
+    if (ImGui::Button("Add water profile")) {
+        domain::WaterSource w;
+        w.name = "New water";
+        library_.add(w);
+        reload();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Ions in ppm (mg/L), from a water report. BeerJSON files with waters add them here.");
+    std::optional<std::int64_t> remove;
+    if (ImGui::BeginTable("##waters", 9, kTableFlags, ImVec2(0.0f, -FLT_MIN))) {
+        const float s = ui_scale_;
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        for (const char* ion : {"Calcium", "Magnesium", "Sodium", "Chloride", "Sulfate", "Bicarbonate"}) {
+            ImGui::TableSetupColumn(ion, ImGuiTableColumnFlags_WidthFixed, 80 * s);
+        }
+        ImGui::TableSetupColumn("Notes", ImGuiTableColumnFlags_WidthFixed, 180 * s);
+        ImGui::TableSetupColumn("##remove", ImGuiTableColumnFlags_WidthFixed, 22 * s);
+        ImGui::TableHeadersRow();
+
+        for (auto& entry : waters_) {
+            domain::WaterSource& w = entry.item;
+            if (!matches(w.name, filter_)) continue;
+            bool save = false;
+            ImGui::PushID(static_cast<int>(entry.id));
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##name", &w.name);
+            save |= finished();
+            double* const ions[] = {&w.ions.calcium,  &w.ions.magnesium, &w.ions.sodium,
+                                    &w.ions.chloride, &w.ions.sulfate,   &w.ions.bicarbonate};
+            for (std::size_t i = 0; i < std::size(ions); ++i) {
+                ImGui::TableNextColumn();
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                edit_number("##ppm", *ions[i], 0);
+                save |= finished();
+                ImGui::PopID();
+            }
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##notes", &w.notes);
+            save |= finished();
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton("×")) remove = entry.id;
+            ImGui::PopID();
+            if (save) save_row(entry);
+        }
+        ImGui::EndTable();
+    }
+    if (remove) {
+        library_.remove(*remove);
+        reload();
+    }
+}
 
 } // namespace ninkasi::ui

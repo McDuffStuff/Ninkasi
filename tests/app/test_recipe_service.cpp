@@ -138,6 +138,28 @@ TEST_CASE("the ingredient library starts with a starter set, once") {
     CHECK(reopened.hops().empty());
 }
 
+TEST_CASE("water profiles are kept in the library") {
+    Brewery brewery;
+    app::IngredientLibrary library(brewery.db, brewery.session);
+    REQUIRE(library.waters().size() == 1);
+    CHECK(library.waters().front().item.name == "Distilled or RO water");
+    CHECK(library.waters().front().item.ions == calc::WaterProfile{});
+
+    domain::WaterSource tap{"City tap", {40, 10, 20, 30, 60, 120}, "2026 report"};
+    const std::int64_t id = library.add(tap);
+    tap.ions.calcium = 45;
+    library.update(id, tap);
+    app::IngredientLibrary reopened(brewery.db, brewery.session);
+    REQUIRE(reopened.waters().size() == 2);
+    CHECK(reopened.waters().front().item == tap);  // by name: "City tap" before "Distilled..."
+
+    reopened.remove(id);
+    CHECK(reopened.waters().size() == 1);
+    // Removing the starter water doesn't bring it back.
+    reopened.remove(reopened.waters().front().id);
+    CHECK(app::IngredientLibrary(brewery.db, brewery.session).waters().empty());
+}
+
 TEST_CASE("library ingredients are added, updated and removed") {
     Brewery brewery;
     app::IngredientLibrary library(brewery.db, brewery.session);

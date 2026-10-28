@@ -24,6 +24,7 @@ private:
     void draw_fermentables();
     void draw_hops();
     void draw_yeasts();
+    void draw_waters();
     // Saves an edited row; a rejected edit is undone on the next frame.
     template <typename T>
     void save_row(const domain::LibraryItem<T>& entry);
@@ -42,6 +43,7 @@ private:
     std::vector<domain::LibraryItem<domain::Fermentable>> fermentables_;
     std::vector<domain::LibraryItem<domain::Hop>> hops_;
     std::vector<domain::LibraryItem<domain::Yeast>> yeasts_;
+    std::vector<domain::LibraryItem<domain::WaterSource>> waters_;
 };
 
 } // namespace ninkasi::ui

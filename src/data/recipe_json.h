@@ -27,6 +27,9 @@ domain::Hop hop_from_json(std::string_view json);
 std::string to_json(const domain::Yeast& yeast);
 domain::Yeast yeast_from_json(std::string_view json);
 
+std::string to_json(const domain::WaterSource& water);
+domain::WaterSource water_source_from_json(std::string_view json);
+
 std::string to_json(const domain::CalcSettings& settings);
 domain::CalcSettings calc_settings_from_json(std::string_view json);
 

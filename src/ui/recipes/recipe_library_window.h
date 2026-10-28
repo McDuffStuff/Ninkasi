@@ -2,6 +2,7 @@
 // The recipe library: every recipe, with new, open, duplicate, delete and
 // BeerJSON import.
 
+#include "app/ingredient_library.h"
 #include "app/recipe_service.h"
 #include "data/recipe_repository.h"
 #include "ui/recipes/recipe_editors.h"
@@ -16,7 +17,8 @@ namespace ninkasi::ui {
 
 class RecipeLibraryWindow {
 public:
-    RecipeLibraryWindow(app::RecipeService& recipes, RecipeEditors& editors, float ui_scale);
+    RecipeLibraryWindow(app::RecipeService& recipes, app::IngredientLibrary& library, RecipeEditors& editors,
+                        float ui_scale);
 
     // Opens the window, or brings it to the front.
     void show();
@@ -24,7 +26,8 @@ public:
     void refresh();
     void draw();
 
-    // Imports every recipe in the BeerJSON files and reports what happened.
+    // Imports every recipe in the BeerJSON files, and adds their water
+    // profiles to the ingredient library; reports what happened.
     void import_files(const std::vector<std::filesystem::path>& files);
 
 private:
@@ -34,6 +37,7 @@ private:
     void draw_import_report();
 
     app::RecipeService& recipes_;
+    app::IngredientLibrary& library_;
     RecipeEditors& editors_;
     float ui_scale_;
 

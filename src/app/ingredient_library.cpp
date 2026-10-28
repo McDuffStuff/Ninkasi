@@ -16,6 +16,8 @@ using calc::MaltCategory;
 using domain::FermentableType;
 
 constexpr const char* kSeededKey = "library.seeded";
+// Water profiles came later, so they have their own flag.
+constexpr const char* kWatersSeededKey = "library.waters_seeded";
 constexpr std::string_view kEntity = "ingredient";
 
 // Generic ingredients with typical values: a starting point, not a spec sheet.
@@ -126,20 +128,28 @@ void IngredientLibrary::seed_once() {
     // A flag, not an emptiness check: a brewer who deletes everything
     // shouldn't get the starter set back.
     data::SettingsRepository settings(db_);
-    if (settings.get(kSeededKey)) return;
-
-    data::Transaction tx(db_);
-    for (const domain::Fermentable& f : starter_fermentables()) repository_.insert(f);
-    for (const domain::Hop& h : starter_hops()) repository_.insert(h);
-    for (const domain::Yeast& y : starter_yeasts()) repository_.insert(y);
-    settings.set(kSeededKey, "1");
-    tx.commit();
+    if (!settings.get(kSeededKey)) {
+        data::Transaction tx(db_);
+        for (const domain::Fermentable& f : starter_fermentables()) repository_.insert(f);
+        for (const domain::Hop& h : starter_hops()) repository_.insert(h);
+        for (const domain::Yeast& y : starter_yeasts()) repository_.insert(y);
+        settings.set(kSeededKey, "1");
+        tx.commit();
+    }
+    if (!settings.get(kWatersSeededKey)) {
+        // Only water with nothing in it is certain; brewers add their own water reports.
+        data::Transaction tx(db_);
+        repository_.insert(domain::WaterSource{"Distilled or RO water", {}, "Nothing dissolved in it."});
+        settings.set(kWatersSeededKey, "1");
+        tx.commit();
+    }
 }
 
 void IngredientLibrary::reload() {
     fermentables_ = repository_.fermentables();
     hops_ = repository_.hops();
     yeasts_ = repository_.yeasts();
+    waters_ = repository_.waters();
 }
 
 template <>
@@ -153,6 +163,10 @@ std::vector<domain::LibraryItem<domain::Hop>>& IngredientLibrary::items<domain::
 template <>
 std::vector<domain::LibraryItem<domain::Yeast>>& IngredientLibrary::items<domain::Yeast>() {
     return yeasts_;
+}
+template <>
+std::vector<domain::LibraryItem<domain::WaterSource>>& IngredientLibrary::items<domain::WaterSource>() {
+    return waters_;
 }
 
 template <typename T>
@@ -184,10 +198,12 @@ void IngredientLibrary::update_item(std::int64_t id, const T& item) {
 std::int64_t IngredientLibrary::add(const domain::Fermentable& f) { return add_item(f); }
 std::int64_t IngredientLibrary::add(const domain::Hop& h) { return add_item(h); }
 std::int64_t IngredientLibrary::add(const domain::Yeast& y) { return add_item(y); }
+std::int64_t IngredientLibrary::add(const domain::WaterSource& w) { return add_item(w); }
 
 void IngredientLibrary::update(std::int64_t id, const domain::Fermentable& f) { update_item(id, f); }
 void IngredientLibrary::update(std::int64_t id, const domain::Hop& h) { update_item(id, h); }
 void IngredientLibrary::update(std::int64_t id, const domain::Yeast& y) { update_item(id, y); }
+void IngredientLibrary::update(std::int64_t id, const domain::WaterSource& w) { update_item(id, w); }
 
 void IngredientLibrary::remove(std::int64_t id) {
     std::string name;
@@ -199,6 +215,7 @@ void IngredientLibrary::remove(std::int64_t id) {
     find_name(fermentables_);
     find_name(hops_);
     find_name(yeasts_);
+    find_name(waters_);
     if (name.empty()) return;
 
     data::Transaction tx(db_);
@@ -210,6 +227,7 @@ void IngredientLibrary::remove(std::int64_t id) {
     erase(fermentables_);
     erase(hops_);
     erase(yeasts_);
+    erase(waters_);
 }
 
 } // namespace ninkasi::app

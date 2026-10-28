@@ -47,7 +47,7 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
                   packaging_views_, personal_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, personal_, units_, calc_settings_, ui_scale_),
-      recipe_library_(recipes_, recipe_editors_, ui_scale_),
+      recipe_library_(recipes_, library_, recipe_editors_, ui_scale_),
       ingredient_window_(library_, units_, ui_scale_),
       brewing_settings_(session_, calc_settings_, settings_, recipes_, library_, formulas_, units_, ui_scale_) {
     theme_ = theme_from_name(personal_.get_or(kThemeKey, "dark"));

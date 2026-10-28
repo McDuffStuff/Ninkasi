@@ -3,6 +3,7 @@
 #include "calc/common.h"
 #include "calc/gravity.h"
 #include "calc/water.h"
+#include "ui/search_combo.h"
 #include "ui/widgets.h"
 
 #include <imgui.h>
@@ -680,9 +681,63 @@ bool draw_mash(domain::Recipe& recipe, const domain::RecipeStats& stats, const R
 
 // --- Water --------------------------------------------------------------------------
 
+// The water profile a recipe's source water comes from, chosen from the library.
+bool water_profile_combo(domain::Water& water, const RecipeContext& context) {
+    bool changed = false;
+    const char* preview = water.source_name.empty() ? "Typed in below" : water.source_name.c_str();
+    if (begin_search_combo("##profile", preview)) {
+        const auto& waters = context.library.waters();
+        std::vector<std::string> names;
+        for (const auto& entry : waters) names.push_back(entry.item.name);
+        for (std::size_t i : search_order(names)) {
+            ImGui::PushID(static_cast<int>(waters[i].id));
+            if (search_item(names[i].c_str(), names[i] == water.source_name)) {
+                water.source = waters[i].item.ions;
+                water.source_name = waters[i].item.name;
+                changed = true;
+            }
+            ImGui::PopID();
+        }
+        if (waters.empty()) ImGui::TextDisabled("No water profiles yet: add them in the ingredient library.");
+        end_search_combo();
+    }
+    return changed;
+}
+
 bool draw_water_source(domain::Recipe& recipe, const RecipeContext& context) {
     bool changed = false;
     calc::WaterProfile& source = recipe.water.source;
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Water profile");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(px(context, 260));
+    changed |= water_profile_combo(recipe.water, context);
+    ImGui::SameLine();
+    // Saving this water to the library, under a name.
+    static std::string new_profile_name;  // one popup can be open at a time
+    if (ImGui::Button("Save as a water profile...")) {
+        new_profile_name = recipe.water.source_name.empty() ? "My water" : recipe.water.source_name;
+        ImGui::OpenPopup("##save_water");
+    }
+    if (ImGui::BeginPopup("##save_water")) {
+        ImGui::TextUnformatted("Save this water in the ingredient library as");
+        ImGui::SetNextItemWidth(px(context, 240));
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool entered = ImGui::InputText("##name", &new_profile_name, ImGuiInputTextFlags_EnterReturnsTrue);
+        const bool named = new_profile_name.find_first_not_of(" \t") != std::string::npos;
+        ImGui::BeginDisabled(!named);
+        if ((ImGui::Button("Save") || entered) && named) {
+            context.library.add(domain::WaterSource{new_profile_name, source, ""});
+            recipe.water.source_name = new_profile_name;
+            changed = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndDisabled();
+        ImGui::EndPopup();
+    }
+    const calc::WaterProfile before = source;
+
     struct Ion {
         const char* label;
         double* ppm;
@@ -705,13 +760,15 @@ bool draw_water_source(domain::Recipe& recipe, const RecipeContext& context) {
         }
         ImGui::EndTable();
     }
+    // Typing a number makes it this recipe's own water.
+    if (!(source == before)) recipe.water.source_name.clear();
     if (ImGui::SmallButton("Distilled / RO water")) {
         source = {};
+        recipe.water.source_name.clear();
         changed = true;
     }
     ImGui::SameLine();
     ImGui::TextDisabled("Ion concentrations in ppm (mg/L), from your water report");
-    (void)context;
     return changed;
 }
 

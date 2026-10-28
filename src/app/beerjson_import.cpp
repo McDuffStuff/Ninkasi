@@ -3,6 +3,7 @@
 #include "calc/extract.h"
 #include "calc/gravity.h"
 #include "calc/units.h"
+#include "calc/water.h"
 #include "calc/yeast.h"
 
 #include <nlohmann/json.hpp>
@@ -62,6 +63,8 @@ public:
         : warnings_(warnings), defaults_(defaults) {}
 
     domain::Recipe read(const json& r);
+    // A water profile in the document's list of waters.
+    domain::WaterSource read_water_profile(const json& w);
 
 private:
     void warn(const std::string& message) { warnings_.push_back(recipe_name_ + ": " + message); }
@@ -161,6 +164,9 @@ private:
     domain::YeastAddition read_culture(const json& c, domain::Recipe& recipe);
     domain::MiscAddition read_misc(const json& m);
     domain::MashStep read_mash_step(const json& s);
+    domain::WaterSource read_water(const json& w);
+    // An ion's concentration in ppm; 0 if it's missing.
+    double ppm(const json& w, const char* ion);
 
     std::vector<std::string>& warnings_;
     const domain::Recipe& defaults_;
@@ -211,8 +217,25 @@ domain::Recipe RecipeReader::read(const json& r) {
         each("hop_additions", [&](const json& h) { recipe.hops.push_back(read_hop(h, recipe.boil_time_min)); });
         each("culture_additions", [&](const json& c) { recipe.yeasts.push_back(read_culture(c, recipe)); });
         each("miscellaneous_additions", [&](const json& m) { recipe.miscs.push_back(read_misc(m)); });
-        if (ingredients->contains("water_additions")) {
-            warn("water profiles aren't imported; check the Water tab");
+        // The waters it's brewed with, blended in proportion to how much of each.
+        std::vector<std::pair<domain::WaterSource, std::optional<double>>> waters;
+        each("water_additions", [&](const json& w) { waters.emplace_back(read_water(w), amount_l(w)); });
+        if (!waters.empty()) {
+            const bool all_measured = std::all_of(waters.begin(), waters.end(), [](const auto& water) {
+                return water.second && *water.second > 0.0;
+            });
+            if (waters.size() > 1 && !all_measured) warn("not every water has an amount; mixed them in equal parts");
+            calc::WaterProfile blended = waters.front().first.ions;
+            double volume = all_measured ? *waters.front().second : 1.0;
+            std::string names = waters.front().first.name;
+            for (std::size_t i = 1; i < waters.size(); ++i) {
+                const double more = all_measured ? *waters[i].second : 1.0;
+                blended = calc::blend(blended, volume, waters[i].first.ions, more);
+                volume += more;
+                names += " + " + waters[i].first.name;
+            }
+            recipe.water.source = blended;
+            recipe.water.source_name = names;
         }
     }
 
@@ -226,6 +249,35 @@ domain::Recipe RecipeReader::read(const json& r) {
         }
     }
     return recipe;
+}
+
+double RecipeReader::ppm(const json& w, const char* ion) {
+    const auto m = measurement(w, ion);
+    if (!m) return 0.0;
+    const std::string unit = lowercase(m->second);
+    if (unit == "ppm" || unit == "mg/l") return m->first;
+    if (unit == "ppb") return m->first / 1000.0;
+    warn(std::string("unknown unit \"") + m->second + "\" for " + ion);
+    return 0.0;
+}
+
+domain::WaterSource RecipeReader::read_water(const json& w) {
+    domain::WaterSource water;
+    water.name = text(w, "name", "Water");
+    water.notes = text(w, "notes");
+    water.ions = {ppm(w, "calcium"), ppm(w, "magnesium"), ppm(w, "sodium"),
+                  ppm(w, "chloride"), ppm(w, "sulfate"), ppm(w, "bicarbonate")};
+    // Ninkasi's water chemistry doesn't use these; say so if they matter.
+    for (const char* ion : {"carbonate", "potassium", "iron", "nitrate", "nitrite", "fluoride", "flouride"}) {
+        const auto m = measurement(w, ion);
+        if (m && m->first > 0.0) warn(water.name + "'s " + ion + " isn't used");
+    }
+    return water;
+}
+
+domain::WaterSource RecipeReader::read_water_profile(const json& w) {
+    recipe_name_ = "Water profile \"" + text(w, "name", "Water") + "\"";
+    return read_water(w);
 }
 
 domain::FermentableAddition RecipeReader::read_fermentable(const json& f) {
@@ -430,22 +482,30 @@ BeerJsonImport import_beerjson(std::string_view text, const domain::Recipe& defa
         throw std::runtime_error(std::string("not valid JSON (") + e.what() + ")");
     }
 
-    // Normally {"beerjson": {"recipes": [...]}}; accept a bare {"recipes": [...]} too.
+    // Normally {"beerjson": {"recipes": [...], "waters": [...]}}; accept them bare too.
     const json* document = &root;
     if (root.is_object() && root.contains("beerjson")) document = &root["beerjson"];
-    if (!document->is_object() || !document->contains("recipes") || !(*document)["recipes"].is_array()) {
-        throw std::runtime_error("no BeerJSON recipes found");
-    }
+    const auto list = [&](const char* name) -> const json* {
+        if (!document->is_object()) return nullptr;
+        const auto found = document->find(name);
+        return found != document->end() && found->is_array() ? &*found : nullptr;
+    };
+    const json* recipes = list("recipes");
+    const json* waters = list("waters");
+    if (!recipes && !waters) throw std::runtime_error("no BeerJSON recipes or water profiles found");
 
     BeerJsonImport result;
     RecipeReader reader(result.warnings, defaults);
-    for (const json& recipe : (*document)["recipes"]) {
+    for (const json& recipe : recipes ? *recipes : json::array()) {
         if (!recipe.is_object()) continue;
         try {
             result.recipes.push_back(reader.read(recipe));
         } catch (const json::exception& e) {
             result.warnings.push_back("skipped a recipe with an unexpected value (" + std::string(e.what()) + ")");
         }
+    }
+    for (const json& water : waters ? *waters : json::array()) {
+        if (water.is_object()) result.waters.push_back(reader.read_water_profile(water));
     }
     return result;
 }

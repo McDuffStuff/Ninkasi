@@ -53,6 +53,7 @@ Recipe everything() {
     r.miscs.push_back({"Whirlfloc", "1 tablet", MiscUse::Whirlpool, 5});
     r.mash_steps = {{"Protein rest", 52, 15}, {"Saccharification", 66, 60}};
     r.water.source = {30, 8, 12, 25, 40, 110};
+    r.water.source_name = "City tap";
     r.water.salts = {{calc::Salt::Gypsum, 0.12}, {calc::Salt::Chalk, 0.01}};
     r.water.mash_acids = {{calc::Acid::Phosphoric10, 0.25}};
     r.water.target_mash_ph = 5.3;

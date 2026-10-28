@@ -65,7 +65,14 @@ FetchContent_Declare(argon2
     SOURCE_SUBDIR  do-not-build
 )
 
-FetchContent_MakeAvailable(glfw imgui implot sqlite doctest json argon2)
+# --- stb_image (public domain): reading pictures for the floor's background --------
+FetchContent_Declare(stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5
+    SOURCE_SUBDIR  do-not-build
+)
+
+FetchContent_MakeAvailable(glfw imgui implot sqlite doctest json argon2 stb)
 
 find_package(OpenGL REQUIRED)
 find_package(Threads REQUIRED)
@@ -112,6 +119,9 @@ add_library(argon2 STATIC
 )
 target_include_directories(argon2 PUBLIC ${argon2_SOURCE_DIR}/include PRIVATE ${argon2_SOURCE_DIR}/src)
 target_compile_definitions(argon2 PRIVATE ARGON2_NO_THREADS)
+
+add_library(stb INTERFACE)
+target_include_directories(stb INTERFACE ${stb_SOURCE_DIR})
 
 add_library(nlohmann_json INTERFACE)
 target_include_directories(nlohmann_json INTERFACE ${json_SOURCE_DIR}/include)

@@ -8,6 +8,7 @@
 // space or middle-drag to pan, scroll to zoom.
 // Editing ("Edit layout"): drag to move, drag the corner handle to resize,
 // double-click for details, Delete to remove.
+// Admins can put a picture under the floor (Background), and move and resize it.
 
 #include "app/batch_service.h"
 #include "app/floor_service.h"
@@ -19,10 +20,13 @@
 #include "domain/element.h"
 #include "domain/recipe_math.h"
 
+#include "ui/texture.h"
+
 #include <imgui.h>
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -57,7 +61,7 @@ private:
         double x = 0.0;
         double y = 0.0;
     };
-    enum class Drag { None, Pan, Move, Resize };
+    enum class Drag { None, Pan, Move, Resize, MoveBackground, ResizeBackground };
 
     // Screen pixels per floor unit.
     double scale() const { return zoom_ * ui_scale_; }
@@ -82,11 +86,19 @@ private:
     bool over_resize_handle(const domain::Element& element, ImVec2 screen) const;
 
     void draw_toolbar();
+    void draw_background_menu();
+    void choose_background();
+    // Loads the background picture onto the graphics card when it has changed.
+    void sync_background_texture();
+    // The background picture's place on screen: as it is, or where it's being dragged to.
+    std::pair<ImVec2, ImVec2> background_on_screen() const;
+    std::pair<ImVec2, ImVec2> background_handle() const;
     void draw_canvas();
     void handle_mouse(bool canvas_hovered, std::optional<std::int64_t> hovered);
     void finish_drag();
     void handle_keyboard();
     void draw_background(ImDrawList* draw_list) const;
+    void draw_background_picture(ImDrawList* draw_list) const;
     void draw_element(ImDrawList* draw_list, const domain::Element& element, bool hovered) const;
     void draw_labels(ImDrawList* draw_list, const domain::Element& element, const Shape& shape) const;
     void draw_task_badge(ImDrawList* draw_list, const domain::Element& element, const Shape& shape) const;
@@ -128,6 +140,13 @@ private:
 
     bool edit_mode_ = false;
     std::optional<std::int64_t> selected_;
+
+    // The floor's background picture, on the graphics card.
+    std::unique_ptr<Texture> background_texture_;
+    int background_revision_ = -1;
+    bool adjust_background_ = false;          // dragging moves and resizes the picture
+    std::optional<float> opacity_preview_;    // while the opacity slider is held
+    std::string background_error_;
 
     // The mouse drag in progress, if any.
     Drag drag_ = Drag::None;

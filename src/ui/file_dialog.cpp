@@ -39,10 +39,12 @@ std::wstring widen(const char* text) {
 } // namespace
 
 std::vector<std::filesystem::path> open_files_dialog(const char* title, const char* filter_name, const char* pattern) {
-    // Filter format: "Name\0pattern\0All files\0*.*\0\0".
+    // Filter format: "Name\0pattern\0All files\0*.*\0\0", with Windows' ; between patterns.
     std::wstring filter = widen(filter_name);
     filter.push_back(L'\0');
-    filter += widen(pattern);
+    std::wstring patterns = widen(pattern);
+    std::replace(patterns.begin(), patterns.end(), L' ', L';');
+    filter += patterns;
     filter.push_back(L'\0');
     filter += L"All files";
     filter.push_back(L'\0');

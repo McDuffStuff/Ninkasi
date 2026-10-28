@@ -15,6 +15,7 @@
 #include "data/element_repository.h"
 #include "domain/element.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -55,15 +56,37 @@ public:
     // Throws std::invalid_argument if the element is in use (see removal_blocker).
     void remove(std::int64_t id);
 
+    // --- The background picture -----------------------------------------------------------
+    // The largest picture file accepted.
+    static constexpr std::size_t kMaxBackgroundBytes = 25 * 1024 * 1024;
+
+    const std::optional<domain::FloorBackground>& background() const { return background_; }
+    // Goes up whenever the picture itself changes, so the UI knows to load it again.
+    int background_revision() const { return background_revision_; }
+    // Admins only, like the rest of the layout (NotAllowed otherwise).
+    // Puts the picture in `file` under the floor. A first picture is sized to
+    // cover the equipment; a replacement keeps the old one's place. Throws
+    // std::invalid_argument if it isn't a PNG, JPEG, BMP or GIF, or is too big.
+    void set_background(std::vector<unsigned char> file, std::string_view file_name);
+    // Moves and resizes it (`width` in floor units) and sets how solid it is (0.05 to 1).
+    void place_background(double x, double y, double width, double opacity);
+    // Sizes it to cover the equipment, with a margin, centered on it.
+    void fit_background();
+    void remove_background();
+
 private:
     // Throws std::invalid_argument if there is no such element.
     domain::Element& get(std::int64_t id);
+    // Places `background` over the equipment (or at the origin if there's none).
+    void cover_equipment(domain::FloorBackground& background) const;
     std::string default_name(domain::ElementType type) const;
 
     data::Database& db_;
     Session session_;
     data::ElementRepository repository_;
     std::vector<domain::Element> elements_;
+    std::optional<domain::FloorBackground> background_;
+    int background_revision_ = 0;
 };
 
 } // namespace ninkasi::app

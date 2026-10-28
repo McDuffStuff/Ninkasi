@@ -1,5 +1,6 @@
 #include "app/floor_service.h"
 
+#include "app/picture.h"
 #include "data/audit_log.h"
 #include "data/batch_repository.h"
 
@@ -31,7 +32,17 @@ domain::Rect with_minimum_size(domain::Rect rect) {
 } // namespace
 
 FloorService::FloorService(data::Database& db, Session session)
-    : db_(db), session_(std::move(session)), repository_(db), elements_(repository_.load_all()) {}
+    : db_(db), session_(std::move(session)), repository_(db), elements_(repository_.load_all()) {
+    background_ = repository_.load_background();
+    if (background_) {
+        if (const std::optional<PictureSize> size = picture_size(background_->image)) {
+            background_->pixel_width = size->width;
+            background_->pixel_height = size->height;
+        } else {
+            background_.reset();  // unreadable: leave the floor plain
+        }
+    }
+}
 
 const domain::Element* FloorService::find(std::int64_t id) const {
     const auto found = std::find_if(elements_.begin(), elements_.end(),
@@ -129,6 +140,92 @@ void FloorService::remove(std::int64_t id) {
     tx.commit();
 
     std::erase_if(elements_, [id](const domain::Element& e) { return e.id == id; });
+}
+
+void FloorService::set_background(std::vector<unsigned char> file, std::string_view file_name) {
+    require_admin(session_, "change the floor's background");
+    if (file.size() > kMaxBackgroundBytes) {
+        throw std::invalid_argument("That picture is too big; choose one under 25 MB.");
+    }
+    const std::optional<PictureSize> size = picture_size(file);
+    if (!size) throw std::invalid_argument("Ninkasi can't read that picture; choose a PNG, JPEG, BMP or GIF.");
+
+    domain::FloorBackground background;
+    background.image = std::move(file);
+    background.file_name = std::string(file_name);
+    background.pixel_width = size->width;
+    background.pixel_height = size->height;
+    if (background_) {
+        // A replacement takes the old picture's place.
+        background.x = background_->x;
+        background.y = background_->y;
+        background.width = background_->width;
+        background.opacity = background_->opacity;
+    } else {
+        cover_equipment(background);
+    }
+
+    data::Transaction tx(db_);
+    repository_.save_background(background);
+    data::record_audit(db_, session_.user_id, "floor.background", "floor", 0, "background picture " + background.file_name);
+    tx.commit();
+    background_ = std::move(background);
+    ++background_revision_;
+}
+
+void FloorService::place_background(double x, double y, double width, double opacity) {
+    require_admin(session_, "move the floor's background");
+    if (!background_) return;
+    width = std::max(width, domain::kMinElementSize);
+    opacity = std::clamp(opacity, 0.05, 1.0);
+    repository_.place_background(x, y, width, opacity);  // layout, like moving equipment: not audited
+    background_->x = x;
+    background_->y = y;
+    background_->width = width;
+    background_->opacity = opacity;
+}
+
+void FloorService::fit_background() {
+    require_admin(session_, "move the floor's background");
+    if (!background_) return;
+    domain::FloorBackground fitted = *background_;
+    cover_equipment(fitted);
+    place_background(fitted.x, fitted.y, fitted.width, fitted.opacity);
+}
+
+void FloorService::cover_equipment(domain::FloorBackground& background) const {
+    if (elements_.empty()) {
+        background.x = 0.0;
+        background.y = 0.0;
+        background.width = std::min(2000.0, static_cast<double>(background.pixel_width));
+        return;
+    }
+    double left = elements_.front().rect.x;
+    double top = elements_.front().rect.y;
+    double right = left;
+    double bottom = top;
+    for (const domain::Element& element : elements_) {
+        left = std::min(left, element.rect.x);
+        top = std::min(top, element.rect.y);
+        right = std::max(right, element.rect.x + element.rect.width);
+        bottom = std::max(bottom, element.rect.y + element.rect.height);
+    }
+    constexpr double kMargin = 60.0;
+    const double aspect = static_cast<double>(background.pixel_height) / static_cast<double>(background.pixel_width);
+    background.width = std::max(right - left + 2.0 * kMargin, (bottom - top + 2.0 * kMargin) / aspect);
+    background.x = (left + right) / 2.0 - background.width / 2.0;
+    background.y = (top + bottom) / 2.0 - background.width * aspect / 2.0;
+}
+
+void FloorService::remove_background() {
+    require_admin(session_, "remove the floor's background");
+    if (!background_) return;
+    data::Transaction tx(db_);
+    repository_.remove_background();
+    data::record_audit(db_, session_.user_id, "floor.background", "floor", 0, "background picture removed");
+    tx.commit();
+    background_.reset();
+    ++background_revision_;
 }
 
 std::string FloorService::default_name(domain::ElementType type) const {

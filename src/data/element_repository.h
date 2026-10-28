@@ -29,7 +29,13 @@ public:
     // Deletes the element.
     void remove(std::int64_t id);
 
-    // Sets the unit an element uses for one measure, or clears it.
+    // The floor's background picture, if it has one (its pixel size isn't read).
+    std::optional<domain::FloorBackground> load_background();
+    // Replaces the picture, and where it is.
+    void save_background(const domain::FloorBackground& background);
+    // Moves, resizes or fades the picture without writing it again.
+    void place_background(double x, double y, double width, double opacity);
+    void remove_background();
 
 private:
     Database& db_;

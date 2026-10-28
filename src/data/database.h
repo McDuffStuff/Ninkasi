@@ -6,9 +6,11 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 struct sqlite3;
 struct sqlite3_stmt;
@@ -36,6 +38,7 @@ public:
     Statement& bind(int index, int value) { return bind(index, static_cast<std::int64_t>(value)); }
     Statement& bind(int index, double value);
     Statement& bind(int index, std::string_view value);
+    Statement& bind_blob(int index, std::span<const unsigned char> bytes);
     Statement& bind_null(int index);
     // Bind NULL when the value is empty.
     Statement& bind_optional(int index, std::optional<double> value);
@@ -51,6 +54,7 @@ public:
     std::int64_t column_int64(int col) const;
     double column_double(int col) const;
     std::string column_text(int col) const;
+    std::vector<unsigned char> column_blob(int col) const;
     bool column_is_null(int col) const;
     // nullopt for NULL.
     std::optional<double> column_optional_double(int col) const;

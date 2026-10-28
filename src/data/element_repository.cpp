@@ -56,4 +56,41 @@ void ElementRepository::remove(std::int64_t id) {
     stmt.execute();
 }
 
+std::optional<domain::FloorBackground> ElementRepository::load_background() {
+    auto stmt = db_.prepare("SELECT image, file_name, x, y, width, opacity FROM floor_background WHERE id = 1;");
+    if (!stmt.step()) return std::nullopt;
+    domain::FloorBackground background;
+    background.image = stmt.column_blob(0);
+    background.file_name = stmt.column_text(1);
+    background.x = stmt.column_double(2);
+    background.y = stmt.column_double(3);
+    background.width = stmt.column_double(4);
+    background.opacity = stmt.column_double(5);
+    return background;
+}
+
+void ElementRepository::save_background(const domain::FloorBackground& background) {
+    auto stmt = db_.prepare(
+        "INSERT INTO floor_background (id, image, file_name, x, y, width, opacity) VALUES (1, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET image = excluded.image, file_name = excluded.file_name, x = excluded.x, "
+        "y = excluded.y, width = excluded.width, opacity = excluded.opacity;");
+    stmt.bind_blob(1, background.image)
+        .bind(2, background.file_name)
+        .bind(3, background.x)
+        .bind(4, background.y)
+        .bind(5, background.width)
+        .bind(6, background.opacity);
+    stmt.execute();
+}
+
+void ElementRepository::place_background(double x, double y, double width, double opacity) {
+    auto stmt = db_.prepare("UPDATE floor_background SET x = ?, y = ?, width = ?, opacity = ? WHERE id = 1;");
+    stmt.bind(1, x).bind(2, y).bind(3, width).bind(4, opacity);
+    stmt.execute();
+}
+
+void ElementRepository::remove_background() {
+    db_.exec("DELETE FROM floor_background;");
+}
+
 } // namespace ninkasi::data

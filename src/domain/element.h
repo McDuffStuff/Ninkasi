@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace ninkasi::domain {
 
@@ -54,6 +55,23 @@ struct Element {
     std::string name;
     Rect rect;
     std::optional<double> capacity_l;  // vessels only
+};
+
+// A picture under the floor, such as the building's plan, drawn beneath the
+// equipment. Its height follows the picture's shape.
+struct FloorBackground {
+    std::vector<unsigned char> image;  // the file as chosen: PNG, JPEG, BMP or GIF
+    std::string file_name;
+    int pixel_width = 0;
+    int pixel_height = 0;
+    double x = 0.0;  // its top-left corner, in floor units
+    double y = 0.0;
+    double width = 0.0;
+    double opacity = 0.5;  // 1 is solid
+
+    double height() const {
+        return pixel_width > 0 ? width * static_cast<double>(pixel_height) / static_cast<double>(pixel_width) : 0.0;
+    }
 };
 
 } // namespace ninkasi::domain

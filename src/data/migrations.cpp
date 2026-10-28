@@ -364,6 +364,19 @@ constexpr Migration kMigrations[] = {
             changed_at TEXT NOT NULL
         );
     )sql"},
+    {13, R"sql(
+        -- A picture under the Brewery Floor, such as the building's plan: at
+        -- most one. Its height follows the picture's shape.
+        CREATE TABLE floor_background (
+            id        INTEGER PRIMARY KEY CHECK (id = 1),
+            image     BLOB NOT NULL,      -- the file as chosen: PNG, JPEG, BMP or GIF
+            file_name TEXT NOT NULL,
+            x         REAL NOT NULL,      -- its top-left corner, in floor units
+            y         REAL NOT NULL,
+            width     REAL NOT NULL,
+            opacity   REAL NOT NULL       -- 1 is solid
+        );
+    )sql"},
 };
 
 } // namespace

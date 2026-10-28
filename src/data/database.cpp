@@ -48,6 +48,14 @@ Statement& Statement::bind(int index, std::string_view value) {
     return *this;
 }
 
+Statement& Statement::bind_blob(int index, std::span<const unsigned char> bytes) {
+    // An empty blob is still a blob, not NULL.
+    const int result = bytes.empty() ? sqlite3_bind_zeroblob(stmt_, index, 0)
+                                     : sqlite3_bind_blob64(stmt_, index, bytes.data(), bytes.size(), SQLITE_TRANSIENT);
+    if (result != SQLITE_OK) throw_error(db_, "bind failed");
+    return *this;
+}
+
 Statement& Statement::bind_null(int index) {
     if (sqlite3_bind_null(stmt_, index) != SQLITE_OK) throw_error(db_, "bind failed");
     return *this;
@@ -89,6 +97,12 @@ double Statement::column_double(int col) const {
 std::string Statement::column_text(int col) const {
     const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt_, col));
     return text ? std::string(text, sqlite3_column_bytes(stmt_, col)) : std::string();
+}
+
+std::vector<unsigned char> Statement::column_blob(int col) const {
+    const auto* bytes = static_cast<const unsigned char*>(sqlite3_column_blob(stmt_, col));
+    const int size = sqlite3_column_bytes(stmt_, col);
+    return bytes ? std::vector<unsigned char>(bytes, bytes + size) : std::vector<unsigned char>();
 }
 
 bool Statement::column_is_null(int col) const {

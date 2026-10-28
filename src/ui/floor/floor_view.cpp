@@ -6,12 +6,16 @@
 #include "ui/display.h"
 #include "ui/element_style.h"
 #include "ui/elements/element_windows.h"
+#include "ui/file_dialog.h"
 #include "ui/inventory/inventory_views.h"
 #include "ui/packaging/packaging_views.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <exception>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -25,6 +29,7 @@ constexpr const char* kViewKey = "floor.view";
 constexpr const char* kAddPopup = "add_equipment";
 constexpr const char* kContextPopup = "floor_context";
 constexpr const char* kDeletePopup = "Delete equipment?";
+constexpr const char* kBackgroundPopup = "floor_background";
 
 constexpr double kMinZoom = 0.25;
 constexpr double kMaxZoom = 4.0;
@@ -182,7 +187,12 @@ void FloorView::draw_toolbar() {
             ImGui::EndPopup();
         }
         ImGui::SameLine();
+        if (ImGui::Button("Background")) ImGui::OpenPopup(kBackgroundPopup);
+        ImGui::SetItemTooltip("A picture under the equipment, such as the building's plan");
+        draw_background_menu();
+        ImGui::SameLine();
     }
+    if (!edit_mode_) adjust_background_ = false;
 
     if (ImGui::Button("Fit")) fit_requested_ = true;
     ImGui::SetItemTooltip("Zoom to show all equipment");
@@ -192,8 +202,9 @@ void FloorView::draw_toolbar() {
     ImGui::TextDisabled("%.0f%%", zoom_ * 100.0);
 
     ImGui::SameLine(0.0f, 16.0f * ui_scale_);
-    ImGui::TextDisabled("%s", edit_mode_ ? "Drag to move · drag the corner to resize · Delete removes"
-                                         : "Click for details · right-click for actions · drag to pan · scroll to zoom");
+    ImGui::TextDisabled("%s", adjust_background_ ? "Drag the picture to move it · drag its corner to resize it · Esc when done"
+                              : edit_mode_ ? "Drag to move · drag the corner to resize · Delete removes"
+                                           : "Click for details · right-click for actions · drag to pan · scroll to zoom");
 }
 
 // --- Canvas -----------------------------------------------------------------
@@ -216,9 +227,10 @@ void FloorView::draw_canvas() {
         fit_requested_ = false;
     }
 
+    sync_background_texture();
     const ImGuiIO& io = ImGui::GetIO();
     std::optional<std::int64_t> hovered;
-    if (canvas_hovered && drag_ == Drag::None) hovered = hit_test(io.MousePos);
+    if (canvas_hovered && drag_ == Drag::None && !adjust_background_) hovered = hit_test(io.MousePos);
     if (canvas_hovered && io.MouseWheel != 0.0f) zoom_at(io.MousePos, std::pow(1.15, io.MouseWheel));
 
     handle_mouse(canvas_hovered, hovered);
@@ -227,6 +239,7 @@ void FloorView::draw_canvas() {
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_list->PushClipRect(canvas_pos_, canvas_pos_ + canvas_size_, true);
     draw_background(draw_list);
+    draw_background_picture(draw_list);
     for (const domain::Element& element : floor_.elements()) {
         draw_element(draw_list, element, hovered == element.id);
     }
@@ -248,7 +261,18 @@ void FloorView::handle_mouse(bool canvas_hovered, std::optional<std::int64_t> ho
             selected_ = hovered;
 
             const domain::Element* element = hovered ? floor_.find(*hovered) : nullptr;
-            if (element && edit_mode_) {
+            const auto [picture_min, picture_max] = background_on_screen();
+            const auto [handle_min, handle_max] = background_handle();
+            const auto inside = [&](ImVec2 min, ImVec2 max) {
+                return io.MousePos.x >= min.x && io.MousePos.x <= max.x && io.MousePos.y >= min.y &&
+                       io.MousePos.y <= max.y;
+            };
+            if (adjust_background_ && floor_.background() &&
+                (inside(handle_min, handle_max) || inside(picture_min, picture_max))) {
+                const domain::FloorBackground& background = *floor_.background();
+                drag_ = inside(handle_min, handle_max) ? Drag::ResizeBackground : Drag::MoveBackground;
+                drag_start_rect_ = drag_rect_ = {background.x, background.y, background.width, background.height()};
+            } else if (element && edit_mode_) {
                 drag_ = over_resize_handle(*element, io.MousePos) ? Drag::Resize : Drag::Move;
                 drag_id_ = element->id;
                 drag_start_rect_ = drag_rect_ = element->rect;
@@ -271,6 +295,18 @@ void FloorView::handle_mouse(bool canvas_hovered, std::optional<std::int64_t> ho
     }
 
     if (drag_ == Drag::None) {
+        if (adjust_background_ && canvas_hovered && floor_.background()) {
+            const auto [handle_min, handle_max] = background_handle();
+            const ImVec2 mouse = io.MousePos;
+            if (mouse.x >= handle_min.x && mouse.x <= handle_max.x && mouse.y >= handle_min.y && mouse.y <= handle_max.y) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
+            } else {
+                const auto [min, max] = background_on_screen();
+                if (mouse.x >= min.x && mouse.x <= max.x && mouse.y >= min.y && mouse.y <= max.y) {
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+                }
+            }
+        }
         if (hovered) {
             const domain::Element* element = floor_.find(*hovered);
             if (edit_mode_ && element && over_resize_handle(*element, io.MousePos)) {
@@ -308,6 +344,18 @@ void FloorView::handle_mouse(bool canvas_hovered, std::optional<std::int64_t> ho
             }
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
             break;
+        case Drag::MoveBackground:
+            drag_rect_.x = drag_start_rect_.x + dx;
+            drag_rect_.y = drag_start_rect_.y + dy;
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            break;
+        case Drag::ResizeBackground: {
+            // The picture keeps its shape: its width follows the drag.
+            drag_rect_.width = std::max(domain::kMinElementSize, drag_start_rect_.width + (dx + dy) / 2.0);
+            drag_rect_.height = drag_start_rect_.height * drag_rect_.width / drag_start_rect_.width;
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE);
+            break;
+        }
         case Drag::None:
             break;
         }
@@ -323,6 +371,10 @@ void FloorView::finish_drag() {
         if (!was_click && !(drag_rect_ == drag_start_rect_) && floor_.find(drag_id_)) {
             floor_.set_rect(drag_id_, drag_rect_);
         }
+    } else if (drag_ == Drag::MoveBackground || drag_ == Drag::ResizeBackground) {
+        if (!was_click && floor_.background()) {
+            floor_.place_background(drag_rect_.x, drag_rect_.y, drag_rect_.width, floor_.background()->opacity);
+        }
     } else if (drag_ == Drag::Pan && was_click && !edit_mode_ && pressed_element_ &&
                drag_button_ == ImGuiMouseButton_Left) {
         open_element(*pressed_element_);
@@ -334,7 +386,13 @@ void FloorView::finish_drag() {
 
 void FloorView::handle_keyboard() {
     if (!ImGui::IsWindowFocused() || ImGui::GetIO().WantTextInput) return;
-    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) selected_.reset();
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        if (adjust_background_) {
+            adjust_background_ = false;
+        } else {
+            selected_.reset();
+        }
+    }
     if (edit_mode_ && selected_ &&
         (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace))) {
         request_delete(*selected_);
@@ -362,6 +420,106 @@ void FloorView::draw_background(ImDrawList* draw_list) const {
         const float y = to_screen(0.0, static_cast<double>(i) * kGridStep).y;
         if (y > end.y) break;
         draw_list->AddLine({canvas_pos_.x, y}, {end.x, y}, i % 5 == 0 ? major : minor);
+    }
+}
+
+void FloorView::draw_background_picture(ImDrawList* draw_list) const {
+    if (!background_texture_ || !floor_.background()) return;
+    const auto [min, max] = background_on_screen();
+    const float opacity = opacity_preview_.value_or(static_cast<float>(floor_.background()->opacity));
+    draw_list->AddImage(background_texture_->id(), min, max, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
+                        IM_COL32(255, 255, 255, static_cast<int>(std::lround(opacity * 255.0f))));
+    if (adjust_background_) {
+        // Its outline, and the handle that resizes it.
+        const ImU32 accent = ImGui::GetColorU32(ImGuiCol_ButtonActive);
+        draw_list->AddRect(min, max, accent, 0.0f, 0, 2.0f * ui_scale_);
+        const auto [handle_min, handle_max] = background_handle();
+        draw_list->AddRectFilled(handle_min, handle_max, accent);
+    }
+}
+
+std::pair<ImVec2, ImVec2> FloorView::background_on_screen() const {
+    if (!floor_.background()) return {ImVec2(), ImVec2()};
+    const domain::FloorBackground& background = *floor_.background();
+    const bool dragging = drag_ == Drag::MoveBackground || drag_ == Drag::ResizeBackground;
+    const domain::Rect rect =
+        dragging ? drag_rect_ : domain::Rect{background.x, background.y, background.width, background.height()};
+    return {to_screen(rect.x, rect.y), to_screen(rect.x + rect.width, rect.y + rect.height)};
+}
+
+std::pair<ImVec2, ImVec2> FloorView::background_handle() const {
+    const ImVec2 corner = background_on_screen().second;
+    const float size = 14.0f * ui_scale_;
+    return {corner - ImVec2(size, size), corner};
+}
+
+void FloorView::sync_background_texture() {
+    if (background_revision_ == floor_.background_revision()) return;
+    background_revision_ = floor_.background_revision();
+    background_texture_.reset();
+    if (!floor_.background()) return;
+    if (std::optional<app::Pixels> pixels = app::decode_picture(floor_.background()->image)) {
+        background_texture_ = std::make_unique<Texture>(std::move(*pixels));
+    }
+}
+
+void FloorView::draw_background_menu() {
+    if (!ImGui::BeginPopup(kBackgroundPopup)) return;
+    const std::optional<domain::FloorBackground>& background = floor_.background();
+    if (background) {
+        ImGui::TextUnformatted(background->file_name.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("%d × %d pixels", background->pixel_width, background->pixel_height);
+    } else {
+        ImGui::TextDisabled("A picture under the equipment, such as the building's plan.");
+    }
+    if (ImGui::Button(background ? "Replace the picture..." : "Choose a picture...")) choose_background();
+
+    if (background) {
+        float percent = opacity_preview_.value_or(static_cast<float>(background->opacity)) * 100.0f;
+        ImGui::SetNextItemWidth(200.0f * ui_scale_);
+        if (ImGui::SliderFloat("Opacity", &percent, 5.0f, 100.0f, "%.0f %%")) opacity_preview_ = percent / 100.0f;
+        if (ImGui::IsItemDeactivatedAfterEdit() && opacity_preview_) {
+            floor_.place_background(background->x, background->y, background->width, *opacity_preview_);
+            opacity_preview_.reset();
+        }
+        if (ImGui::Checkbox("Move and resize the picture", &adjust_background_) && adjust_background_) {
+            edit_mode_ = true;
+            selected_.reset();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SetItemTooltip("Drag the picture to move it, and its corner to resize it.");
+        if (ImGui::Button("Fit to the equipment")) floor_.fit_background();
+        ImGui::SameLine();
+        if (ImGui::Button("Remove the picture")) {
+            floor_.remove_background();
+            adjust_background_ = false;
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    if (!background_error_.empty()) ImGui::TextColored(kErrorColor, "%s", background_error_.c_str());
+    ImGui::EndPopup();
+}
+
+void FloorView::choose_background() {
+    const std::vector<std::filesystem::path> files =
+        open_files_dialog("Choose a picture for the floor", "Pictures", "*.png *.jpg *.jpeg *.bmp *.gif");
+    if (files.empty()) return;
+    background_error_.clear();
+    try {
+        const std::filesystem::path& path = files.front();
+        const std::uintmax_t size = std::filesystem::file_size(path);
+        if (size > app::FloorService::kMaxBackgroundBytes) {
+            throw std::invalid_argument("That picture is too big; choose one under 25 MB.");
+        }
+        std::vector<unsigned char> bytes(static_cast<std::size_t>(size));
+        std::ifstream file(path, std::ios::binary);
+        file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        if (!file) throw std::runtime_error("Ninkasi couldn't read that file.");
+        const std::u8string name = path.filename().u8string();
+        floor_.set_background(std::move(bytes), std::string(name.begin(), name.end()));
+    } catch (const std::exception& e) {
+        background_error_ = e.what();
     }
 }
 

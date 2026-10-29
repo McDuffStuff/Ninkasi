@@ -39,6 +39,23 @@ constexpr ChannelText kChannelTexts[] = {
     {Channel::Other, "other", "Other"},
 };
 
+struct SourceText {
+    SaleSource source;
+    std::string_view key;
+    std::string_view name;
+};
+
+constexpr SourceText kSourceTexts[] = {
+    {SaleSource::Entered, "entered", "Sale"},
+    {SaleSource::TakeOut, "take_out", "Take out"},
+    {SaleSource::Pos, "pos", "Point of sale"},
+    {SaleSource::TaproomKeg, "taproom_keg", "Taproom keg"},
+    {SaleSource::Takings, "takings", "Takings"},
+    {SaleSource::KegReturn, "keg_return", "Kegs returned"},
+};
+
+constexpr std::string_view kLineKindKeys[] = {"package", "pour", "deposit", "other"};  // by LineKind
+
 } // namespace
 
 bool same_beer(std::string_view a, std::string_view b) {
@@ -100,6 +117,110 @@ double keg_pour_value(double keg_l, const PriceEntry& pour) {
     return keg_l * pour.yield / pour.pour_l * pour.price;
 }
 
+// --- Sales ----------------------------------------------------------------------
+
+bool can_delete(SaleSource source) {
+    return source == SaleSource::Entered || source == SaleSource::TakeOut || source == SaleSource::Takings;
+}
+
+int SaleLine::packages() const {
+    if (kind != LineKind::Package) return 0;
+    return static_cast<int>(std::lround(quantity)) * pack_size;
+}
+
+double SaleLine::volume_l() const {
+    switch (kind) {
+    case LineKind::Package: return packages() * unit_volume_l;
+    case LineKind::Pour:    return quantity * pour_l;
+    default:                return 0.0;
+    }
+}
+
+double SaleLine::amount() const {
+    return unit_price ? quantity * *unit_price : 0.0;
+}
+
+double Sale::revenue() const {
+    double total = 0.0;
+    for (const SaleLine& line : lines) {
+        if (line.kind != LineKind::Deposit) total += line.amount();
+    }
+    return total;
+}
+
+double Sale::deposits() const {
+    double total = 0.0;
+    for (const SaleLine& line : lines) {
+        if (line.kind == LineKind::Deposit) total += line.amount();
+    }
+    return total;
+}
+
+bool Sale::needs_price() const {
+    return std::any_of(lines.begin(), lines.end(), [](const SaleLine& line) { return !line.unit_price; });
+}
+
+std::optional<PriceQuery> price_query(const Sale& sale, const SaleLine& line) {
+    if (line.kind != LineKind::Package && line.kind != LineKind::Pour) return std::nullopt;
+    PriceQuery query;
+    query.beer = line.beer;
+    query.channel = sale.channel;
+    query.on = local_date(sale.at);
+    if (line.kind == LineKind::Pour) {
+        query.priced_as = PricedAs::Pour;
+        query.pour_l = line.pour_l;
+    } else {
+        query.priced_as = PricedAs::Package;
+        query.package = line.package;
+        query.unit_volume_l = line.unit_volume_l;
+        query.pack_size = line.pack_size;
+    }
+    return query;
+}
+
+// --- Keg deposits and kegs at customers -------------------------------------------
+
+double KegDeposits::of(PackageType type) const {
+    switch (type) {
+    case PackageType::HalfBarrel: return half_barrel;
+    case PackageType::Sixtel:     return sixtel;
+    default:                      return 0.0;
+    }
+}
+
+std::vector<SaleLine> deposit_lines(std::span<const SaleLine> lines, const KegDeposits& deposits) {
+    std::vector<SaleLine> charged;
+    for (PackageType type : kKegTypes) {
+        int kegs = 0;
+        for (const SaleLine& line : lines) {
+            if (line.kind == LineKind::Package && line.package == type) kegs += line.packages();
+        }
+        if (kegs <= 0 || !(deposits.of(type) > 0.0)) continue;
+        SaleLine deposit;
+        deposit.kind = LineKind::Deposit;
+        deposit.package = type;
+        deposit.quantity = kegs;
+        deposit.unit_price = deposits.of(type);
+        charged.push_back(deposit);
+    }
+    return charged;
+}
+
+int KegAccount::out() const {
+    return std::max(sold - returned, 0);
+}
+
+std::optional<SaleLine> KegAccount::refund(PackageType type, int count) const {
+    const int kegs = std::min(count, deposit_kegs);
+    if (kegs <= 0) return std::nullopt;
+    SaleLine line;
+    line.kind = LineKind::Deposit;
+    line.package = type;
+    line.quantity = -kegs;
+    line.unit_price = deposits / deposit_kegs;
+    return line;
+}
+
 std::string_view name(Channel channel) {
     for (const ChannelText& text : kChannelTexts) {
         if (text.channel == channel) return text.name;
@@ -132,6 +253,38 @@ std::string_view key(PricedAs priced_as) {
 std::optional<PricedAs> priced_as_from_key(std::string_view text) {
     if (text == "pour") return PricedAs::Pour;
     if (text == "package") return PricedAs::Package;
+    return std::nullopt;
+}
+
+std::string_view name(SaleSource source) {
+    for (const SourceText& text : kSourceTexts) {
+        if (text.source == source) return text.name;
+    }
+    return "Sale";
+}
+
+std::string_view key(SaleSource source) {
+    for (const SourceText& text : kSourceTexts) {
+        if (text.source == source) return text.key;
+    }
+    return "entered";
+}
+
+std::optional<SaleSource> sale_source_from_key(std::string_view text) {
+    for (const SourceText& entry : kSourceTexts) {
+        if (entry.key == text) return entry.source;
+    }
+    return std::nullopt;
+}
+
+std::string_view key(LineKind kind) {
+    return kLineKindKeys[static_cast<std::size_t>(kind)];
+}
+
+std::optional<LineKind> line_kind_from_key(std::string_view text) {
+    for (LineKind kind : kLineKinds) {
+        if (key(kind) == text) return kind;
+    }
     return std::nullopt;
 }
 

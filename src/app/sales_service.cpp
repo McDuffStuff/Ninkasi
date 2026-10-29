@@ -3,6 +3,7 @@
 #include "data/audit_log.h"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -15,6 +16,26 @@ constexpr const char* kSymbolKey = "money.symbol";
 constexpr const char* kSymbolAfterKey = "money.symbol_after";
 constexpr const char* kDecimalCommaKey = "money.decimal_comma";
 constexpr const char* kDecimalsKey = "money.decimals";
+constexpr const char* kHalfBarrelDepositKey = "sales.deposit.half_barrel";
+constexpr const char* kSixtelDepositKey = "sales.deposit.sixtel";
+
+// A setting holding an amount of money, 0 if it's missing or not a number.
+double money_setting(data::SettingsRepository& settings, const char* key) {
+    try {
+        return std::stod(settings.get_or(key, "0"));
+    } catch (const std::exception&) {
+        return 0.0;
+    }
+}
+
+[[noreturn]] void fail(const std::string& message) {
+    throw std::invalid_argument(message);
+}
+
+// Beer sold in the taproom is removed for the taproom; anywhere else, sold.
+domain::PackagedReason removal_reason(domain::Channel channel) {
+    return channel == domain::Channel::Taproom ? domain::PackagedReason::Taproom : domain::PackagedReason::Sold;
+}
 
 std::string_view trim(std::string_view text) {
     const auto first = text.find_first_not_of(" \t\r\n");
@@ -25,8 +46,9 @@ std::string_view trim(std::string_view text) {
 
 } // namespace
 
-SalesService::SalesService(data::Database& db, Session session, data::SettingsRepository& settings)
-    : db_(db), session_(std::move(session)), settings_(settings), repository_(db) {
+SalesService::SalesService(data::Database& db, Session session, data::SettingsRepository& settings,
+                           PackagedGoodsService& goods)
+    : db_(db), session_(std::move(session)), settings_(settings), goods_(goods), repository_(db) {
     currency_.symbol = settings_.get_or(kSymbolKey, "$");
     currency_.symbol_after = settings_.get_or(kSymbolAfterKey, "0") == "1";
     currency_.decimal_comma = settings_.get_or(kDecimalCommaKey, "0") == "1";
@@ -35,12 +57,15 @@ SalesService::SalesService(data::Database& db, Session session, data::SettingsRe
     } catch (const std::exception&) {
         currency_.decimals = 2;
     }
+    deposits_.half_barrel = money_setting(settings_, kHalfBarrelDepositKey);
+    deposits_.sixtel = money_setting(settings_, kSixtelDepositKey);
     reload();
 }
 
 void SalesService::reload() {
     customers_ = repository_.customers();
     prices_ = repository_.prices();
+    keg_accounts_ = repository_.keg_accounts();
     ++revision_;
 }
 
@@ -52,6 +77,15 @@ void SalesService::set_currency(const domain::Currency& currency) {
     settings_.set(kSymbolAfterKey, currency_.symbol_after ? "1" : "0");
     settings_.set(kDecimalCommaKey, currency_.decimal_comma ? "1" : "0");
     settings_.set(kDecimalsKey, std::to_string(currency_.decimals));
+    ++revision_;
+}
+
+void SalesService::set_keg_deposits(const domain::KegDeposits& deposits) {
+    require_admin(session_, "change keg deposits");
+    if (!(deposits.half_barrel >= 0.0) || !(deposits.sixtel >= 0.0)) fail("A deposit can't be negative.");
+    deposits_ = deposits;
+    settings_.set(kHalfBarrelDepositKey, std::to_string(deposits_.half_barrel));
+    settings_.set(kSixtelDepositKey, std::to_string(deposits_.sixtel));
     ++revision_;
 }
 
@@ -145,6 +179,191 @@ void SalesService::remove_price(std::int64_t id) {
     data::record_audit(db_, session_.user_id, "price.delete", "price", id, "");
     tx.commit();
     reload();
+}
+
+// --- Sales ---------------------------------------------------------------------------
+
+void SalesService::check(const domain::Sale& sale) {
+    using domain::LineKind;
+    if (sale.lines.empty()) fail("Add what was sold.");
+    for (const domain::SaleLine& line : sale.lines) {
+        if (line.unit_price && !(*line.unit_price >= 0.0)) fail("A price can't be negative.");
+        switch (line.kind) {
+        case LineKind::Package:
+            if (trim(line.beer).empty()) fail("Choose the beer.");
+            if (line.pack_size < 1) fail("A pack holds at least one package.");
+            if (line.packages() < 1 || line.quantity != std::round(line.quantity)) {
+                fail("Enter how many of " + line.beer + " were sold.");
+            }
+            break;
+        case LineKind::Pour:
+            if (trim(line.beer).empty()) fail("Choose the beer.");
+            if (!(line.pour_l > 0.0)) fail("A pour needs a size.");
+            if (!(line.quantity > 0.0)) fail("Enter how many pours of " + line.beer + " were sold.");
+            break;
+        case LineKind::Deposit:
+            if (!domain::is_keg(line.package)) fail("Deposits are on kegs.");
+            if (line.quantity == 0.0) fail("Enter how many kegs the deposit is on.");
+            break;
+        case LineKind::Other:
+            if (trim(line.description).empty()) fail("Say what else was sold.");
+            if (!(line.quantity > 0.0)) fail("Enter how many of " + line.description + " were sold.");
+            break;
+        }
+    }
+}
+
+std::int64_t SalesService::write_sale(const domain::Sale& sale) {
+    // The note on the beer taken out says who it went to.
+    std::string note = sale.customer_id && find_customer(*sale.customer_id)
+                           ? find_customer(*sale.customer_id)->name
+                           : std::string(domain::name(sale.channel));
+    if (!sale.number.empty()) note += " · " + sale.number;
+
+    const std::int64_t id = repository_.insert(sale, session_.user_id);
+    for (const domain::SaleLine& line : sale.lines) {
+        const std::int64_t line_id = repository_.insert_line(id, line);
+        if (line.kind != domain::LineKind::Package) continue;
+        goods_.write_removal({.beer = line.beer,
+                              .type = line.package,
+                              .unit_volume_l = line.unit_volume_l,
+                              .count = line.packages(),
+                              .reason = removal_reason(sale.channel),
+                              .at = sale.at,
+                              .note = note,
+                              .sale_line_id = line_id});
+    }
+    return id;
+}
+
+std::int64_t SalesService::record_sale(domain::Sale sale, bool charge_deposits) {
+    for (domain::SaleLine& line : sale.lines) {
+        line.beer = std::string(trim(line.beer));
+        line.description = std::string(trim(line.description));
+    }
+    check(sale);
+    if (sale.customer_id && !find_customer(*sale.customer_id)) fail("There's no such customer.");
+    for (domain::SaleLine& line : sale.lines) {
+        if (line.unit_price) continue;
+        if (const std::optional<domain::PriceQuery> query = domain::price_query(sale, line)) {
+            if (const std::optional<domain::PriceEntry> price = price_for(*query)) line.unit_price = price->price;
+        }
+    }
+    if (charge_deposits && sale.customer_id) {
+        for (domain::SaleLine& deposit : domain::deposit_lines(sale.lines, deposits_)) {
+            sale.lines.push_back(std::move(deposit));
+        }
+    }
+
+    std::int64_t id = 0;
+    try {
+        data::Transaction tx(db_);
+        id = write_sale(sale);
+        data::record_audit(db_, session_.user_id, "sale.create", "sale", id,
+                           std::string(domain::name(sale.channel)) + ": " + std::to_string(sale.revenue()));
+        tx.commit();
+    } catch (...) {
+        goods_.refresh();  // what's on hand is as it was
+        throw;
+    }
+    goods_.refresh();
+    reload();
+    return id;
+}
+
+std::vector<domain::Sale> SalesService::sales(int limit) {
+    return repository_.sales(limit);
+}
+
+void SalesService::set_line_price(std::int64_t line_id, std::optional<double> price) {
+    require_admin(session_, "change what a sale was priced at");
+    if (price && !(*price >= 0.0)) fail("A price can't be negative.");
+    data::Transaction tx(db_);
+    repository_.set_unit_price(line_id, price);
+    data::record_audit(db_, session_.user_id, "sale.price", "sale_line", line_id,
+                       price ? std::to_string(*price) : std::string("no price"));
+    tx.commit();
+    reload();
+}
+
+SalesService::Pricing SalesService::price_from_list() {
+    require_admin(session_, "price sales");
+    Pricing pricing;
+    data::Transaction tx(db_);
+    for (const domain::Sale& sale : repository_.sales_needing_prices()) {
+        for (const domain::SaleLine& line : sale.lines) {
+            if (line.unit_price) continue;
+            const std::optional<domain::PriceQuery> query = domain::price_query(sale, line);
+            const std::optional<domain::PriceEntry> price = query ? price_for(*query) : std::nullopt;
+            if (!price) {
+                ++pricing.unpriced;
+                continue;
+            }
+            repository_.set_unit_price(line.id, price->price);
+            ++pricing.priced;
+        }
+    }
+    if (pricing.priced > 0) {
+        data::record_audit(db_, session_.user_id, "sale.price_from_list", "sale_line", 0,
+                           std::to_string(pricing.priced) + " lines");
+    }
+    tx.commit();
+    reload();
+    return pricing;
+}
+
+void SalesService::delete_sale(std::int64_t sale_id) {
+    require_admin(session_, "delete sales");
+    const std::optional<domain::Sale> sale = repository_.sale(sale_id);
+    if (!sale) fail("There's no such sale.");
+    if (!domain::can_delete(sale->source)) {
+        fail("A sale from " + std::string(domain::name(sale->source)) + " can't be deleted here.");
+    }
+    data::Transaction tx(db_);
+    repository_.delete_sale(sale_id);
+    data::record_audit(db_, session_.user_id, "sale.delete", "sale", sale_id,
+                       std::string(domain::name(sale->channel)) + ": " + std::to_string(sale->revenue()));
+    tx.commit();
+    goods_.refresh();
+    reload();
+}
+
+// --- Kegs at customers ----------------------------------------------------------------
+
+domain::KegAccount SalesService::keg_account(std::int64_t customer_id, domain::PackageType type) const {
+    const auto found = keg_accounts_.find(customer_id);
+    if (found == keg_accounts_.end()) return {};
+    return found->second[type == domain::PackageType::Sixtel ? 1 : 0];  // by position in kKegTypes
+}
+
+double SalesService::return_kegs(std::int64_t customer_id, std::span<const domain::KegCount> kegs,
+                                 domain::Timestamp at, std::string_view note) {
+    const domain::Customer* customer = find_customer(customer_id);
+    if (!customer) fail("There's no such customer.");
+    domain::Sale refund;
+    refund.at = at;
+    refund.channel = customer->channel;
+    refund.customer_id = customer_id;
+    refund.source = domain::SaleSource::KegReturn;
+    for (const domain::KegCount& entry : kegs) {
+        if (entry.count <= 0) continue;
+        if (std::optional<domain::SaleLine> line = keg_account(customer_id, entry.type).refund(entry.type, entry.count)) {
+            refund.lines.push_back(std::move(*line));
+        }
+    }
+
+    const std::string text = note.empty() ? "Back from " + customer->name : std::string(note);
+    data::Transaction tx(db_);
+    goods_.write_kegs_added(kegs, at, text, customer_id);
+    if (!refund.lines.empty()) {
+        const std::int64_t id = write_sale(refund);
+        data::record_audit(db_, session_.user_id, "sale.deposit_refund", "sale", id,
+                           customer->name + ": " + std::to_string(refund.deposits()));
+    }
+    tx.commit();
+    goods_.refresh();
+    reload();
+    return -refund.deposits();
 }
 
 } // namespace ninkasi::app

@@ -5,10 +5,16 @@
 // and the keg log) with its dialogs for cleaning, adding and removing kegs.
 // Like the other dialogs, these log what already happened: fill them in and
 // press Enter.
+//
+// Beer taken out as sold is recorded as a sale (see SalesService), priced
+// from the price list; kegs added back from a customer have their deposits
+// refunded.
 
 #include "app/packaged_goods_service.h"
+#include "app/sales_service.h"
 #include "calc/units.h"
 #include "domain/packaging.h"
+#include "domain/sales.h"
 #include "domain/timestamp.h"
 
 #include <imgui.h>
@@ -23,7 +29,7 @@ namespace ninkasi::ui {
 
 class PackagingViews {
 public:
-    PackagingViews(app::PackagedGoodsService& goods, float ui_scale);
+    PackagingViews(app::PackagedGoodsService& goods, app::SalesService& sales, float ui_scale);
 
     // The packaged goods tabs.
     void draw_packaged_stock(const calc::UnitPreferences& units);
@@ -80,6 +86,7 @@ private:
     void draw_return();
 
     app::PackagedGoodsService& goods_;
+    app::SalesService& sales_;
     float ui_scale_;
 
     // The packaged product whose batches are shown.
@@ -107,6 +114,10 @@ private:
     domain::PackagedReason reason_ = domain::PackagedReason::Sold;
     std::vector<domain::PackagedStock> ever_;  // what can be returned
     std::size_t return_line_ = 0;
+    // Sold (Take out), and kegs back from (Add kegs).
+    std::optional<std::int64_t> customer_id_;
+    domain::Channel channel_ = domain::Channel::Distributor;
+    bool charge_deposits_ = true;
 };
 
 } // namespace ninkasi::ui

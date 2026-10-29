@@ -146,3 +146,106 @@ TEST_CASE("channel keys round-trip") {
     for (Channel channel : domain::kChannels) CHECK(domain::channel_from_key(domain::key(channel)) == channel);
     CHECK_FALSE(domain::channel_from_key("nowhere"));
 }
+
+TEST_CASE("sale lines count packages, volume and money") {
+    domain::SaleLine cans;
+    cans.beer = "Red Ale";
+    cans.package = domain::PackageType::Can;
+    cans.unit_volume_l = 0.355;
+    cans.quantity = 3;
+    cans.pack_size = 6;
+    CHECK(cans.packages() == 18);
+    CHECK(cans.volume_l() == doctest::Approx(18 * 0.355));
+    CHECK(cans.amount() == 0.0);  // not priced yet
+    cans.unit_price = 10.0;
+    CHECK(cans.amount() == doctest::Approx(30.0));
+
+    domain::SaleLine pours;
+    pours.kind = domain::LineKind::Pour;
+    pours.beer = "Red Ale";
+    pours.quantity = 100;
+    pours.pour_l = 0.473;
+    pours.unit_price = 7.0;
+    CHECK(pours.packages() == 0);
+    CHECK(pours.volume_l() == doctest::Approx(47.3));
+
+    domain::SaleLine deposit;
+    deposit.kind = domain::LineKind::Deposit;
+    deposit.quantity = 2;
+    deposit.unit_price = 30.0;
+    CHECK(deposit.volume_l() == 0.0);
+
+    domain::Sale sale;
+    sale.lines = {cans, pours, deposit};
+    CHECK(sale.revenue() == doctest::Approx(730.0));  // deposits aren't earned
+    CHECK(sale.deposits() == doctest::Approx(60.0));
+    CHECK_FALSE(sale.needs_price());
+    sale.lines.push_back({});
+    CHECK(sale.needs_price());
+}
+
+TEST_CASE("a sale line is priced by its channel, package and date") {
+    domain::Sale sale;
+    sale.channel = Channel::ToGo;
+    sale.at = *domain::parse_iso8601("2026-06-15T18:00:00Z");
+    domain::SaleLine cans;
+    cans.beer = "Red Ale";
+    cans.package = domain::PackageType::Can;
+    cans.unit_volume_l = 0.473;
+    cans.quantity = 2;
+    cans.pack_size = 4;
+    const std::optional<domain::PriceQuery> query = domain::price_query(sale, cans);
+    REQUIRE(query);
+    CHECK(query->beer == "Red Ale");
+    CHECK(query->channel == Channel::ToGo);
+    CHECK(query->priced_as == domain::PricedAs::Package);
+    CHECK(query->pack_size == 4);
+    CHECK(query->unit_volume_l == 0.473);
+    CHECK(query->on == domain::local_date(sale.at));
+
+    domain::SaleLine other;
+    other.kind = domain::LineKind::Other;
+    CHECK_FALSE(domain::price_query(sale, other));
+}
+
+TEST_CASE("deposits are charged on the kegs of a sale and refunded at what was paid") {
+    domain::SaleLine halves;
+    halves.package = domain::PackageType::HalfBarrel;
+    halves.quantity = 3;
+    domain::SaleLine more_halves = halves;
+    more_halves.quantity = 2;
+    domain::SaleLine sixtels;
+    sixtels.package = domain::PackageType::Sixtel;
+    sixtels.quantity = 4;
+    domain::SaleLine cans;
+    cans.package = domain::PackageType::Can;
+    cans.quantity = 24;
+    const std::vector<domain::SaleLine> lines{halves, more_halves, sixtels, cans};
+
+    const std::vector<domain::SaleLine> deposits = domain::deposit_lines(lines, {30.0, 0.0});
+    REQUIRE(deposits.size() == 1);  // sixtels have no deposit
+    CHECK(deposits[0].kind == domain::LineKind::Deposit);
+    CHECK(deposits[0].package == domain::PackageType::HalfBarrel);
+    CHECK(deposits[0].quantity == 5);
+    CHECK(deposits[0].unit_price == 30.0);
+
+    domain::KegAccount account{.sold = 5, .returned = 1, .deposit_kegs = 4, .deposits = 110.0};
+    CHECK(account.out() == 4);
+    const std::optional<domain::SaleLine> refund = account.refund(domain::PackageType::HalfBarrel, 6);
+    REQUIRE(refund);
+    CHECK(refund->quantity == -4);  // only 4 have a deposit
+    CHECK(*refund->unit_price == doctest::Approx(27.5));
+    CHECK_FALSE(domain::KegAccount{.sold = 2}.refund(domain::PackageType::HalfBarrel, 1));
+    CHECK(domain::KegAccount{.sold = 1, .returned = 3}.out() == 0);
+}
+
+TEST_CASE("sale sources and line kinds round-trip through their keys") {
+    for (domain::SaleSource source : domain::kSaleSources) {
+        CHECK(domain::sale_source_from_key(domain::key(source)) == source);
+    }
+    for (domain::LineKind kind : domain::kLineKinds) {
+        CHECK(domain::line_kind_from_key(domain::key(kind)) == kind);
+    }
+    CHECK(domain::can_delete(domain::SaleSource::Entered));
+    CHECK_FALSE(domain::can_delete(domain::SaleSource::Pos));
+}

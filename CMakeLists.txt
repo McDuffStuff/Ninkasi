@@ -143,6 +143,9 @@ add_executable(ninkasi
     src/ui/recipes/recipe_sections.cpp
     src/ui/sales/customers_window.cpp
     src/ui/sales/price_list_window.cpp
+    src/ui/sales/sale_dialog.cpp
+    src/ui/sales/sales_history_window.cpp
+    src/ui/sales/sales_widgets.cpp
     src/ui/tasks/task_views.cpp
     src/ui/texture.cpp
     src/ui/theme.cpp

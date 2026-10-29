@@ -99,8 +99,9 @@ bool edit_percent(const char* label, double& fraction, int decimals) {
     return changed;
 }
 
-bool edit_money(const char* label, double& amount, const domain::Currency& currency) {
+bool edit_money(const char* label, double& amount, const domain::Currency& currency, float width) {
     const float gap = ImGui::GetStyle().ItemInnerSpacing.x;
+    ImGui::BeginGroup();
     if (!currency.symbol_after && !currency.symbol.empty()) {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(currency.symbol.c_str());
@@ -108,11 +109,13 @@ bool edit_money(const char* label, double& amount, const domain::Currency& curre
     }
     char format[16];
     format_for(format, currency.decimals);
+    ImGui::SetNextItemWidth(width);
     const bool changed = ImGui::InputDouble(label, &amount, 0.0, 0.0, format, kNumberFlags);
     if (currency.symbol_after && !currency.symbol.empty()) {
         ImGui::SameLine(0.0f, gap);
         ImGui::TextUnformatted(currency.symbol.c_str());
     }
+    ImGui::EndGroup();
     return changed;
 }
 

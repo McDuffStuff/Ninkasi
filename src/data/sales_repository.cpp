@@ -1,8 +1,15 @@
 #include "data/sales_repository.h"
 
+#include <cmath>
+#include <string>
+
 namespace ninkasi::data {
 
 namespace {
+
+std::size_t keg_index(domain::PackageType type) {
+    return type == domain::PackageType::Sixtel ? 1 : 0;  // by position in kKegTypes
+}
 
 domain::PriceEntry read_price(const Statement& stmt) {
     domain::PriceEntry price;
@@ -109,6 +116,163 @@ void SalesRepository::remove_price(std::int64_t id) {
     auto stmt = db_.prepare("DELETE FROM prices WHERE id = ?;");
     stmt.bind(1, id);
     stmt.execute();
+}
+
+// --- Sales ------------------------------------------------------------------------
+
+std::int64_t SalesRepository::insert(const domain::Sale& sale, std::int64_t user_id) {
+    auto stmt = db_.prepare(
+        "INSERT INTO sales (at, channel, customer_id, number, source, import_id, note, user_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?);");
+    stmt.bind(1, domain::to_iso8601(sale.at)).bind(2, domain::key(sale.channel));
+    stmt.bind_optional(3, sale.customer_id);
+    stmt.bind(4, sale.number).bind(5, domain::key(sale.source));
+    stmt.bind_optional(6, sale.import_id);
+    stmt.bind(7, sale.note).bind(8, user_id);
+    stmt.execute();
+    return db_.last_insert_id();
+}
+
+std::int64_t SalesRepository::insert_line(std::int64_t sale_id, const domain::SaleLine& line) {
+    auto stmt = db_.prepare(
+        "INSERT INTO sale_lines (sale_id, kind, beer, package, unit_volume_l, quantity, pack_size, pour_l, "
+        "unit_price, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+    const bool has_package = line.kind == domain::LineKind::Package || line.kind == domain::LineKind::Deposit;
+    stmt.bind(1, sale_id)
+        .bind(2, domain::key(line.kind))
+        .bind(3, line.beer)
+        .bind(4, has_package ? domain::key(line.package) : std::string_view(""))
+        .bind(5, line.unit_volume_l)
+        .bind(6, line.quantity)
+        .bind(7, line.pack_size)
+        .bind(8, line.pour_l);
+    stmt.bind_optional(9, line.unit_price);
+    stmt.bind(10, line.description);
+    stmt.execute();
+    return db_.last_insert_id();
+}
+
+std::vector<domain::Sale> SalesRepository::read_sales(std::string_view id_query, std::string_view order,
+                                                      std::optional<std::int64_t> parameter) {
+    std::vector<domain::Sale> sales;
+    std::map<std::int64_t, std::size_t> index;  // sale id -> position in `sales`
+    {
+        auto stmt = db_.prepare(
+            "SELECT s.id, s.at, s.channel, s.customer_id, s.number, s.source, s.import_id, s.note, "
+            "COALESCE(c.name, ''), u.display_name FROM sales s JOIN users u ON u.id = s.user_id "
+            "LEFT JOIN customers c ON c.id = s.customer_id WHERE s.id IN (" +
+            std::string(id_query) + ") ORDER BY " + std::string(order) + ";");
+        if (parameter) stmt.bind(1, *parameter);
+        while (stmt.step()) {
+            domain::Sale sale;
+            sale.id = stmt.column_int64(0);
+            sale.at = domain::parse_iso8601(stmt.column_text(1)).value_or(domain::Timestamp{});
+            sale.channel = domain::channel_from_key(stmt.column_text(2)).value_or(domain::Channel::Other);
+            sale.customer_id = stmt.column_optional_int64(3);
+            sale.number = stmt.column_text(4);
+            sale.source = domain::sale_source_from_key(stmt.column_text(5)).value_or(domain::SaleSource::Entered);
+            sale.import_id = stmt.column_optional_int64(6);
+            sale.note = stmt.column_text(7);
+            sale.customer = stmt.column_text(8);
+            sale.user = stmt.column_text(9);
+            index[sale.id] = sales.size();
+            sales.push_back(std::move(sale));
+        }
+    }
+    auto stmt = db_.prepare(
+        "SELECT sale_id, id, kind, beer, package, unit_volume_l, quantity, pack_size, pour_l, unit_price, "
+        "description FROM sale_lines WHERE sale_id IN (" +
+        std::string(id_query) + ") ORDER BY sale_id, id;");
+    if (parameter) stmt.bind(1, *parameter);
+    while (stmt.step()) {
+        const auto found = index.find(stmt.column_int64(0));
+        if (found == index.end()) continue;
+        domain::SaleLine line;
+        line.id = stmt.column_int64(1);
+        line.kind = domain::line_kind_from_key(stmt.column_text(2)).value_or(domain::LineKind::Other);
+        line.beer = stmt.column_text(3);
+        line.package = domain::package_type_from_key(stmt.column_text(4)).value_or(domain::PackageType::HalfBarrel);
+        line.unit_volume_l = stmt.column_double(5);
+        line.quantity = stmt.column_double(6);
+        line.pack_size = static_cast<int>(stmt.column_int64(7));
+        line.pour_l = stmt.column_double(8);
+        line.unit_price = stmt.column_optional_double(9);
+        line.description = stmt.column_text(10);
+        sales[found->second].lines.push_back(std::move(line));
+    }
+    return sales;
+}
+
+std::vector<domain::Sale> SalesRepository::sales(int limit) {
+    return read_sales("SELECT id FROM sales ORDER BY at DESC, id DESC LIMIT ?", "s.at DESC, s.id DESC",
+                      static_cast<std::int64_t>(limit));
+}
+
+std::vector<domain::Sale> SalesRepository::sales_needing_prices() {
+    return read_sales("SELECT sale_id FROM sale_lines WHERE unit_price IS NULL", "s.at, s.id", std::nullopt);
+}
+
+std::optional<domain::Sale> SalesRepository::sale(std::int64_t id) {
+    std::vector<domain::Sale> found = read_sales("SELECT ?", "s.id", id);
+    if (found.empty()) return std::nullopt;
+    return std::move(found.front());
+}
+
+void SalesRepository::set_unit_price(std::int64_t line_id, std::optional<double> price) {
+    auto stmt = db_.prepare("UPDATE sale_lines SET unit_price = ? WHERE id = ?;");
+    stmt.bind_optional(1, price);
+    stmt.bind(2, line_id);
+    stmt.execute();
+}
+
+void SalesRepository::delete_sale(std::int64_t id) {
+    // The packaged goods taken out for it first, as they refer to its lines.
+    auto movements = db_.prepare(
+        "DELETE FROM packaged_movements WHERE sale_line_id IN (SELECT id FROM sale_lines WHERE sale_id = ?);");
+    movements.bind(1, id);
+    movements.execute();
+    auto lines = db_.prepare("DELETE FROM sale_lines WHERE sale_id = ?;");
+    lines.bind(1, id);
+    lines.execute();
+    auto sale = db_.prepare("DELETE FROM sales WHERE id = ?;");
+    sale.bind(1, id);
+    sale.execute();
+}
+
+std::map<std::int64_t, std::array<domain::KegAccount, domain::kKegTypes.size()>> SalesRepository::keg_accounts() {
+    std::map<std::int64_t, std::array<domain::KegAccount, domain::kKegTypes.size()>> accounts;
+    const auto account = [&](const Statement& stmt) -> domain::KegAccount& {
+        const domain::PackageType type =
+            domain::package_type_from_key(stmt.column_text(1)).value_or(domain::PackageType::HalfBarrel);
+        return accounts[stmt.column_int64(0)][keg_index(type)];
+    };
+
+    // Kegs sold to each customer...
+    auto sold = db_.prepare(
+        "SELECT s.customer_id, l.package, SUM(CAST(ROUND(l.quantity) AS INTEGER) * l.pack_size) "
+        "FROM sale_lines l JOIN sales s ON s.id = l.sale_id "
+        "WHERE l.kind = 'package' AND l.package IN ('half_barrel', 'sixtel') AND s.customer_id IS NOT NULL "
+        "GROUP BY s.customer_id, l.package;");
+    while (sold.step()) account(sold).sold = static_cast<int>(sold.column_int64(2));
+
+    // ...the deposits they hold...
+    auto deposits = db_.prepare(
+        "SELECT s.customer_id, l.package, SUM(l.quantity), SUM(l.quantity * COALESCE(l.unit_price, 0)) "
+        "FROM sale_lines l JOIN sales s ON s.id = l.sale_id "
+        "WHERE l.kind = 'deposit' AND s.customer_id IS NOT NULL GROUP BY s.customer_id, l.package;");
+    while (deposits.step()) {
+        domain::KegAccount& entry = account(deposits);
+        entry.deposit_kegs = static_cast<int>(std::lround(deposits.column_double(2)));
+        entry.deposits = deposits.column_double(3);
+    }
+
+    // ...and the kegs they brought back.
+    auto returned = db_.prepare(
+        "SELECT customer_id, keg_type, SUM(quantity) FROM keg_movements "
+        "WHERE customer_id IS NOT NULL AND reason = ? GROUP BY customer_id, keg_type;");
+    returned.bind(1, domain::key(domain::KegReason::Added));
+    while (returned.step()) account(returned).returned = static_cast<int>(returned.column_int64(2));
+    return accounts;
 }
 
 } // namespace ninkasi::data

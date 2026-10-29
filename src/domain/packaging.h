@@ -57,6 +57,7 @@ struct KegMovement {
     int quantity = 0;                            // positive in, negative out
     KegReason reason = KegReason::Added;
     std::optional<std::int64_t> batch_id;        // filled with
+    std::optional<std::int64_t> customer_id;     // brought back by
     std::string note;
     std::string user;                            // who recorded it, when read back
 };
@@ -132,9 +133,10 @@ struct PackagedMovement {
     double unit_volume_l = 0.0;             // what each package holds
     int quantity = 0;                       // packages: positive in, negative out
     PackagedReason reason = PackagedReason::Packaged;
-    std::optional<std::int64_t> vessel_id;  // packaged from
+    std::optional<std::int64_t> vessel_id;     // packaged from
+    std::optional<std::int64_t> sale_line_id;  // sold on (see domain/sales.h)
     std::string note;
-    std::string user;                       // who recorded it, when read back
+    std::string user;                          // who recorded it, when read back
 };
 
 // Packaged beer on hand: one batch in one kind and size of package.

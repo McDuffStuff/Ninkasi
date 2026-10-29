@@ -1,8 +1,10 @@
 #include "ui/packaging/packaging_views.h"
 
+#include "domain/money.h"
 #include "ui/date_widgets.h"
 #include "ui/display.h"
 #include "ui/inventory/inventory_views.h"
+#include "ui/sales/sales_widgets.h"
 #include "ui/widgets.h"
 
 #include <imgui_stdlib.h>
@@ -63,8 +65,8 @@ bool PackagingViews::Product::matches(const domain::PackagedProduct& product) co
     return product.beer == beer && product.type == type && product.unit_volume_l == unit_volume_l;
 }
 
-PackagingViews::PackagingViews(app::PackagedGoodsService& goods, float ui_scale)
-    : goods_(goods), ui_scale_(ui_scale) {}
+PackagingViews::PackagingViews(app::PackagedGoodsService& goods, app::SalesService& sales, float ui_scale)
+    : goods_(goods), sales_(sales), ui_scale_(ui_scale) {}
 
 // --- Packaged goods -----------------------------------------------------------------
 
@@ -297,6 +299,7 @@ void PackagingViews::draw_keg_history() {
         ImGui::TableNextColumn();
         std::string what(domain::name(movement.reason));
         if (!row.batch_code.empty()) what += " with " + domain::batch_label(row.batch_code, "");
+        if (!row.customer.empty()) what += " from " + row.customer;
         ImGui::TextUnformatted(what.c_str());
         ImGui::TableNextColumn();
         ImGui::TextUnformatted(movement.note.c_str());
@@ -323,6 +326,7 @@ void PackagingViews::add_kegs() {
     counts_ = {};
     at_ = domain::now();
     note_.clear();
+    customer_id_.reset();
     open(Kind::Add);
 }
 
@@ -456,6 +460,29 @@ void PackagingViews::draw_add() {
     ImGui::TextUnformatted("Kegs come in dirty: new kegs, or kegs back from customers.");
     if (ImGui::BeginTable("##add", 2, ImGuiTableFlags_SizingFixedFit)) {
         keg_fields(std::nullopt);
+        table_row("From");
+        ImGui::SetNextItemWidth(260.0f * ui_scale_);
+        customer_combo("##customer", customer_id_, sales_, "New kegs, or no customer", domain::Channel::Distributor,
+                       error_);
+        if (customer_id_) {
+            // The kegs they have, and the deposits that come back with them.
+            std::string out;
+            int deposit_kegs = 0;
+            for (PackageType type : domain::kKegTypes) {
+                const domain::KegAccount account = sales_.keg_account(*customer_id_, type);
+                deposit_kegs += account.deposit_kegs;
+                if (account.out() == 0) continue;
+                if (!out.empty()) out += ", ";
+                out += domain::count_text(type, account.out());
+            }
+            table_row("");
+            ImGui::TextDisabled("%s", out.empty() ? "They have none of the brewery's kegs on record."
+                                                  : ("They have " + out + ".").c_str());
+            if (deposit_kegs > 0) {
+                table_row("");
+                ImGui::TextDisabled("The deposits they paid on the kegs brought back are refunded.");
+            }
+        }
         table_row("When");
         time_picker("##at", at_);
         table_row("Note");
@@ -466,7 +493,11 @@ void PackagingViews::draw_add() {
     const std::vector<domain::KegCount> kegs = keg_counts(counts_);
     if (!buttons("Add", !kegs.empty())) return;
     try {
-        goods_.add_kegs(kegs, at_, note_);
+        if (customer_id_) {
+            sales_.return_kegs(*customer_id_, kegs, at_, note_);
+        } else {
+            goods_.add_kegs(kegs, at_, note_);
+        }
         close();
     } catch (const std::exception& e) {
         error_ = e.what();
@@ -511,6 +542,9 @@ void PackagingViews::open_goods_dialog(Kind kind, const calc::UnitPreferences& u
     reason_ = domain::PackagedReason::Sold;
     at_ = domain::now();
     note_.clear();
+    customer_id_.reset();
+    channel_ = domain::Channel::Distributor;
+    charge_deposits_ = true;
     if (kind == Kind::Count) {
         if (selected != products.end()) count_ = selected->count;
         else if (!products.empty()) count_ = products.front().count;
@@ -574,6 +608,26 @@ void PackagingViews::draw_take_out() {
         }
         table_row("");
         ImGui::TextDisabled("%s", removal_hint(reason_));
+        if (reason_ == domain::PackagedReason::Sold) {
+            // Recorded as a sale, priced from the price list.
+            table_row("Sold to");
+            ImGui::SetNextItemWidth(300.0f * ui_scale_);
+            if (customer_combo("##customer", customer_id_, sales_, "No customer", channel_, error_) && customer_id_) {
+                if (const domain::Customer* customer = sales_.find_customer(*customer_id_)) {
+                    channel_ = customer->channel;
+                }
+            }
+            table_row("Channel");
+            ImGui::SetNextItemWidth(300.0f * ui_scale_);
+            enum_combo("##channel", channel_, domain::kChannels);
+            if (customer_id_ && product && domain::is_keg(product->type) &&
+                sales_.keg_deposits().of(product->type) > 0.0) {
+                table_row("");
+                ImGui::Checkbox("Charge keg deposits", &charge_deposits_);
+            }
+            table_row("");
+            ImGui::TextDisabled("Priced from the price list. Several beers, or other charges: Sales > Record a sale.");
+        }
         if (product && domain::is_keg(product->type)) {
             table_row("");
             ImGui::TextDisabled("%s", domain::keg_comes_back(reason_)
@@ -584,11 +638,29 @@ void PackagingViews::draw_take_out() {
         time_picker("##at", at_);
         table_row("Note");
         ImGui::SetNextItemWidth(300.0f * ui_scale_);
-        ImGui::InputTextWithHint("##note", "Customer, invoice...", &note_);
+        ImGui::InputTextWithHint("##note", reason_ == domain::PackagedReason::Sold ? "Invoice, order..." : "Why, where to...",
+                                 &note_);
         ImGui::EndTable();
     }
     if (!buttons("Save", product && count_ > 0)) return;
     try {
+        if (reason_ == domain::PackagedReason::Sold) {
+            domain::Sale sale;
+            sale.at = at_;
+            sale.channel = channel_;
+            sale.customer_id = customer_id_;
+            sale.source = domain::SaleSource::TakeOut;
+            sale.note = note_;
+            domain::SaleLine line;
+            line.beer = product->beer;
+            line.package = product->type;
+            line.unit_volume_l = product->unit_volume_l;
+            line.quantity = count_;
+            sale.lines.push_back(line);
+            sales_.record_sale(sale, charge_deposits_);
+            close();
+            return;
+        }
         goods_.remove({.beer = product->beer,
                        .type = product->type,
                        .unit_volume_l = product->unit_volume_l,

@@ -1,6 +1,7 @@
 #pragma once
 // Selling beer: the channels it goes out through, the customers it goes to,
-// and the price list.
+// the price list, the sales themselves, and the kegs and deposits customers
+// hold.
 
 #include "domain/packaging.h"
 #include "domain/timestamp.h"
@@ -96,6 +97,115 @@ std::vector<PriceEntry> prices_in_effect(std::span<const PriceEntry> prices, Dat
 // pour has no size.
 double keg_pour_value(double keg_l, const PriceEntry& pour);
 
+// --- Sales ----------------------------------------------------------------------
+
+// Where a sale came from.
+enum class SaleSource {
+    Entered,     // the sale form
+    TakeOut,     // packaged goods' Take out, as sold
+    Pos,         // imported from the taproom's point of sale
+    TaproomKeg,  // a keg used up in the taproom, counted as sold by the pour
+    Takings,     // the taproom's takings, entered by hand
+    KegReturn,   // deposits refunded on kegs brought back
+};
+inline constexpr std::array kSaleSources = {SaleSource::Entered, SaleSource::TakeOut,    SaleSource::Pos,
+                                            SaleSource::TaproomKeg, SaleSource::Takings, SaleSource::KegReturn};
+
+// Whether a sale from `source` can be deleted as a mistake. The others are
+// undone where they were made: a POS import by importing the day again, a
+// deposit refund with the kegs it came with.
+bool can_delete(SaleSource source);
+
+// What a line of a sale is.
+enum class LineKind {
+    Package,  // packaged beer: kegs, or cans one at a time or in packs
+    Pour,     // beer poured: in the taproom, or a growler filled
+    Deposit,  // a keg deposit charged, or refunded (a negative quantity): not revenue
+    Other,    // anything else: merchandise, delivery, a day's takings...
+};
+inline constexpr std::array kLineKinds = {LineKind::Package, LineKind::Pour, LineKind::Deposit, LineKind::Other};
+
+struct SaleLine {
+    std::int64_t id = 0;
+    LineKind kind = LineKind::Package;
+    std::string beer;                               // packages and pours
+    PackageType package = PackageType::HalfBarrel;  // packages, and the keg a deposit is on
+    double unit_volume_l = 0.0;                     // packages: what each holds
+    double quantity = 0.0;  // packs, pours, kegs (deposits: negative when refunded) or other units
+    int pack_size = 1;      // packages: how many in each pack
+    double pour_l = 0.0;    // pours: how much each is
+    std::optional<double> unit_price;  // each, in the brewery's currency; none until priced
+    std::string description;           // other lines: what was sold
+
+    bool operator==(const SaleLine&) const = default;
+
+    // Package lines: how many packages left packaged goods. 0 for the rest.
+    int packages() const;
+    // The beer sold, by its packages or pours. 0 for deposits and other lines.
+    double volume_l() const;
+    // Quantity times price; 0 until it's priced.
+    double amount() const;
+};
+
+struct Sale {
+    std::int64_t id = 0;
+    Timestamp at{};
+    Channel channel = Channel::Distributor;
+    std::optional<std::int64_t> customer_id;
+    std::string number;  // invoice or order number
+    SaleSource source = SaleSource::Entered;
+    std::optional<std::int64_t> import_id;  // the POS import it came from
+    std::string note;
+    std::vector<SaleLine> lines;
+    std::string customer;  // the customer's name, when read back
+    std::string user;      // who recorded it, when read back
+
+    // What it earned: every line but deposits, which are paid back.
+    double revenue() const;
+    // Keg deposits charged, less those refunded.
+    double deposits() const;
+    // Whether a line has no price yet.
+    bool needs_price() const;
+};
+
+// The price list query for a package or pour line of a sale, at the sale's
+// channel and on its (local) date. Its beer refers to the line's. nullopt for
+// deposits and other lines.
+std::optional<PriceQuery> price_query(const Sale& sale, const SaleLine& line);
+
+// --- Keg deposits and kegs at customers -------------------------------------------
+
+// What the brewery charges as a deposit on each keg it sells, by size: 0 for
+// no deposit.
+struct KegDeposits {
+    double half_barrel = 0.0;
+    double sixtel = 0.0;
+
+    double of(PackageType type) const;
+    bool operator==(const KegDeposits&) const = default;
+};
+
+// The deposit lines for the kegs sold in `lines`: one for each size of keg
+// that has a deposit.
+std::vector<SaleLine> deposit_lines(std::span<const SaleLine> lines, const KegDeposits& deposits);
+
+// One customer's kegs of one size.
+struct KegAccount {
+    int sold = 0;           // kegs sold to them
+    int returned = 0;       // kegs they brought back
+    int deposit_kegs = 0;   // kegs they've paid a deposit on and not had it back
+    double deposits = 0.0;  // what those deposits came to
+
+    bool operator==(const KegAccount&) const = default;
+
+    // Kegs still at the customer. Never below 0: kegs sold before sales were
+    // recorded come back too.
+    int out() const;
+    // The refund for `count` kegs of `type` brought back: the deposits paid
+    // on as many of them as have one, at the average paid. nullopt if none do.
+    std::optional<SaleLine> refund(PackageType type, int count) const;
+};
+
 // --- Names and stored keys ----------------------------------------------------
 // Keys are stored in the database: never change one once shipped.
 
@@ -105,5 +215,10 @@ std::string_view key(Channel channel);
 std::string_view key(PricedAs priced_as);
 std::optional<Channel> channel_from_key(std::string_view text);
 std::optional<PricedAs> priced_as_from_key(std::string_view text);
+std::string_view name(SaleSource source);  // "Sale", "Take out", "Point of sale"...
+std::string_view key(SaleSource source);
+std::string_view key(LineKind kind);
+std::optional<SaleSource> sale_source_from_key(std::string_view text);
+std::optional<LineKind> line_kind_from_key(std::string_view text);
 
 } // namespace ninkasi::domain

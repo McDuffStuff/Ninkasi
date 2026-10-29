@@ -407,6 +407,45 @@ constexpr Migration kMigrations[] = {
             recorded_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
     )sql"},
+    {15, R"sql(
+        -- Sales: beer and anything else sold, to a customer or over the counter.
+        CREATE TABLE sales (
+            id          INTEGER PRIMARY KEY,
+            at          TEXT NOT NULL,                 -- when it was sold
+            channel     TEXT NOT NULL,                 -- see Channel in domain/sales.h
+            customer_id INTEGER REFERENCES customers(id),
+            number      TEXT NOT NULL DEFAULT '',      -- invoice or order number
+            source      TEXT NOT NULL,                 -- see SaleSource
+            import_id   INTEGER,                       -- the POS import it came from
+            note        TEXT NOT NULL DEFAULT '',
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE INDEX sales_at ON sales(at);
+        CREATE INDEX sales_customer ON sales(customer_id);
+
+        CREATE TABLE sale_lines (
+            id            INTEGER PRIMARY KEY,
+            sale_id       INTEGER NOT NULL REFERENCES sales(id),
+            kind          TEXT NOT NULL,              -- 'package', 'pour', 'deposit' or 'other'
+            beer          TEXT NOT NULL DEFAULT '',
+            package       TEXT NOT NULL DEFAULT '',   -- packages and deposits: 'half_barrel', 'sixtel' or 'can'
+            unit_volume_l REAL NOT NULL DEFAULT 0,    -- packages: what each holds
+            quantity      REAL NOT NULL,              -- packs, pours, kegs or units; deposits refunded are negative
+            pack_size     INTEGER NOT NULL DEFAULT 1,
+            pour_l        REAL NOT NULL DEFAULT 0,
+            unit_price    REAL,                       -- each; NULL until priced
+            description   TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX sale_lines_sale ON sale_lines(sale_id);
+
+        -- Beer taken out of packaged goods for a line of a sale, which is how
+        -- the cost of what was sold is traced back to its batches.
+        ALTER TABLE packaged_movements ADD COLUMN sale_line_id INTEGER REFERENCES sale_lines(id);
+        CREATE INDEX packaged_movements_sale_line ON packaged_movements(sale_line_id);
+        -- Kegs back from a customer, so each customer's kegs out can be counted.
+        ALTER TABLE keg_movements ADD COLUMN customer_id INTEGER REFERENCES customers(id);
+    )sql"},
 };
 
 } // namespace

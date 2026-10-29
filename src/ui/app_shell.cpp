@@ -32,13 +32,13 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       batches_(db, session_, floor_, inventory_, packaged_goods_),
       tasks_(db, session_),
       ttb_(db, session_, settings_),
-      sales_(db, session_, settings_),
+      sales_(db, session_, settings_, packaged_goods_),
       backups_(db, session_, settings_, std::filesystem::path(db_path_)),
       exports_(db, units_),
       dialogs_(batches_, floor_, recipes_, inventory_, packaged_goods_, units_, calc_settings_, ui_scale_),
       task_views_(tasks_, floor_, batches_, ui_scale_),
       inventory_views_(inventory_, floor_, library_, units_, ui_scale_),
-      packaging_views_(packaged_goods_, ui_scale_),
+      packaging_views_(packaged_goods_, sales_, ui_scale_),
       element_windows_(floor_, batches_, tasks_, dialogs_, task_views_, inventory_views_, packaging_views_,
                        personal_, units_, calc_settings_, ui_scale_),
       batch_windows_(batches_, floor_, dialogs_, personal_, units_, calc_settings_, ui_scale_),
@@ -47,6 +47,8 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       people_window_(users_, session_, ui_scale_),
       customers_window_(sales_, ui_scale_),
       price_list_window_(sales_, batches_, recipes_, inventory_, units_, ui_scale_),
+      sale_dialog_(sales_, packaged_goods_, units_, ui_scale_),
+      sales_history_(sales_, sale_dialog_, units_, ui_scale_),
       floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
                   packaging_views_, personal_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, personal_, units_, calc_settings_, ui_scale_),
@@ -123,6 +125,8 @@ void AppShell::draw() {
     people_window_.draw();
     customers_window_.draw();
     price_list_window_.draw();
+    sales_history_.draw();
+    sale_dialog_.draw();
     task_views_.draw();
     inventory_views_.draw();
     packaging_views_.draw();
@@ -213,6 +217,10 @@ void AppShell::draw_account_menu() {
 
 void AppShell::draw_sales_menu() {
     if (!ImGui::BeginMenu("Sales")) return;
+    if (ImGui::MenuItem("Record a sale...")) sale_dialog_.open();
+    ImGui::SetItemTooltip("Beer sold to a customer or over the counter: it leaves packaged goods");
+    if (ImGui::MenuItem("Sales history")) sales_history_.show();
+    ImGui::Separator();
     if (ImGui::MenuItem("Customers")) customers_window_.show();
     ImGui::SetItemTooltip("Distributors, bars, stores and others you sell to");
     // The brewery's prices are its money: admins only.

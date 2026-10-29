@@ -14,12 +14,13 @@ domain::Timestamp column_time(const Statement& stmt, int col) {
 
 void PackagingRepository::insert_keg_movement(const domain::KegMovement& movement, std::int64_t user_id) {
     auto stmt = db_.prepare(
-        "INSERT INTO keg_movements (at, keg_type, state, quantity, reason, batch_id, note, user_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?);");
+        "INSERT INTO keg_movements (at, keg_type, state, quantity, reason, batch_id, note, user_id, customer_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);");
     stmt.bind(1, domain::to_iso8601(movement.at)).bind(2, domain::key(movement.type));
     stmt.bind(3, domain::key(movement.state)).bind(4, movement.quantity).bind(5, domain::key(movement.reason));
     stmt.bind_optional(6, movement.batch_id);
     stmt.bind(7, movement.note).bind(8, user_id);
+    stmt.bind_optional(9, movement.customer_id);
     stmt.execute();
 }
 
@@ -35,8 +36,9 @@ domain::KegCounts PackagingRepository::keg_counts(domain::PackageType type) {
 std::vector<KegMovementRow> PackagingRepository::keg_movements(int limit) {
     auto stmt = db_.prepare(
         "SELECT k.id, k.at, k.keg_type, k.state, k.quantity, k.reason, k.batch_id, k.note, u.display_name, "
-        "COALESCE(b.code, '') FROM keg_movements k JOIN users u ON u.id = k.user_id "
-        "LEFT JOIN batches b ON b.id = k.batch_id ORDER BY k.at DESC, k.id DESC LIMIT ?;");
+        "COALESCE(b.code, ''), k.customer_id, COALESCE(c.name, '') FROM keg_movements k "
+        "JOIN users u ON u.id = k.user_id LEFT JOIN batches b ON b.id = k.batch_id "
+        "LEFT JOIN customers c ON c.id = k.customer_id ORDER BY k.at DESC, k.id DESC LIMIT ?;");
     stmt.bind(1, limit);
     std::vector<KegMovementRow> rows;
     while (stmt.step()) {
@@ -52,6 +54,8 @@ std::vector<KegMovementRow> PackagingRepository::keg_movements(int limit) {
         m.note = stmt.column_text(7);
         m.user = stmt.column_text(8);
         row.batch_code = stmt.column_text(9);
+        m.customer_id = stmt.column_optional_int64(10);
+        row.customer = stmt.column_text(11);
         rows.push_back(std::move(row));
     }
     return rows;
@@ -63,11 +67,12 @@ void PackagingRepository::insert_packaged_movement(const domain::PackagedMovemen
                                                    std::int64_t user_id) {
     auto stmt = db_.prepare(
         "INSERT INTO packaged_movements (at, batch_id, package, unit_volume_l, quantity, reason, vessel_id, note, "
-        "user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);");
+        "user_id, sale_line_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
     stmt.bind(1, domain::to_iso8601(movement.at)).bind(2, movement.batch_id).bind(3, domain::key(movement.type));
     stmt.bind(4, movement.unit_volume_l).bind(5, movement.quantity).bind(6, domain::key(movement.reason));
     stmt.bind_optional(7, movement.vessel_id);
     stmt.bind(8, movement.note).bind(9, user_id);
+    stmt.bind_optional(10, movement.sale_line_id);
     stmt.execute();
 }
 
@@ -119,7 +124,7 @@ std::vector<domain::PackagedStock> PackagingRepository::packaged_ever(int limit)
 std::vector<PackagedMovementRow> PackagingRepository::packaged_movements(int limit) {
     auto stmt = db_.prepare(
         "SELECT p.id, p.at, p.batch_id, p.package, p.unit_volume_l, p.quantity, p.reason, p.vessel_id, p.note, "
-        "u.display_name, b.code, b.name, COALESCE(e.name, '') FROM packaged_movements p "
+        "u.display_name, b.code, b.name, COALESCE(e.name, ''), p.sale_line_id FROM packaged_movements p "
         "JOIN users u ON u.id = p.user_id JOIN batches b ON b.id = p.batch_id "
         "LEFT JOIN elements e ON e.id = p.vessel_id ORDER BY p.at DESC, p.id DESC LIMIT ?;");
     stmt.bind(1, limit);
@@ -140,6 +145,7 @@ std::vector<PackagedMovementRow> PackagingRepository::packaged_movements(int lim
         row.batch_code = stmt.column_text(10);
         row.beer = stmt.column_text(11);
         row.vessel_name = stmt.column_text(12);
+        m.sale_line_id = stmt.column_optional_int64(13);
         rows.push_back(std::move(row));
     }
     return rows;

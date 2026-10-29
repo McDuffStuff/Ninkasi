@@ -1,6 +1,7 @@
 #pragma once
 // Sales > Customers: the distributors, bars, stores and others beer is sold
-// to. Anyone can add and edit them; each field is saved when it's finished.
+// to, with the brewery's kegs each has (and, for admins, the deposits paid on
+// them). Anyone can add and edit them; each field is saved when it's finished.
 
 #include "app/sales_service.h"
 #include "domain/sales.h"

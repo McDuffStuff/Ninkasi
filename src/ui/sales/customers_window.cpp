@@ -1,6 +1,7 @@
 #include "ui/sales/customers_window.h"
 
 #include "domain/fuzzy_match.h"
+#include "domain/money.h"
 #include "ui/display.h"
 #include "ui/widgets.h"
 
@@ -10,6 +11,7 @@
 #include <cfloat>
 #include <exception>
 #include <optional>
+#include <string>
 
 namespace ninkasi::ui {
 
@@ -52,7 +54,7 @@ void CustomersWindow::save(const domain::Customer& customer) {
 void CustomersWindow::draw() {
     if (!visible_) return;
     if (revision_ != sales_.revision()) reload();
-    ImGui::SetNextWindowSize(ImVec2(860.0f, 480.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(1150.0f, 480.0f) * ui_scale_, ImGuiCond_FirstUseEver);
     const bool raise = focus_;
     if (focus_) {
         ImGui::SetNextWindowFocus();
@@ -81,13 +83,17 @@ void CustomersWindow::draw() {
     ImGui::Checkbox("Show former customers", &show_former_);
     if (!error_.empty()) ImGui::TextColored(kErrorColor, "%s", error_.c_str());
 
-    if (ImGui::BeginTable("##customers", 5, kTableFlags, ImVec2(0.0f, -FLT_MIN))) {
+    const bool admin = sales_.can_set_prices();
+    if (ImGui::BeginTable("##customers", admin ? 7 : 6, kTableFlags, ImVec2(0.0f, -FLT_MIN))) {
         const float s = ui_scale_;
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        // The name keeps its room in a narrow window; the notes give theirs up.
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 220 * s);
         ImGui::TableSetupColumn("Channel", ImGuiTableColumnFlags_WidthFixed, 140 * s);
         ImGui::TableSetupColumn("Contact", ImGuiTableColumnFlags_WidthFixed, 200 * s);
-        ImGui::TableSetupColumn("Notes", ImGuiTableColumnFlags_WidthFixed, 200 * s);
+        ImGui::TableSetupColumn("Notes", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Kegs out", ImGuiTableColumnFlags_WidthFixed, 150 * s);
+        if (admin) ImGui::TableSetupColumn("Deposits", ImGuiTableColumnFlags_WidthFixed, 90 * s);
         ImGui::TableSetupColumn("Buying", ImGuiTableColumnFlags_WidthFixed, 55 * s);
         ImGui::TableHeadersRow();
 
@@ -117,6 +123,24 @@ void CustomersWindow::draw() {
             ImGui::SetNextItemWidth(-FLT_MIN);
             ImGui::InputText("##notes", &customer.notes);
             changed |= finished();
+
+            // The brewery's kegs they have, and the deposits paid on them.
+            std::string kegs;
+            double deposits = 0.0;
+            for (domain::PackageType type : domain::kKegTypes) {
+                const domain::KegAccount account = sales_.keg_account(customer.id, type);
+                deposits += account.deposits;
+                if (account.out() == 0) continue;
+                if (!kegs.empty()) kegs += ", ";
+                kegs += domain::count_text(type, account.out());
+            }
+            ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(kegs.c_str());
+            if (admin) {
+                ImGui::TableNextColumn();
+                if (deposits != 0.0) ImGui::TextUnformatted(domain::format_money(deposits, sales_.currency()).c_str());
+            }
             ImGui::TableNextColumn();
             changed |= ImGui::Checkbox("##active", &customer.active);
             ImGui::SetItemTooltip("Clear it for a customer you no longer sell to: their sales are kept.");

@@ -11,10 +11,12 @@
 
 namespace ninkasi::data {
 
-// A keg ledger row with the code of the batch the kegs were filled with.
+// A keg ledger row with the code of the batch the kegs were filled with,
+// and the customer they came back from.
 struct KegMovementRow {
     domain::KegMovement movement;
     std::string batch_code;
+    std::string customer;
 };
 
 // A packaged goods ledger row with its beer and the tank it came from.

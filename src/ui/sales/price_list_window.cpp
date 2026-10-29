@@ -81,6 +81,7 @@ void PriceListWindow::show() {
 void PriceListWindow::reload() {
     prices_ = sales_.prices();
     currency_ = sales_.currency();
+    deposits_ = sales_.keg_deposits();
     revision_ = sales_.revision();
 }
 
@@ -140,6 +141,7 @@ void PriceListWindow::draw() {
     const bool admin = sales_.can_set_prices();
     if (!admin) wrapped_note("Only an admin can change prices.");
     draw_currency();
+    draw_deposits();
     ImGui::Spacing();
     wrapped_note("A price applies from its date. To change one and keep earlier sales at the old price, use New "
                  "price; to correct a mistake, edit it. A beer's own price comes before the one for every beer.");
@@ -183,6 +185,38 @@ void PriceListWindow::draw_currency() {
             sales_.set_currency(currency_);
         } catch (const std::exception& e) {
             error_ = e.what();
+        }
+    }
+}
+
+void PriceListWindow::draw_deposits() {
+    const bool admin = sales_.can_set_prices();
+    ImGui::BeginDisabled(!admin);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Keg deposits");
+    bool changed = false;
+    for (PackageType type : domain::kKegTypes) {
+        ImGui::PushID(static_cast<int>(type));
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", domain::name(type).data());
+        ImGui::SameLine();
+        double& deposit = type == PackageType::HalfBarrel ? deposits_.half_barrel : deposits_.sixtel;
+        edit_money("##deposit", deposit, currency_, 80.0f * ui_scale_);
+        changed |= finished();
+        ImGui::PopID();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    ImGui::SetItemTooltip("Charged on each keg sold, when the sale asks for it, and refunded when the keg comes "
+                          "back. 0 for none.");
+    if (changed && admin) {
+        try {
+            sales_.set_keg_deposits(deposits_);
+            error_.clear();
+        } catch (const std::exception& e) {
+            error_ = e.what();
+            revision_ = ~0ull;  // put the saved deposits back
         }
     }
 }
@@ -245,8 +279,7 @@ void PriceListWindow::draw_channel(domain::Channel channel) {
                 ImGui::SetItemTooltip("The share of a keg sold as pours, after foam, spills and the last drops");
             }
             ImGui::TableNextColumn();
-            ImGui::SetNextItemWidth(80.0f * ui_scale_);
-            edit_money("##price", price.price, sales_.currency());
+            edit_money("##price", price.price, sales_.currency(), 80.0f * ui_scale_);
             changed |= finished();
             ImGui::TableNextColumn();
             changed |= date_picker("##from", price.effective_from);

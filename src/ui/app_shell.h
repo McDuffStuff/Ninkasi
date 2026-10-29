@@ -33,6 +33,8 @@
 #include "ui/recipes/recipe_library_window.h"
 #include "ui/sales/customers_window.h"
 #include "ui/sales/price_list_window.h"
+#include "ui/sales/sale_dialog.h"
+#include "ui/sales/sales_history_window.h"
 #include "ui/tasks/task_views.h"
 #include "ui/theme.h"
 #include "ui/ttb/ttb_window.h"
@@ -121,6 +123,8 @@ private:
     PeopleWindow people_window_;
     CustomersWindow customers_window_;
     PriceListWindow price_list_window_;
+    SaleDialog sale_dialog_;
+    SalesHistoryWindow sales_history_;
     FloorView floor_view_;
     RecipeEditors recipe_editors_;
     RecipeLibraryWindow recipe_library_;

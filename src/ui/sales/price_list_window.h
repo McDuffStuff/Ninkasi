@@ -31,6 +31,7 @@ public:
 private:
     void reload();
     void draw_currency();
+    void draw_deposits();
     void draw_channel(domain::Channel channel);
     // Each returns true when the price changed.
     bool beer_combo(domain::PriceEntry& price);
@@ -55,6 +56,7 @@ private:
     std::string error_;
     std::vector<domain::PriceEntry> prices_;  // working copies, saved field by field
     domain::Currency currency_;               // being edited
+    domain::KegDeposits deposits_;            // being edited
     std::vector<std::string> beers_;          // from recipes and batches, for choosing
     std::vector<double> can_sizes_;           // of the cans in inventory, liters
     std::uint64_t revision_ = ~0ull;

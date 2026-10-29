@@ -43,6 +43,7 @@ struct PackagedRemoval {
     domain::PackagedReason reason = domain::PackagedReason::Sold;
     domain::Timestamp at{};
     std::string note;
+    std::optional<std::int64_t> sale_line_id;  // the line of the sale it was sold on
 };
 
 class PackagedGoodsService {
@@ -94,6 +95,17 @@ public:
     void remove_kegs(std::span<const domain::KegCount> kegs, domain::KegState state, domain::Timestamp at,
                      std::string_view note);
 
+    // For sales (see SalesService): remove() without its transaction. Reads
+    // what's on hand from the database, so several removals in one
+    // transaction each see those before. Call inside the caller's
+    // transaction, and refresh() once it's committed.
+    void write_removal(const PackagedRemoval& removal);
+    // For keg returns (see SalesService): add_kegs() without its transaction,
+    // the kegs brought back by `customer_id` if given. Call inside the
+    // caller's transaction, and refresh() once it's committed.
+    void write_kegs_added(std::span<const domain::KegCount> kegs, domain::Timestamp at, std::string_view note,
+                          std::optional<std::int64_t> customer_id);
+
     // For packaging: takes `count` kegs of `type` for `batch_id`, clean ones
     // first (see domain::plan_keg_draw). Call inside the caller's
     // transaction, and refresh() once it's committed.
@@ -112,16 +124,19 @@ private:
     // counts, at least one keg.
     static void check(std::span<const domain::KegCount> kegs);
     void record(domain::PackageType type, domain::KegState state, int quantity, domain::KegReason reason,
-                domain::Timestamp at, std::optional<std::int64_t> batch_id, std::string_view note);
+                domain::Timestamp at, std::optional<std::int64_t> batch_id, std::string_view note,
+                std::optional<std::int64_t> customer_id = std::nullopt);
     // A row of the packaged goods ledger.
     void record_packaged(std::int64_t batch_id, domain::PackageType type, double unit_volume_l, int quantity,
-                         domain::PackagedReason reason, domain::Timestamp at, std::string_view note);
-    // The product on hand matching a beer and package, if there is any.
-    std::optional<domain::PackagedProduct> product(std::string_view beer, domain::PackageType type,
-                                                   double unit_volume_l) const;
+                         domain::PackagedReason reason, domain::Timestamp at, std::string_view note,
+                         std::optional<std::int64_t> sale_line_id = std::nullopt);
+    // The product in `stock` matching a beer and package, if there is any.
+    static std::optional<domain::PackagedProduct> product(std::span<const domain::PackagedStock> stock,
+                                                          std::string_view beer, domain::PackageType type,
+                                                          double unit_volume_l);
     // Writes `count` packages of a product out, oldest batch first.
     void take(const domain::PackagedProduct& product, int count, domain::PackagedReason reason, domain::Timestamp at,
-              std::string_view note);
+              std::string_view note, std::optional<std::int64_t> sale_line_id = std::nullopt);
 
     data::Database& db_;
     Session session_;

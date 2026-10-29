@@ -90,14 +90,43 @@ By default, data lives in `%APPDATA%\Ninkasi` (Windows) or `~/.local/share/ninka
 ### Packaging, packaged goods and kegs
 - **Package** (on a tank) counts what was filled: half-barrels (15.5 gal), sixtels (5.17 gal) and cans, in any mix. The packaged volume is what the packages hold, and when the run empties the tank, whatever the packages don't account for is the loss, shown with its percentage as you type. Cans are drawn from inventory (choose which cans; each says what it holds), and kegs from the keg cleaner.
 - **Packaged goods** is where packaged beer goes. Its window lists each beer by package (half-barrels of Red Ale, say) with the count and volume, combining every batch of that beer; click one to see which batches make up the total. It also has a **Packaging log**. On the floor it shows how many half-barrels, sixtels and cans are on hand.
-- **Take out** records beer leaving packaged goods: sold, to the taproom, drunk at the brewery (tasting room samples), exported, research, lab samples, to another of your breweries, ship supplies, unfit for sale, destroyed, or lost. It comes out oldest batch first, and the dialog says whether it's taxed and which TTB line it goes on. Kegs emptied at the brewery (taproom, samples, destroyed) go back to the keg cleaner dirty; kegs that leave come back with **Add kegs**. **Count** corrects the count (a shortage has to be explained to TTB), and **Returns** puts beer that came back onto the shelf.
-- **The keg cleaner** keeps the empty kegs. **Add kegs** (new kegs, or kegs back from customers) puts them on its **Dirty kegs** tab; **Clean kegs** asks how many of each size were cleaned, and **Clean all** cleans every dirty keg. Packaging takes clean kegs first. If more were filled than are clean, the rest come from the dirty kegs (cleaned without it being logged), then from kegs the cleaner didn't know about, which are added as they're filled: packaging is never refused for want of kegs. The **Keg log** shows every change.
+- **Take out** records beer leaving packaged goods: sold, to the taproom, drunk at the brewery (tasting room samples), exported, research, lab samples, to another of your breweries, ship supplies, unfit for sale, destroyed, or lost. It comes out oldest batch first, and the dialog says whether it's taxed and which TTB line it goes on. Taken out as sold, it's recorded as a sale to the customer and channel you choose, priced from the price list; for the taproom, see **Taproom revenue** below. Kegs emptied at the brewery (taproom, samples, destroyed) go back to the keg cleaner dirty; kegs that leave come back with **Add kegs**. **Count** corrects the count (a shortage has to be explained to TTB), and **Returns** puts beer that came back onto the shelf.
+- **The keg cleaner** keeps the empty kegs. **Add kegs** (new kegs, or kegs back from a customer, whose deposits are then refunded) puts them on its **Dirty kegs** tab; **Clean kegs** asks how many of each size were cleaned, and **Clean all** cleans every dirty keg. Packaging takes clean kegs first. If more were filled than are clean, the rest come from the dirty kegs (cleaned without it being logged), then from kegs the cleaner didn't know about, which are added as they're filled: packaging is never refused for want of kegs. The **Keg log** shows every change.
 
 ### TTB reports
 - **View > TTB reports** shows the **Brewer's Report of Operations** (TTB F 5130.9, Part 1) for a month, quarter or year, laid out like the form: lines 1 to 34 in TTB's wording, in barrels, by cellar, racking and bottling column. It's worked out from the records, so there's nothing to fill in: knock-outs are beer produced (line 2), packaging moves beer from the cellar into kegs and cases, and each way beer leaves goes on its own line. Each period opens with the last one's closing stock, and line 13 always equals line 34.
 - **Excise tax** shows the tax on beer removed for sale (lines 14 and 15): $3.50 a barrel on the year's first 60,000 barrels for small brewers, $16 to 6 million and $18 after, counting what was removed earlier in the year.
 - **Settings:** the reporting period, whether the brewery pays the small brewer rate, and its TTB brewery number. **Export CSV...** saves the report and the tax for a spreadsheet or for entering on Pay.gov.
 - Not covered yet: lines 35 and 36 (adjustments to earlier reports), the cereal beverage part, and the remarks.
+
+### Sales and customers
+- **Sales > Customers** lists the distributors, bars, stores and others you sell to, each with its channel (distributor, retail account, taproom, to-go or other), the brewery's kegs it has, and, for admins, the deposits paid on them. Anyone can add and edit customers.
+- **Sales > Price list** (admins) sets what each beer sells for through each channel: by the half-barrel or sixtel, by the can singly or in packs, or by the pour with its size and how much of a keg is sold as pours (its yield). A price can be for one beer or every beer without its own, and applies from its date, so **New price** changes it while earlier sales keep the old one. It also sets the currency, the keg deposits and where the taproom's revenue comes from.
+- **Sales > Record a sale** logs who bought what, line by line like an invoice, and saves with **Submit**. The beer leaves packaged goods oldest batch first, each removal tied to its sale line so what the beer cost can be traced. Lines are priced from the price list; admins see the prices, can change them for the sale and add other charges (merchandise, delivery...). Keg deposits are added for a customer if you ask.
+- **Sales > Sales history** lists every sale. Admins see what each came to, sales still without a price (they can be priced later from the price list), can change a line's price, and can delete a sale entered by mistake, which puts its beer back.
+
+### Taproom revenue
+Choose on the price list where the taproom's revenue is counted from, so it isn't counted twice:
+- **Kegs used up in the taproom**: taking a keg out for the taproom records it as sold by the pour, at the taproom's pour price, its volume times the yield over the pour size.
+- **Point-of-sale imports**: **Sales > Import POS sales** reads a CSV export from the point of sale. It guesses which columns hold the date, item, quantity and net amount (and remembers your choice for files like it), shows the first rows as it reads them, then asks once what each item is: a pour of a beer, cans to go, something else, or not a sale. Each day becomes a taproom sale and a to-go sale; importing days again replaces them. Cans sold to go leave packaged goods, unless you take them out for the taproom first.
+- **Takings entered by hand**: **Sales > Taproom takings** records a day's takings.
+
+### Expenses
+**Sales > Expenses** (admins) keeps what the brewery spends besides its ingredients and packaging (which come in on invoices and are costed into the beer): each month's expenses by day, payee, category and amount; those that recur every month, such as rent and wages; and the categories.
+
+### Insights
+**View > Insights** shows the brewery's figures over a period (this month, the last 3 or 12 months, the year to date, or any days), split into weeks, months or quarters and compared with the period before or the same time last year. Every chart shows its values on hover, can be shown as a table, and exports to CSV.
+- **Overview**: revenue, gross margin and stock value (admins), beer sold and brewed, kegs at customers and beers to brew soon, each with its change and a sparkline.
+- **Sales**: revenue or volume by channel; click a bar for the sales in it. Each beer's volume, packages, weekly rate, change and lifetime totals; click one for its months, customers and batches.
+- **Stock & planning**: how long each beer lasts at the rate it has sold lately, counting what's in the tanks, and the day to brew it so more is ready in time, from how long its last batches took.
+- **Ingredients**: what's used and how fast, days until each item needs reordering or runs out, and for admins what each delivery cost and what was spent with each supplier.
+- **Production**: barrels brewed and packaged, where each batch's losses went, how much of the time each tank held beer, and how long each beer takes from brewing to packaging.
+- **Batch costs** (admins): each batch's ingredients and cans, from the invoices they came on; its cost per barrel, keg and can; and what its beer sold for. Beer costs its ingredients over what was packaged, so losses make the rest cost more. Stock used before its delivery was logged is costed at that delivery; costs that had to be estimated are marked.
+- **Profit & loss** (admins): revenue by channel, the cost of goods sold, gross profit, excise tax, beer lost, expenses by category and net operating income, against the comparison period, with margins by beer and notes on anything unpriced or uncosted. It's a management report, not bookkeeping.
+
+Brewers see volumes, rates and ingredient use; money is for admins.
+
+**A demo brewery:** `build\debug\ninkasi_demo.exe demo\brewery.db` makes a year of a small brewery's life up to today (brewing, packaging, sales, taproom kegs, deliveries and expenses), and a `pos-export.csv` beside it to try the POS import with. Open it with `ninkasi.exe --db demo\brewery.db`. The demo isn't shipped.
 
 ### Backups and export
 - **File > Back up now** saves a complete copy of the brewery's data in the backup folder ("backups" beside the database, unless you choose another). With **Every day** on (the default), a backup is also made the first time Ninkasi starts each day, and the newest 14 are kept.
@@ -121,6 +150,7 @@ src/data/     SQLite wrapper, schema migrations, repositories
 src/app/      services, session and signing in, file paths
 src/ui/       ImGui screens
 tests/        doctest unit tests (mirror src/)
+tools/        ninkasi_demo, the demo brewery maker (not shipped)
 ```
 Dependencies point downward only: `ui → app → domain/data → calc`. `calc` is its own library (`ninkasi_calc`) with no dependencies, so the linker enforces that it stays pure.
 

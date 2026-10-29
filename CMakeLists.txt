@@ -207,7 +207,11 @@ endif()
 # ---------------------------------------------------------------------------
 if(NINKASI_BUILD_TESTS)
     enable_testing()
-    add_executable(ninkasi_tests
+    # ninkasi_demo: makes a demo brewery for trying Ninkasi (not shipped).
+add_executable(ninkasi_demo tools/make_demo_brewery.cpp)
+target_link_libraries(ninkasi_demo PRIVATE ninkasi_core)
+
+add_executable(ninkasi_tests
         tests/test_main.cpp
         tests/app/test_backup_service.cpp
         tests/app/test_batch_service.cpp

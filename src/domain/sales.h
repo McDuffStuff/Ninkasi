@@ -173,6 +173,76 @@ struct Sale {
 // deposits and other lines.
 std::optional<PriceQuery> price_query(const Sale& sale, const SaleLine& line);
 
+// The price list's price for a line of a sale (see price_query). A keg used
+// up in the taproom is priced by what it brings in by the pour (see
+// keg_pour_value), at the beer's largest taproom pour. nullopt if the price
+// list has none.
+std::optional<double> list_price(std::span<const PriceEntry> prices, const Sale& sale, const SaleLine& line);
+
+// --- Taproom revenue ---------------------------------------------------------------
+
+// Where the taproom's revenue is counted from. Whichever it is, the others
+// would count it twice.
+enum class TaproomRevenue {
+    KegsUsedUp,   // each keg taken out for the taproom, as the pours it gives
+    PointOfSale,  // imported from the point of sale's exports
+    Takings,      // each day's takings, entered by hand
+};
+inline constexpr std::array kTaproomRevenues = {TaproomRevenue::KegsUsedUp, TaproomRevenue::PointOfSale,
+                                                TaproomRevenue::Takings};
+
+// --- Point-of-sale exports ------------------------------------------------------------
+
+// One row of a point-of-sale export: an item sold, or the day's total of it.
+struct PosRow {
+    Date day{};
+    std::string item;
+    double quantity = 1.0;  // negative for a refund
+    double amount = 0.0;    // net of discounts; negative for a refund
+
+    bool operator==(const PosRow&) const = default;
+};
+
+// What an item on the point of sale is.
+enum class PosItemKind {
+    Pour,     // a pour of a beer, or a growler filled
+    Package,  // cans sold to go
+    Other,    // anything else: food, merchandise...
+    Ignore,   // not a sale: tips, gift cards...
+};
+inline constexpr std::array kPosItemKinds = {PosItemKind::Pour, PosItemKind::Package, PosItemKind::Other,
+                                             PosItemKind::Ignore};
+
+// How an item on the point of sale is recorded. Kept, so each item is
+// mapped once.
+struct PosItem {
+    std::string item;  // as the point of sale names it
+    PosItemKind kind = PosItemKind::Other;
+    std::string beer;                        // pours and packages
+    double pour_l = 0.0;                     // pours
+    PackageType package = PackageType::Can;  // packages
+    double unit_volume_l = 0.0;              // packages
+    int pack_size = 1;                       // packages
+
+    bool operator==(const PosItem&) const = default;
+};
+
+// The item mapping `item` (by name, ignoring case), or nullptr.
+const PosItem* find_pos_item(std::span<const PosItem> items, std::string_view item);
+
+// The sales an export makes.
+struct PosSales {
+    std::vector<Sale> sales;
+    std::vector<std::string> unmapped;  // items with no mapping, left out
+    int netted_out = 0;                 // lines whose refunds cancelled their sales
+};
+
+// The sales of a point-of-sale export: for each day, one in the taproom
+// (pours and other items) and one to go (cans), at the end of the day. Each
+// item's rows for a day make one line at their average price. Items left out
+// (Ignore) aren't recorded, nor are those a day's refunds cancel.
+PosSales pos_sales(std::span<const PosRow> rows, std::span<const PosItem> items);
+
 // --- Keg deposits and kegs at customers -------------------------------------------
 
 // What the brewery charges as a deposit on each keg it sells, by size: 0 for
@@ -220,5 +290,11 @@ std::string_view key(SaleSource source);
 std::string_view key(LineKind kind);
 std::optional<SaleSource> sale_source_from_key(std::string_view text);
 std::optional<LineKind> line_kind_from_key(std::string_view text);
+std::string_view name(TaproomRevenue revenue);  // "Kegs used up in the taproom"...
+std::string_view key(TaproomRevenue revenue);
+std::optional<TaproomRevenue> taproom_revenue_from_key(std::string_view text);
+std::string_view name(PosItemKind kind);  // "A pour of beer", "Cans to go"...
+std::string_view key(PosItemKind kind);
+std::optional<PosItemKind> pos_item_kind_from_key(std::string_view text);
 
 } // namespace ninkasi::domain

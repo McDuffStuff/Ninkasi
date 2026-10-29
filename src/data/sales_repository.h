@@ -40,12 +40,21 @@ public:
     // Every sale with a line that has no price, oldest first.
     std::vector<domain::Sale> sales_needing_prices();
     std::optional<domain::Sale> sale(std::int64_t id);
+    // Every sale from `source`, oldest first.
+    std::vector<domain::Sale> sales_from(domain::SaleSource source);
     void set_unit_price(std::int64_t line_id, std::optional<double> price);
     // Deletes a sale, its lines, and the packaged goods taken out for it.
     void delete_sale(std::int64_t id);
 
     // Each customer's kegs, by size (in the order of domain::kKegTypes).
     std::map<std::int64_t, std::array<domain::KegAccount, domain::kKegTypes.size()>> keg_accounts();
+
+    // --- Point-of-sale imports -----------------------------------------------------------
+    std::vector<domain::PosItem> pos_items();
+    // Adds the item's mapping, or replaces the one it had.
+    void save(const domain::PosItem& item);
+    std::int64_t insert_pos_import(std::string_view file_name, domain::Date first_day, domain::Date last_day,
+                                   int rows, std::int64_t user_id);
 
 private:
     // The sales whose ids `id_query` selects (with `parameter` bound to its

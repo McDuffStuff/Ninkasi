@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <map>
 
 namespace ninkasi::domain {
 
@@ -55,6 +56,14 @@ constexpr SourceText kSourceTexts[] = {
 };
 
 constexpr std::string_view kLineKindKeys[] = {"package", "pour", "deposit", "other"};  // by LineKind
+
+constexpr std::string_view kTaproomRevenueKeys[] = {"kegs", "pos", "takings"};  // by TaproomRevenue
+constexpr std::string_view kTaproomRevenueNames[] = {"Kegs used up in the taproom", "Point-of-sale imports",
+                                                     "Takings entered by hand"};
+
+constexpr std::string_view kPosItemKindKeys[] = {"pour", "package", "other", "ignore"};  // by PosItemKind
+constexpr std::string_view kPosItemKindNames[] = {"A pour of beer", "Cans to go", "Something else",
+                                                  "Leave it out"};
 
 } // namespace
 
@@ -178,6 +187,109 @@ std::optional<PriceQuery> price_query(const Sale& sale, const SaleLine& line) {
     return query;
 }
 
+std::optional<double> list_price(std::span<const PriceEntry> prices_list, const Sale& sale, const SaleLine& line) {
+    if (sale.source == SaleSource::TaproomKeg && line.kind == LineKind::Package && is_keg(line.package)) {
+        PriceQuery query;
+        query.beer = line.beer;
+        query.channel = Channel::Taproom;
+        query.priced_as = PricedAs::Pour;
+        query.pour_l = 0.0;  // the largest
+        query.on = local_date(sale.at);
+        if (const PriceEntry* pour = find_price(prices_list, query)) {
+            return keg_pour_value(keg_volume_l(line.package), *pour);
+        }
+        return std::nullopt;
+    }
+    const std::optional<PriceQuery> query = price_query(sale, line);
+    if (!query) return std::nullopt;
+    if (const PriceEntry* price = find_price(prices_list, *query)) return price->price;
+    return std::nullopt;
+}
+
+// --- Point-of-sale exports ------------------------------------------------------------
+
+const PosItem* find_pos_item(std::span<const PosItem> items, std::string_view item) {
+    for (const PosItem& entry : items) {
+        if (same_beer(entry.item, item)) return &entry;
+    }
+    return nullptr;
+}
+
+PosSales pos_sales(std::span<const PosRow> rows, std::span<const PosItem> items) {
+    // Each item's total on each day, in the order the items first appear.
+    struct Total {
+        const PosItem* item = nullptr;
+        double quantity = 0.0;
+        double amount = 0.0;
+    };
+    std::map<Date, std::vector<Total>> days;
+    PosSales result;
+    for (const PosRow& row : rows) {
+        const PosItem* item = find_pos_item(items, row.item);
+        if (!item) {
+            const bool listed = std::any_of(result.unmapped.begin(), result.unmapped.end(),
+                                            [&](const std::string& name) { return same_beer(name, row.item); });
+            if (!listed) result.unmapped.push_back(row.item);
+            continue;
+        }
+        if (item->kind == PosItemKind::Ignore) continue;
+        std::vector<Total>& totals = days[row.day];
+        auto total = std::find_if(totals.begin(), totals.end(), [&](const Total& t) { return t.item == item; });
+        if (total == totals.end()) total = totals.insert(totals.end(), Total{item});
+        total->quantity += row.quantity;
+        total->amount += row.amount;
+    }
+
+    for (const auto& [day, totals] : days) {
+        // Sold at the end of the day: the taproom's sale, then what went to go.
+        Sale taproom;
+        taproom.at = from_local({day.year, day.month, day.day, 23, 0});
+        taproom.channel = Channel::Taproom;
+        taproom.source = SaleSource::Pos;
+        Sale to_go = taproom;
+        to_go.channel = Channel::ToGo;
+        for (const Total& total : totals) {
+            const PosItem& item = *total.item;
+            if (!(total.quantity > 0.0) || total.amount < 0.0) {
+                ++result.netted_out;
+                continue;
+            }
+            SaleLine line;
+            line.unit_price = total.amount / total.quantity;
+            switch (item.kind) {
+            case PosItemKind::Pour:
+                line.kind = LineKind::Pour;
+                line.beer = item.beer;
+                line.pour_l = item.pour_l;
+                line.quantity = total.quantity;
+                break;
+            case PosItemKind::Package:
+                line.kind = LineKind::Package;
+                line.beer = item.beer;
+                line.package = item.package;
+                line.unit_volume_l = item.unit_volume_l;
+                line.pack_size = item.pack_size;
+                line.quantity = std::round(total.quantity);  // whole packs
+                line.unit_price = total.amount / line.quantity;
+                break;
+            default:
+                line.kind = LineKind::Other;
+                line.description = item.item;
+                line.quantity = total.quantity;
+                break;
+            }
+            if (line.quantity <= 0.0) {
+                ++result.netted_out;
+                continue;
+            }
+            (item.kind == PosItemKind::Package ? to_go : taproom).lines.push_back(std::move(line));
+        }
+        if (!taproom.lines.empty()) result.sales.push_back(std::move(taproom));
+        if (!to_go.lines.empty()) result.sales.push_back(std::move(to_go));
+    }
+    return result;
+}
+
 // --- Keg deposits and kegs at customers -------------------------------------------
 
 double KegDeposits::of(PackageType type) const {
@@ -283,6 +395,36 @@ std::string_view key(LineKind kind) {
 
 std::optional<LineKind> line_kind_from_key(std::string_view text) {
     for (LineKind kind : kLineKinds) {
+        if (key(kind) == text) return kind;
+    }
+    return std::nullopt;
+}
+
+std::string_view name(TaproomRevenue revenue) {
+    return kTaproomRevenueNames[static_cast<std::size_t>(revenue)];
+}
+
+std::string_view key(TaproomRevenue revenue) {
+    return kTaproomRevenueKeys[static_cast<std::size_t>(revenue)];
+}
+
+std::optional<TaproomRevenue> taproom_revenue_from_key(std::string_view text) {
+    for (TaproomRevenue revenue : kTaproomRevenues) {
+        if (key(revenue) == text) return revenue;
+    }
+    return std::nullopt;
+}
+
+std::string_view name(PosItemKind kind) {
+    return kPosItemKindNames[static_cast<std::size_t>(kind)];
+}
+
+std::string_view key(PosItemKind kind) {
+    return kPosItemKindKeys[static_cast<std::size_t>(kind)];
+}
+
+std::optional<PosItemKind> pos_item_kind_from_key(std::string_view text) {
+    for (PosItemKind kind : kPosItemKinds) {
         if (key(kind) == text) return kind;
     }
     return std::nullopt;

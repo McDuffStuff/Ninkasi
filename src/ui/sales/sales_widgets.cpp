@@ -6,6 +6,7 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <cmath>
 #include <exception>
 #include <vector>
@@ -100,6 +101,94 @@ bool customer_combo(const char* label, std::optional<std::int64_t>& customer_id,
             }
         }
     }
+    end_search_combo();
+    return changed;
+}
+
+std::vector<std::string> beer_names(app::RecipeService& recipes, app::BatchService& batches) {
+    std::vector<std::string> beers;
+    const auto add = [&](const std::string& name) {
+        if (name.empty()) return;
+        const bool known =
+            std::any_of(beers.begin(), beers.end(), [&](const std::string& beer) { return domain::same_beer(beer, name); });
+        if (!known) beers.push_back(name);
+    };
+    for (const auto& recipe : recipes.list()) add(recipe.name);
+    for (const auto& batch : batches.list()) add(batch.name);
+    std::sort(beers.begin(), beers.end());
+    return beers;
+}
+
+std::vector<double> can_sizes(const app::InventoryService& inventory) {
+    std::vector<double> sizes;
+    for (const app::ItemStock& stock : inventory.stock()) {
+        const auto& size = stock.item.fill_volume_l;
+        if (stock.item.category != domain::ItemCategory::Can || !size) continue;
+        const bool known =
+            std::any_of(sizes.begin(), sizes.end(), [&](double other) { return std::abs(other - *size) < 0.0005; });
+        if (!known) sizes.push_back(*size);
+    }
+    return sizes;
+}
+
+double default_pour_l(const calc::UnitPreferences& units) {
+    return fill_volume_unit(units) == calc::Unit::UsFluidOunce ? calc::to_canonical(16.0, calc::Unit::UsFluidOunce)
+                                                               : 0.5;
+}
+
+bool beer_combo(const char* label, std::string& beer, const std::vector<std::string>& beers, const char* every) {
+    const char* shown = beer.empty() ? (every ? every : "Choose the beer") : beer.c_str();
+    if (!begin_search_combo(label, shown)) return false;
+    bool changed = false;
+    if (every && !searching() && search_item(every, beer.empty())) {
+        beer.clear();
+        changed = true;
+    }
+    const std::vector<std::size_t> order = search_order(beers);
+    for (std::size_t i : order) {
+        ImGui::PushID(static_cast<int>(i));
+        if (search_item(beers[i].c_str(), domain::same_beer(beers[i], beer))) {
+            beer = beers[i];
+            changed = true;
+        }
+        ImGui::PopID();
+    }
+    // A beer not brewed yet, under the name typed.
+    if (searching() && order.empty()) {
+        const std::string typed = trimmed(search_text());
+        if (!typed.empty() && search_item(("Use \"" + typed + "\"").c_str(), false)) {
+            beer = typed;
+            changed = true;
+        }
+    }
+    end_search_combo();
+    return changed;
+}
+
+bool can_size_combo(const char* label, double& size_l, const std::vector<double>& sizes, calc::Unit unit,
+                    const char* any) {
+    const std::string shown = size_l > 0.0 ? calc::format(size_l, unit) : (any ? any : "Choose the size");
+    if (!begin_search_combo(label, shown.c_str())) return false;
+    std::vector<double> choices;
+    std::vector<std::string> names;
+    if (any) {
+        choices.push_back(0.0);
+        names.emplace_back(any);
+    }
+    for (double size : sizes) {
+        choices.push_back(size);
+        names.push_back(calc::format(size, unit));
+    }
+    bool changed = false;
+    for (std::size_t i : search_order(names)) {
+        ImGui::PushID(static_cast<int>(i));
+        if (search_item(names[i].c_str(), std::abs(choices[i] - size_l) < 0.0005)) {
+            size_l = choices[i];
+            changed = true;
+        }
+        ImGui::PopID();
+    }
+    if (sizes.empty()) ImGui::TextDisabled("No cans in inventory yet");
     end_search_combo();
     return changed;
 }

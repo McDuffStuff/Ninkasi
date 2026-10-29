@@ -212,6 +212,11 @@ std::vector<domain::Sale> SalesRepository::sales_needing_prices() {
     return read_sales("SELECT sale_id FROM sale_lines WHERE unit_price IS NULL", "s.at, s.id", std::nullopt);
 }
 
+std::vector<domain::Sale> SalesRepository::sales_from(domain::SaleSource source) {
+    return read_sales("SELECT id FROM sales WHERE source = '" + std::string(domain::key(source)) + "'", "s.at, s.id",
+                      std::nullopt);
+}
+
 std::optional<domain::Sale> SalesRepository::sale(std::int64_t id) {
     std::vector<domain::Sale> found = read_sales("SELECT ?", "s.id", id);
     if (found.empty()) return std::nullopt;
@@ -273,6 +278,54 @@ std::map<std::int64_t, std::array<domain::KegAccount, domain::kKegTypes.size()>>
     returned.bind(1, domain::key(domain::KegReason::Added));
     while (returned.step()) account(returned).returned = static_cast<int>(returned.column_int64(2));
     return accounts;
+}
+
+// --- Point-of-sale imports ---------------------------------------------------------
+
+std::vector<domain::PosItem> SalesRepository::pos_items() {
+    std::vector<domain::PosItem> items;
+    auto stmt = db_.prepare(
+        "SELECT item, kind, beer, pour_l, package, unit_volume_l, pack_size FROM pos_items "
+        "ORDER BY item COLLATE NOCASE;");
+    while (stmt.step()) {
+        domain::PosItem item;
+        item.item = stmt.column_text(0);
+        item.kind = domain::pos_item_kind_from_key(stmt.column_text(1)).value_or(domain::PosItemKind::Other);
+        item.beer = stmt.column_text(2);
+        item.pour_l = stmt.column_double(3);
+        item.package = domain::package_type_from_key(stmt.column_text(4)).value_or(domain::PackageType::Can);
+        item.unit_volume_l = stmt.column_double(5);
+        item.pack_size = static_cast<int>(stmt.column_int64(6));
+        items.push_back(std::move(item));
+    }
+    return items;
+}
+
+void SalesRepository::save(const domain::PosItem& item) {
+    auto stmt = db_.prepare(
+        "INSERT OR REPLACE INTO pos_items (item, kind, beer, pour_l, package, unit_volume_l, pack_size) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?);");
+    stmt.bind(1, item.item)
+        .bind(2, domain::key(item.kind))
+        .bind(3, item.beer)
+        .bind(4, item.pour_l)
+        .bind(5, domain::key(item.package))
+        .bind(6, item.unit_volume_l)
+        .bind(7, item.pack_size);
+    stmt.execute();
+}
+
+std::int64_t SalesRepository::insert_pos_import(std::string_view file_name, domain::Date first_day,
+                                                domain::Date last_day, int rows, std::int64_t user_id) {
+    auto stmt = db_.prepare(
+        "INSERT INTO pos_imports (file_name, first_day, last_day, rows, user_id) VALUES (?, ?, ?, ?, ?);");
+    stmt.bind(1, file_name)
+        .bind(2, domain::to_iso8601(first_day))
+        .bind(3, domain::to_iso8601(last_day))
+        .bind(4, rows)
+        .bind(5, user_id);
+    stmt.execute();
+    return db_.last_insert_id();
 }
 
 } // namespace ninkasi::data

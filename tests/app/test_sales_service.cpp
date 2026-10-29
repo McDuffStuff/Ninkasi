@@ -370,3 +370,73 @@ TEST_CASE("beer sold in the taproom is removed for the taproom") {
     REQUIRE(cooler.taken_for(line.id).size() == 1);
     CHECK(cooler.taken_for(line.id).front().movement.reason == domain::PackagedReason::Taproom);
 }
+
+TEST_CASE("kegs used up in the taproom are sold by the pour, when that's where its revenue comes from") {
+    Cooler cooler;
+    app::SalesService sales = cooler.sales(cooler.admin);
+    domain::PriceEntry pint;
+    pint.channel = Channel::Taproom;
+    pint.priced_as = domain::PricedAs::Pour;
+    pint.pour_l = 0.473;
+    pint.yield = 0.9;
+    pint.price = 7.0;
+    pint.effective_from = {2026, 1, 1};
+    sales.add_price(pint);
+
+    sales.take_to_taproom({.beer = "Red Ale", .type = PackageType::HalfBarrel, .unit_volume_l = cooler.half,
+                           .count = 2, .at = day(4)});
+    const domain::Sale sale = sales.sales().front();
+    CHECK(sale.source == domain::SaleSource::TaproomKeg);
+    CHECK(sale.channel == Channel::Taproom);
+    CHECK(sale.revenue() == doctest::Approx(2 * cooler.half * 0.9 / 0.473 * 7.0));
+    REQUIRE(cooler.taken_for(sale.lines[0].id).size() == 1);
+    CHECK(cooler.taken_for(sale.lines[0].id).front().movement.reason == domain::PackagedReason::Taproom);
+    CHECK(cooler.goods->kegs(PackageType::HalfBarrel).dirty == 2);  // emptied, back to be cleaned
+
+    // Counted at the point of sale instead: the kegs only leave packaged goods.
+    sales.set_taproom_revenue(domain::TaproomRevenue::PointOfSale);
+    sales.take_to_taproom({.beer = "Red Ale", .type = PackageType::HalfBarrel, .unit_volume_l = cooler.half,
+                           .count = 1, .at = day(5)});
+    CHECK(sales.sales().size() == 1);
+    CHECK(cooler.on_hand(cooler.batch40, PackageType::HalfBarrel) == 7);
+    CHECK(cooler.sales(cooler.admin).taproom_revenue() == domain::TaproomRevenue::PointOfSale);
+    CHECK_THROWS_AS(cooler.sales(cooler.brewer()).set_taproom_revenue(domain::TaproomRevenue::KegsUsedUp),
+                    app::NotAllowed);
+}
+
+TEST_CASE("a point-of-sale export records each day's sales, and replaces days imported again") {
+    Cooler cooler;
+    app::SalesService sales = cooler.sales(cooler.brewer());
+    sales.save_pos_item({"Red Ale Pint", domain::PosItemKind::Pour, "Red Ale", 0.473});
+    sales.save_pos_item({"Red Ale 4-pack", domain::PosItemKind::Package, "Red Ale", 0.0, PackageType::Can, 0.473, 4});
+    sales.save_pos_item({"Tip", domain::PosItemKind::Ignore});
+    const std::vector<domain::PosRow> rows{
+        {{2026, 10, 27}, "red ale pint", 2, 14.0},
+        {{2026, 10, 27}, "Red Ale 4-pack", 1, 16.0},
+        {{2026, 10, 27}, "Tip", 1, 5.0},
+        {{2026, 10, 28}, "Red Ale Pint", 3, 21.0},
+        {{2026, 10, 28}, "T-shirt", 1, 25.0},
+    };
+    CHECK_THROWS_AS(sales.import_pos("export.csv", rows, true, false), std::invalid_argument);  // the T-shirt
+    sales.save_pos_item({"T-shirt", domain::PosItemKind::Other});
+    CHECK(sales.pos_days_imported(rows) == 0);
+    const app::SalesService::PosImport imported = sales.import_pos("export.csv", rows, true, false);
+    CHECK(imported.days == 2);
+    CHECK(imported.sales == 3);  // the 27th in the taproom and to go, the 28th in the taproom
+    CHECK(imported.revenue == doctest::Approx(14.0 + 16.0 + 21.0 + 25.0));
+    CHECK(cooler.on_hand(cooler.batch41, PackageType::Can) == 92);
+
+    // Imported again: refused, unless the days are replaced.
+    CHECK(sales.pos_days_imported(rows) == 2);
+    CHECK_THROWS_AS(sales.import_pos("export.csv", rows, true, false), std::invalid_argument);
+    const app::SalesService::PosImport again = sales.import_pos("export.csv", rows, true, true);
+    CHECK(again.replaced_days == 2);
+    CHECK(sales.sales().size() == 3);
+    CHECK(cooler.on_hand(cooler.batch41, PackageType::Can) == 92);  // not taken twice
+
+    // Cans already taken out for the taproom aren't taken again.
+    const std::vector<domain::PosRow> next_day{{{2026, 10, 29}, "Red Ale 4-pack", 2, 32.0}};
+    sales.import_pos("export.csv", next_day, false, false);
+    CHECK(cooler.on_hand(cooler.batch41, PackageType::Can) == 92);
+    CHECK_FALSE(sales.pos_takes_cans());
+}

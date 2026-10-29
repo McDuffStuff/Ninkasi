@@ -446,6 +446,30 @@ constexpr Migration kMigrations[] = {
         -- Kegs back from a customer, so each customer's kegs out can be counted.
         ALTER TABLE keg_movements ADD COLUMN customer_id INTEGER REFERENCES customers(id);
     )sql"},
+    {16, R"sql(
+        -- Point-of-sale exports imported. The sales each made refer to it
+        -- (sales.import_id).
+        CREATE TABLE pos_imports (
+            id          INTEGER PRIMARY KEY,
+            file_name   TEXT NOT NULL,
+            first_day   TEXT NOT NULL,   -- local dates
+            last_day    TEXT NOT NULL,
+            rows        INTEGER NOT NULL,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        -- How each item on the point of sale is recorded, so it's mapped once.
+        CREATE TABLE pos_items (
+            item          TEXT PRIMARY KEY COLLATE NOCASE,  -- as the point of sale names it
+            kind          TEXT NOT NULL,              -- 'pour', 'package', 'other' or 'ignore'
+            beer          TEXT NOT NULL DEFAULT '',
+            pour_l        REAL NOT NULL DEFAULT 0,
+            package       TEXT NOT NULL DEFAULT '',
+            unit_volume_l REAL NOT NULL DEFAULT 0,
+            pack_size     INTEGER NOT NULL DEFAULT 1
+        );
+    )sql"},
 };
 
 } // namespace

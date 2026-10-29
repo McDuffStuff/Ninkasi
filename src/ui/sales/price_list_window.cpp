@@ -4,6 +4,7 @@
 #include "ui/date_widgets.h"
 #include "ui/display.h"
 #include "ui/inventory/inventory_views.h"
+#include "ui/sales/sales_widgets.h"
 #include "ui/search_combo.h"
 #include "ui/widgets.h"
 
@@ -55,26 +56,8 @@ PriceListWindow::PriceListWindow(app::SalesService& sales, app::BatchService& ba
 void PriceListWindow::show() {
     visible_ = true;
     focus_ = true;
-    // The beers there are to price: from recipes and batches, each name once.
-    beers_.clear();
-    const auto add_beer = [&](const std::string& name) {
-        if (name.empty()) return;
-        const bool known = std::any_of(beers_.begin(), beers_.end(),
-                                       [&](const std::string& beer) { return domain::same_beer(beer, name); });
-        if (!known) beers_.push_back(name);
-    };
-    for (const auto& recipe : recipes_.list()) add_beer(recipe.name);
-    for (const auto& batch : batches_.list()) add_beer(batch.name);
-    std::sort(beers_.begin(), beers_.end());
-    // The sizes of can in inventory.
-    can_sizes_.clear();
-    for (const app::ItemStock& stock : inventory_.stock()) {
-        const auto& size = stock.item.fill_volume_l;
-        if (stock.item.category != domain::ItemCategory::Can || !size) continue;
-        if (std::none_of(can_sizes_.begin(), can_sizes_.end(), [&](double known) { return std::abs(known - *size) < 0.0005; })) {
-            can_sizes_.push_back(*size);
-        }
-    }
+    beers_ = beer_names(recipes_, batches_);
+    can_sizes_ = can_sizes(inventory_);
     reload();
 }
 
@@ -110,10 +93,7 @@ domain::PriceEntry PriceListWindow::starting_price(domain::Channel channel) cons
     price.effective_from = domain::today();
     if (channel == domain::Channel::Taproom) {
         price.priced_as = PricedAs::Pour;
-        // A pint: 16 US fl oz where beer is measured in US units, half a liter elsewhere.
-        price.pour_l = fill_volume_unit(units_) == calc::Unit::UsFluidOunce
-                           ? calc::to_canonical(16.0, calc::Unit::UsFluidOunce)
-                           : 0.5;
+        price.pour_l = default_pour_l(units_);
         price.yield = 0.9;
     } else if (channel == domain::Channel::ToGo) {
         price.package = PackageType::Can;
@@ -142,6 +122,7 @@ void PriceListWindow::draw() {
     if (!admin) wrapped_note("Only an admin can change prices.");
     draw_currency();
     draw_deposits();
+    draw_taproom_revenue();
     ImGui::Spacing();
     wrapped_note("A price applies from its date. To change one and keep earlier sales at the old price, use New "
                  "price; to correct a mistake, edit it. A beer's own price comes before the one for every beer.");
@@ -221,6 +202,30 @@ void PriceListWindow::draw_deposits() {
     }
 }
 
+void PriceListWindow::draw_taproom_revenue() {
+    const bool admin = sales_.can_set_prices();
+    ImGui::BeginDisabled(!admin);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Taproom revenue from");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(260.0f * ui_scale_);
+    domain::TaproomRevenue revenue = sales_.taproom_revenue();
+    if (enum_combo("##taproom_revenue", revenue, domain::kTaproomRevenues) && admin) {
+        try {
+            sales_.set_taproom_revenue(revenue);
+        } catch (const std::exception& e) {
+            error_ = e.what();
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    ImGui::SetItemTooltip("Kegs used up: each keg taken out for the taproom counts as the pours it gives, at the "
+                          "taproom's pour price and yield.\nPoint-of-sale imports or takings: kegs taken out count "
+                          "only as beer used, and the imports or takings say what came in.\nUse one, or the "
+                          "taproom's revenue is counted twice.");
+}
+
 void PriceListWindow::draw_channel(domain::Channel channel) {
     const bool admin = sales_.can_set_prices();
     if (admin && ImGui::Button("Add a price")) add(starting_price(channel));
@@ -258,7 +263,7 @@ void PriceListWindow::draw_channel(domain::Channel channel) {
 
             ImGui::TableNextColumn();
             ImGui::SetNextItemWidth(-FLT_MIN);
-            changed |= beer_combo(price);
+            changed |= beer_combo("##beer", price.beer, beers_, "Every beer");
             ImGui::TableNextColumn();
             ImGui::SetNextItemWidth(-FLT_MIN);
             changed |= sold_as_combo(price);
@@ -314,33 +319,6 @@ void PriceListWindow::draw_channel(domain::Channel channel) {
     }
 }
 
-bool PriceListWindow::beer_combo(domain::PriceEntry& price) {
-    bool changed = false;
-    if (begin_search_combo("##beer", price.beer.empty() ? "Every beer" : price.beer.c_str())) {
-        if (!searching() && search_item("Every beer", price.beer.empty())) {
-            price.beer.clear();
-            changed = true;
-        }
-        const std::vector<std::size_t> order = search_order(beers_);
-        for (std::size_t i : order) {
-            if (search_item(beers_[i].c_str(), domain::same_beer(beers_[i], price.beer))) {
-                price.beer = beers_[i];
-                changed = true;
-            }
-        }
-        // A beer not brewed yet: priced under the name typed.
-        if (searching() && order.empty()) {
-            const std::string typed = search_text();
-            if (search_item(("Use \"" + typed + "\"").c_str(), false)) {
-                price.beer = typed;
-                changed = true;
-            }
-        }
-        end_search_combo();
-    }
-    return changed;
-}
-
 bool PriceListWindow::sold_as_combo(domain::PriceEntry& price) {
     const SoldAs current = sold_as(price);
     bool changed = false;
@@ -376,22 +354,8 @@ bool PriceListWindow::size_field(domain::PriceEntry& price) {
         return false;
     }
     // A size of can from inventory, or any can.
-    bool changed = false;
-    const std::string shown = price.unit_volume_l > 0.0 ? calc::format(price.unit_volume_l, unit) : "Any can";
     ImGui::SetNextItemWidth(-FLT_MIN);
-    if (begin_search_combo("##can", shown.c_str())) {
-        std::vector<std::string> names = {"Any can"};
-        for (double size : can_sizes_) names.push_back(calc::format(size, unit));
-        for (std::size_t i : search_order(names)) {
-            const double size = i == 0 ? 0.0 : can_sizes_[i - 1];
-            if (search_item(names[i].c_str(), std::abs(size - price.unit_volume_l) < 0.0005)) {
-                price.unit_volume_l = size;
-                changed = true;
-            }
-        }
-        end_search_combo();
-    }
-    return changed;
+    return can_size_combo("##can", price.unit_volume_l, can_sizes_, unit, "Any can");
 }
 
 } // namespace ninkasi::ui

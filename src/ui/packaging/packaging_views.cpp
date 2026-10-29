@@ -628,6 +628,12 @@ void PackagingViews::draw_take_out() {
             table_row("");
             ImGui::TextDisabled("Priced from the price list. Several beers, or other charges: Sales > Record a sale.");
         }
+        if (reason_ == domain::PackagedReason::Taproom) {
+            table_row("");
+            ImGui::TextDisabled("%s", sales_.taproom_revenue() == domain::TaproomRevenue::KegsUsedUp
+                                          ? "Counted as sold, by the pour, at the taproom's prices."
+                                          : "What it brings in comes from the point of sale or takings.");
+        }
         if (product && domain::is_keg(product->type)) {
             table_row("");
             ImGui::TextDisabled("%s", domain::keg_comes_back(reason_)
@@ -658,6 +664,17 @@ void PackagingViews::draw_take_out() {
             line.quantity = count_;
             sale.lines.push_back(line);
             sales_.record_sale(sale, charge_deposits_);
+            close();
+            return;
+        }
+        if (reason_ == domain::PackagedReason::Taproom) {
+            sales_.take_to_taproom({.beer = product->beer,
+                                    .type = product->type,
+                                    .unit_volume_l = product->unit_volume_l,
+                                    .count = count_,
+                                    .reason = reason_,
+                                    .at = at_,
+                                    .note = note_});
             close();
             return;
         }

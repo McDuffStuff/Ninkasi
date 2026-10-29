@@ -249,3 +249,72 @@ TEST_CASE("sale sources and line kinds round-trip through their keys") {
     CHECK(domain::can_delete(domain::SaleSource::Entered));
     CHECK_FALSE(domain::can_delete(domain::SaleSource::Pos));
 }
+
+TEST_CASE("a keg used up in the taproom is priced by the pours it gives") {
+    PriceEntry pint;
+    pint.id = 1;
+    pint.channel = Channel::Taproom;
+    pint.priced_as = PricedAs::Pour;
+    pint.pour_l = 0.473;
+    pint.yield = 0.9;
+    pint.price = 7.0;
+    pint.effective_from = {2026, 1, 1};
+    PriceEntry half_pint = pint;
+    half_pint.id = 2;
+    half_pint.pour_l = 0.237;
+    half_pint.price = 4.0;
+    const std::vector<PriceEntry> prices{half_pint, pint};
+
+    domain::Sale sale;
+    sale.channel = Channel::Taproom;
+    sale.source = domain::SaleSource::TaproomKeg;
+    sale.at = *domain::parse_iso8601("2026-06-01T18:00:00Z");
+    domain::SaleLine keg;
+    keg.beer = "Red Ale";
+    keg.package = PackageType::HalfBarrel;
+    keg.quantity = 1;
+    // By the largest pour.
+    CHECK(*domain::list_price(prices, sale, keg) ==
+          doctest::Approx(domain::keg_volume_l(PackageType::HalfBarrel) * 0.9 / 0.473 * 7.0));
+    sale.source = domain::SaleSource::Entered;
+    CHECK_FALSE(domain::list_price(prices, sale, keg));  // no price for a keg sold whole
+}
+
+TEST_CASE("a point-of-sale export makes a sale in the taproom, and one to go, each day") {
+    const std::vector<domain::PosItem> items{
+        {"Pint", domain::PosItemKind::Pour, "Red Ale", 0.473},
+        {"4-pack", domain::PosItemKind::Package, "Red Ale", 0.0, PackageType::Can, 0.473, 4},
+        {"Tip", domain::PosItemKind::Ignore},
+    };
+    const std::vector<domain::PosRow> rows{
+        {{2026, 10, 27}, "pint", 2, 14.0},
+        {{2026, 10, 27}, "Pint", 1, 6.0},  // a discount
+        {{2026, 10, 27}, "4-pack", 2, 32.0},
+        {{2026, 10, 27}, "4-pack", -2, -32.0},  // refunded
+        {{2026, 10, 27}, "Tip", 1, 5.0},
+        {{2026, 10, 28}, "Pint", 1, 7.0},
+        {{2026, 10, 28}, "4-pack", 1, 16.0},
+        {{2026, 10, 28}, "Nachos", 1, 9.0},
+    };
+    const domain::PosSales made = domain::pos_sales(rows, items);
+    CHECK(made.unmapped == std::vector<std::string>{"Nachos"});
+    CHECK(made.netted_out == 1);
+    REQUIRE(made.sales.size() == 3);
+
+    const domain::Sale& first = made.sales[0];
+    CHECK(first.channel == Channel::Taproom);
+    CHECK(first.source == domain::SaleSource::Pos);
+    CHECK(domain::local_date(first.at) == Date{2026, 10, 27});
+    REQUIRE(first.lines.size() == 1);
+    CHECK(first.lines[0].kind == domain::LineKind::Pour);
+    CHECK(first.lines[0].quantity == 3);
+    CHECK(*first.lines[0].unit_price == doctest::Approx(20.0 / 3));
+    CHECK(first.lines[0].pour_l == 0.473);
+
+    CHECK(made.sales[1].channel == Channel::Taproom);
+    const domain::Sale& to_go = made.sales[2];
+    CHECK(to_go.channel == Channel::ToGo);
+    REQUIRE(to_go.lines.size() == 1);
+    CHECK(to_go.lines[0].packages() == 4);
+    CHECK(to_go.revenue() == doctest::Approx(16.0));
+}

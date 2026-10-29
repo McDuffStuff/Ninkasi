@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -18,6 +19,9 @@ constexpr const char* kDecimalCommaKey = "money.decimal_comma";
 constexpr const char* kDecimalsKey = "money.decimals";
 constexpr const char* kHalfBarrelDepositKey = "sales.deposit.half_barrel";
 constexpr const char* kSixtelDepositKey = "sales.deposit.sixtel";
+constexpr const char* kTaproomRevenueKey = "sales.taproom_revenue";
+constexpr const char* kPosTakeCansKey = "pos.take_cans";
+constexpr const char* kPosColumnsKey = "pos.columns.";  // and the header's signature
 
 // A setting holding an amount of money, 0 if it's missing or not a number.
 double money_setting(data::SettingsRepository& settings, const char* key) {
@@ -59,6 +63,8 @@ SalesService::SalesService(data::Database& db, Session session, data::SettingsRe
     }
     deposits_.half_barrel = money_setting(settings_, kHalfBarrelDepositKey);
     deposits_.sixtel = money_setting(settings_, kSixtelDepositKey);
+    taproom_revenue_ = domain::taproom_revenue_from_key(settings_.get_or(kTaproomRevenueKey, ""))
+                           .value_or(domain::TaproomRevenue::KegsUsedUp);
     reload();
 }
 
@@ -66,6 +72,7 @@ void SalesService::reload() {
     customers_ = repository_.customers();
     prices_ = repository_.prices();
     keg_accounts_ = repository_.keg_accounts();
+    pos_items_ = repository_.pos_items();
     ++revision_;
 }
 
@@ -192,6 +199,7 @@ void SalesService::check(const domain::Sale& sale) {
         case LineKind::Package:
             if (trim(line.beer).empty()) fail("Choose the beer.");
             if (line.pack_size < 1) fail("A pack holds at least one package.");
+            if (!(line.unit_volume_l > 0.0)) fail("Say what size the packages of " + line.beer + " are.");
             if (line.packages() < 1 || line.quantity != std::round(line.quantity)) {
                 fail("Enter how many of " + line.beer + " were sold.");
             }
@@ -213,17 +221,18 @@ void SalesService::check(const domain::Sale& sale) {
     }
 }
 
-std::int64_t SalesService::write_sale(const domain::Sale& sale) {
+std::int64_t SalesService::write_sale(const domain::Sale& sale, bool take_packages) {
     // The note on the beer taken out says who it went to.
     std::string note = sale.customer_id && find_customer(*sale.customer_id)
                            ? find_customer(*sale.customer_id)->name
                            : std::string(domain::name(sale.channel));
     if (!sale.number.empty()) note += " · " + sale.number;
+    if (!sale.note.empty()) note += " · " + sale.note;
 
     const std::int64_t id = repository_.insert(sale, session_.user_id);
     for (const domain::SaleLine& line : sale.lines) {
         const std::int64_t line_id = repository_.insert_line(id, line);
-        if (line.kind != domain::LineKind::Package) continue;
+        if (line.kind != domain::LineKind::Package || !take_packages) continue;
         goods_.write_removal({.beer = line.beer,
                               .type = line.package,
                               .unit_volume_l = line.unit_volume_l,
@@ -244,10 +253,7 @@ std::int64_t SalesService::record_sale(domain::Sale sale, bool charge_deposits) 
     check(sale);
     if (sale.customer_id && !find_customer(*sale.customer_id)) fail("There's no such customer.");
     for (domain::SaleLine& line : sale.lines) {
-        if (line.unit_price) continue;
-        if (const std::optional<domain::PriceQuery> query = domain::price_query(sale, line)) {
-            if (const std::optional<domain::PriceEntry> price = price_for(*query)) line.unit_price = price->price;
-        }
+        if (!line.unit_price) line.unit_price = domain::list_price(prices_, sale, line);
     }
     if (charge_deposits && sale.customer_id) {
         for (domain::SaleLine& deposit : domain::deposit_lines(sale.lines, deposits_)) {
@@ -293,13 +299,12 @@ SalesService::Pricing SalesService::price_from_list() {
     for (const domain::Sale& sale : repository_.sales_needing_prices()) {
         for (const domain::SaleLine& line : sale.lines) {
             if (line.unit_price) continue;
-            const std::optional<domain::PriceQuery> query = domain::price_query(sale, line);
-            const std::optional<domain::PriceEntry> price = query ? price_for(*query) : std::nullopt;
+            const std::optional<double> price = domain::list_price(prices_, sale, line);
             if (!price) {
                 ++pricing.unpriced;
                 continue;
             }
-            repository_.set_unit_price(line.id, price->price);
+            repository_.set_unit_price(line.id, *price);
             ++pricing.priced;
         }
     }
@@ -326,6 +331,141 @@ void SalesService::delete_sale(std::int64_t sale_id) {
     tx.commit();
     goods_.refresh();
     reload();
+}
+
+// --- Taproom revenue --------------------------------------------------------------------
+
+void SalesService::set_taproom_revenue(domain::TaproomRevenue revenue) {
+    require_admin(session_, "choose where the taproom's revenue comes from");
+    taproom_revenue_ = revenue;
+    settings_.set(kTaproomRevenueKey, std::string(domain::key(revenue)));
+    ++revision_;
+}
+
+void SalesService::take_to_taproom(const PackagedRemoval& removal) {
+    PackagedRemoval taken = removal;
+    taken.reason = domain::PackagedReason::Taproom;
+    if (taproom_revenue_ != domain::TaproomRevenue::KegsUsedUp) {
+        goods_.remove(taken);
+        return;
+    }
+
+    domain::Sale sale;
+    sale.at = removal.at;
+    sale.channel = domain::Channel::Taproom;
+    sale.source = domain::SaleSource::TaproomKeg;
+    sale.note = removal.note;
+    domain::SaleLine line;
+    line.beer = removal.beer;
+    line.package = removal.type;
+    line.unit_volume_l = removal.unit_volume_l;
+    line.quantity = removal.count;
+    line.unit_price = domain::list_price(prices_, sale, line);
+    sale.lines.push_back(std::move(line));
+    try {
+        data::Transaction tx(db_);
+        const std::int64_t id = write_sale(sale);
+        data::record_audit(db_, session_.user_id, "sale.taproom_keg", "sale", id,
+                           removal.beer + ": " + std::to_string(sale.revenue()));
+        tx.commit();
+    } catch (...) {
+        goods_.refresh();
+        throw;
+    }
+    goods_.refresh();
+    reload();
+}
+
+// --- Point-of-sale imports ----------------------------------------------------------------
+
+void SalesService::save_pos_item(const domain::PosItem& item) {
+    domain::PosItem saved = item;
+    saved.item = std::string(trim(item.item));
+    saved.beer = std::string(trim(item.beer));
+    if (saved.item.empty()) fail("An item needs its name.");
+    repository_.save(saved);
+    reload();
+}
+
+std::optional<PosColumns> SalesService::pos_columns(std::string_view signature) {
+    const std::string text = settings_.get_or(kPosColumnsKey + std::string(signature), "");
+    if (text.empty()) return std::nullopt;
+    return pos_columns_from_text(text);
+}
+
+void SalesService::remember_pos_columns(std::string_view signature, const PosColumns& columns) {
+    settings_.set(kPosColumnsKey + std::string(signature), to_text(columns));
+}
+
+bool SalesService::pos_takes_cans() {
+    return settings_.get_or(kPosTakeCansKey, "1") == "1";
+}
+
+int SalesService::pos_days_imported(std::span<const domain::PosRow> rows) {
+    std::set<domain::Date> days;
+    for (const domain::PosRow& row : rows) days.insert(row.day);
+    std::set<domain::Date> imported;
+    for (const domain::Sale& sale : repository_.sales_from(domain::SaleSource::Pos)) {
+        const domain::Date day = domain::local_date(sale.at);
+        if (days.count(day)) imported.insert(day);
+    }
+    return static_cast<int>(imported.size());
+}
+
+SalesService::PosImport SalesService::import_pos(std::string_view file_name, std::span<const domain::PosRow> rows,
+                                                 bool take_cans, bool replace) {
+    domain::PosSales made = domain::pos_sales(rows, pos_items_);
+    if (!made.unmapped.empty()) {
+        std::string names;
+        for (const std::string& name : made.unmapped) names += (names.empty() ? "" : ", ") + name;
+        fail("Say what these items are first: " + names + ".");
+    }
+    if (made.sales.empty()) fail("There are no sales in it to import.");
+    for (const domain::Sale& sale : made.sales) check(sale);  // every beer and size said
+
+    PosImport result;
+    std::set<domain::Date> days;
+    for (const domain::PosRow& row : rows) days.insert(row.day);
+    result.days = static_cast<int>(days.size());
+    result.netted_out = made.netted_out;
+
+    // The days in the file already imported, to replace.
+    std::vector<std::int64_t> replaced;
+    std::set<domain::Date> replaced_days;
+    for (const domain::Sale& sale : repository_.sales_from(domain::SaleSource::Pos)) {
+        const domain::Date day = domain::local_date(sale.at);
+        if (!days.count(day)) continue;
+        replaced.push_back(sale.id);
+        replaced_days.insert(day);
+    }
+    result.replaced_days = static_cast<int>(replaced_days.size());
+    if (!replaced.empty() && !replace) {
+        fail(std::to_string(replaced_days.size()) + (replaced_days.size() == 1 ? " day was" : " days were") +
+             " imported before.");
+    }
+
+    try {
+        data::Transaction tx(db_);
+        for (std::int64_t id : replaced) repository_.delete_sale(id);
+        const std::int64_t import_id = repository_.insert_pos_import(
+            file_name, *days.begin(), *days.rbegin(), static_cast<int>(rows.size()), session_.user_id);
+        for (domain::Sale& sale : made.sales) {
+            sale.import_id = import_id;
+            write_sale(sale, take_cans);
+            result.revenue += sale.revenue();
+            ++result.sales;
+        }
+        data::record_audit(db_, session_.user_id, "sale.pos_import", "pos_import", import_id,
+                           std::string(file_name) + ": " + std::to_string(result.days) + " days");
+        tx.commit();
+    } catch (...) {
+        goods_.refresh();
+        throw;
+    }
+    settings_.set(kPosTakeCansKey, take_cans ? "1" : "0");
+    goods_.refresh();
+    reload();
+    return result;
 }
 
 // --- Kegs at customers ----------------------------------------------------------------

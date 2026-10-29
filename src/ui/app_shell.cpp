@@ -49,6 +49,8 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       price_list_window_(sales_, batches_, recipes_, inventory_, units_, ui_scale_),
       sale_dialog_(sales_, packaged_goods_, units_, ui_scale_),
       sales_history_(sales_, sale_dialog_, units_, ui_scale_),
+      takings_dialog_(sales_, ui_scale_),
+      pos_import_window_(sales_, recipes_, batches_, inventory_, units_, ui_scale_),
       floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
                   packaging_views_, personal_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, personal_, units_, calc_settings_, ui_scale_),
@@ -126,7 +128,9 @@ void AppShell::draw() {
     customers_window_.draw();
     price_list_window_.draw();
     sales_history_.draw();
+    pos_import_window_.draw();
     sale_dialog_.draw();
+    takings_dialog_.draw();
     task_views_.draw();
     inventory_views_.draw();
     packaging_views_.draw();
@@ -219,6 +223,10 @@ void AppShell::draw_sales_menu() {
     if (!ImGui::BeginMenu("Sales")) return;
     if (ImGui::MenuItem("Record a sale...")) sale_dialog_.open();
     ImGui::SetItemTooltip("Beer sold to a customer or over the counter: it leaves packaged goods");
+    if (ImGui::MenuItem("Taproom takings...")) takings_dialog_.open();
+    ImGui::SetItemTooltip("What the taproom took in a day, entered by hand");
+    if (ImGui::MenuItem("Import POS sales...")) pos_import_window_.show();
+    ImGui::SetItemTooltip("The taproom's sales from a point-of-sale export (CSV)");
     if (ImGui::MenuItem("Sales history")) sales_history_.show();
     ImGui::Separator();
     if (ImGui::MenuItem("Customers")) customers_window_.show();

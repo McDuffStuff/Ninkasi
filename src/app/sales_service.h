@@ -14,6 +14,7 @@
 // customer until they bring them back (return_kegs).
 
 #include "app/packaged_goods_service.h"
+#include "app/pos_import.h"
 #include "app/session.h"
 #include "data/database.h"
 #include "data/sales_repository.h"
@@ -97,6 +98,45 @@ public:
     // deleted (see domain::can_delete).
     void delete_sale(std::int64_t sale_id);
 
+    // --- Taproom revenue -------------------------------------------------------------
+    // Where it's counted from (admins choose).
+    domain::TaproomRevenue taproom_revenue() const { return taproom_revenue_; }
+    void set_taproom_revenue(domain::TaproomRevenue revenue);
+    // Packaged beer taken out for the taproom (packaged goods' Take out).
+    // Where the taproom's revenue is counted from kegs used up, it's also
+    // recorded as a taproom sale, a keg priced by the pours it gives (see
+    // domain::list_price); otherwise it only leaves packaged goods, and the
+    // point of sale or takings say what it brought in. Throws
+    // std::invalid_argument, saving nothing, as PackagedGoodsService::remove does.
+    void take_to_taproom(const PackagedRemoval& removal);
+
+    // --- Point-of-sale imports ----------------------------------------------------------
+    // How each item on the point of sale is recorded. Anyone importing maps them.
+    const std::vector<domain::PosItem>& pos_items() const { return pos_items_; }
+    void save_pos_item(const domain::PosItem& item);
+    // The columns of exports with this header (see header_signature), as last imported.
+    std::optional<PosColumns> pos_columns(std::string_view signature);
+    void remember_pos_columns(std::string_view signature, const PosColumns& columns);
+    // Whether cans sold to go were last taken out of packaged goods by an import.
+    bool pos_takes_cans();
+    // How many of the days in `rows` were imported before.
+    int pos_days_imported(std::span<const domain::PosRow> rows);
+    struct PosImport {
+        int days = 0;           // days in the file
+        int sales = 0;          // sales recorded
+        int replaced_days = 0;  // days imported before, replaced
+        int netted_out = 0;     // items a day's refunds cancelled
+        double revenue = 0.0;
+    };
+    // Records the sales in a point-of-sale export (see domain::pos_sales).
+    // Days already imported are replaced if `replace`; otherwise it throws.
+    // With `take_cans`, cans sold to go leave packaged goods; without, they
+    // were taken out for the taproom already. Throws std::invalid_argument,
+    // saving nothing, if an item has no mapping, nothing was sold or (with
+    // `take_cans`) there aren't the cans.
+    PosImport import_pos(std::string_view file_name, std::span<const domain::PosRow> rows, bool take_cans,
+                         bool replace);
+
     // --- Kegs at customers ------------------------------------------------------------
     domain::KegAccount keg_account(std::int64_t customer_id, domain::PackageType type) const;
     // Kegs a customer brought back: they go to the keg cleaner dirty, and the
@@ -109,8 +149,9 @@ private:
     void reload();
     static void check(const domain::PriceEntry& price);
     static void check(const domain::Sale& sale);
-    // Writes a sale and its lines, taking its packaged beer out. Call inside a transaction.
-    std::int64_t write_sale(const domain::Sale& sale);
+    // Writes a sale and its lines, taking its packaged beer out unless told
+    // not to. Call inside a transaction.
+    std::int64_t write_sale(const domain::Sale& sale, bool take_packages = true);
 
     data::Database& db_;
     Session session_;
@@ -119,6 +160,8 @@ private:
     data::SalesRepository repository_;
     domain::Currency currency_;
     domain::KegDeposits deposits_;
+    domain::TaproomRevenue taproom_revenue_ = domain::TaproomRevenue::KegsUsedUp;
+    std::vector<domain::PosItem> pos_items_;
     std::vector<domain::Customer> customers_;
     std::vector<domain::PriceEntry> prices_;
     std::map<std::int64_t, std::array<domain::KegAccount, domain::kKegTypes.size()>> keg_accounts_;

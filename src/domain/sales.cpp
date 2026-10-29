@@ -196,7 +196,7 @@ std::optional<double> list_price(std::span<const PriceEntry> prices_list, const 
         query.pour_l = 0.0;  // the largest
         query.on = local_date(sale.at);
         if (const PriceEntry* pour = find_price(prices_list, query)) {
-            return keg_pour_value(keg_volume_l(line.package), *pour);
+            return keg_pour_value(line.unit_volume_l > 0.0 ? line.unit_volume_l : keg_volume_l(line.package), *pour);
         }
         return std::nullopt;
     }

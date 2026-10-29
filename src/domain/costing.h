@@ -37,6 +37,7 @@ struct CostedLot {
     Timestamp received_at{};
     double quantity = 0.0;       // as received
     std::optional<double> cost;  // of all of it
+    std::string supplier;
 };
 
 // What one unit of a lot cost: its cost over the quantity received. nullopt

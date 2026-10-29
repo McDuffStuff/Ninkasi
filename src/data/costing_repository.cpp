@@ -13,10 +13,10 @@ domain::Timestamp column_time(const Statement& stmt, int col) {
 CostingData CostingRepository::load() {
     CostingData data;
 
-    auto lots = db_.prepare("SELECT id, item_id, received_at, quantity, cost FROM inventory_lots;");
+    auto lots = db_.prepare("SELECT id, item_id, received_at, quantity, cost, supplier FROM inventory_lots;");
     while (lots.step()) {
         data.lots.push_back({lots.column_int64(0), lots.column_int64(1), column_time(lots, 2), lots.column_double(3),
-                             lots.column_optional_double(4)});
+                             lots.column_optional_double(4), lots.column_text(5)});
     }
 
     auto remaining = db_.prepare(

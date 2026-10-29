@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdio>
 #include <stdexcept>
+#include <utility>
 
 namespace ninkasi::app {
 
@@ -129,6 +130,34 @@ const std::vector<Spec>& specs() {
          "ORDER BY k.at, k.id;",
          {time("When"), key("Keg"), key("State"), number("Change", 0), key("Reason"), text("Batch"), text("Note"),
           text("Who")}},
+        {{"customers", "Customers", "Everyone beer is sold to"},
+         "SELECT name, channel, contact, notes, CASE active WHEN 1 THEN 'Yes' ELSE 'No' END FROM customers "
+         "ORDER BY active DESC, name COLLATE NOCASE;",
+         {text("Customer"), key("Channel"), text("Contact"), text("Notes"), text("Still buying")}},
+        {{"sales", "Sales", "Each line of each sale: what was sold, to whom, for how much", true},
+         "SELECT s.at, s.id, s.channel, COALESCE(c.name, ''), s.number, s.source, l.kind, l.beer, l.package, "
+         "l.unit_volume_l, l.quantity, l.pack_size, l.pour_l, l.unit_price, l.quantity * l.unit_price, "
+         "l.description, s.note, u.display_name FROM sale_lines l JOIN sales s ON s.id = l.sale_id "
+         "LEFT JOIN customers c ON c.id = s.customer_id JOIN users u ON u.id = s.user_id ORDER BY s.at, s.id, l.id;",
+         {time("When"), number("Sale", 0), key("Channel"), text("Customer"), text("Number"), key("Recorded by"),
+          key("Line"), text("Beer"), key("Package"), number("Each holds (L)", 3), number("Quantity", 2),
+          number("In a pack", 0), number("Pour (L)", 3), number("Price each", 2), number("Amount", 2),
+          text("Description"), text("Note"), text("Who")}},
+        {{"price_list", "Price list", "Every price, earlier ones included", true},
+         "SELECT CASE beer WHEN '' THEN 'Every beer' ELSE beer END, channel, priced_as, package, unit_volume_l, "
+         "pack_size, pour_l, yield, price, effective_from FROM prices "
+         "ORDER BY channel, beer COLLATE NOCASE, effective_from, id;",
+         {text("Beer"), key("Channel"), key("Sold as"), key("Package"), number("Each holds (L)", 3),
+          number("In a pack", 0), number("Pour (L)", 3), number("Yield", 2), number("Price", 2), text("From")}},
+        {{"expenses", "Expenses", "What the brewery spent, by day and category", true},
+         "SELECT e.day, e.payee, c.name, e.amount, e.number, e.note, u.display_name FROM expenses e "
+         "JOIN expense_categories c ON c.id = e.category_id JOIN users u ON u.id = e.user_id ORDER BY e.day, e.id;",
+         {text("Day"), text("Paid to"), text("Category"), number("Amount", 2), text("Invoice"), text("Note"),
+          text("Who")}},
+        {{"recurring_expenses", "Monthly expenses", "Expenses that recur every month: rent, wages...", true},
+         "SELECT r.description, c.name, r.monthly, r.first_month, COALESCE(r.last_month, '') "
+         "FROM recurring_expenses r JOIN expense_categories c ON c.id = r.category_id ORDER BY r.first_month, r.id;",
+         {text("What"), text("Category"), number("Each month", 2), text("From"), text("Until")}},
         {{"tasks", "Tasks", "Open and done tasks"},
          "SELECT t.title, COALESCE(e.name, ''), COALESCE(b.code, ''), COALESCE(t.due_date, ''), t.created_at, "
          "t.done_at, t.notes FROM tasks t LEFT JOIN elements e ON e.id = t.element_id "
@@ -197,19 +226,20 @@ std::string cell(const data::Statement& stmt, int col, const Column& column, con
 
 } // namespace
 
-ExportService::ExportService(data::Database& db, const calc::UnitPreferences& units) : db_(db), units_(units) {}
+ExportService::ExportService(data::Database& db, const calc::UnitPreferences& units, Session session)
+    : db_(db), units_(units), session_(std::move(session)) {}
 
-std::span<const ExportTable> ExportService::tables() {
-    static const std::vector<ExportTable> tables = [] {
-        std::vector<ExportTable> list;
-        for (const Spec& entry : specs()) list.push_back(entry.table);
-        return list;
-    }();
-    return tables;
+std::vector<ExportTable> ExportService::tables() const {
+    std::vector<ExportTable> list;
+    for (const Spec& entry : specs()) {
+        if (!entry.table.money || session_.is_admin()) list.push_back(entry.table);
+    }
+    return list;
 }
 
 std::string ExportService::csv(std::string_view key) {
     const Spec& table = spec(key);
+    if (table.table.money) require_admin(session_, "export the brewery's money");
     std::vector<std::string> fields;
     for (const Column& column : table.columns) fields.push_back(header(column, units_));
     std::string text = csv_row(fields);

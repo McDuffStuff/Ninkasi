@@ -254,7 +254,7 @@ void BackupWindow::draw_export() {
     ImGui::TableSetupColumn("What's in it", ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupColumn("##export");
     ImGui::TableHeadersRow();
-    for (const app::ExportTable& table : app::ExportService::tables()) {
+    for (const app::ExportTable& table : exports_.tables()) {
         ImGui::PushID(table.key.data());
         ImGui::TableNextRow();
         ImGui::TableNextColumn();

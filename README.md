@@ -131,7 +131,7 @@ Brewers see volumes, rates and ingredient use; money is for admins.
 ### Backups and export
 - **File > Back up now** saves a complete copy of the brewery's data in the backup folder ("backups" beside the database, unless you choose another). With **Every day** on (the default), a backup is also made the first time Ninkasi starts each day, and the newest 14 are kept.
 - **File > Backups and export** lists the backups. **Save a copy...** puts one anywhere (another drive, a shared folder). **Restore...** (admins) closes Ninkasi; the next time it starts, the backup replaces the current data, which is first saved as a backup of its own so nothing is lost.
-- **Export** saves the records as CSV files for a spreadsheet, one table at a time or all of them into a folder: batches, brews, ingredients used, readings, the volume ledger, inventory, stock in and out, invoices, packaged goods, the packaging and keg logs, tasks and the activity log.
+- **Export** saves the records as CSV files for a spreadsheet, one table at a time or all of them into a folder: batches, brews, ingredients used, readings, the volume ledger, inventory, stock in and out, invoices, packaged goods, the packaging and keg logs, customers, tasks and the activity log; for admins also sales, the price list and expenses.
 
 ## Making a release
 1. Set the new version in `CMakeLists.txt` (`project(Ninkasi VERSION 1.2.0 ...)`) and commit it.

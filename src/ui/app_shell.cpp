@@ -42,7 +42,7 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
                            sales_.revision() + expenses_.revision();
                 }),
       backups_(db, session_, settings_, std::filesystem::path(db_path_)),
-      exports_(db, units_),
+      exports_(db, units_, session_),
       dialogs_(batches_, floor_, recipes_, inventory_, packaged_goods_, units_, calc_settings_, ui_scale_),
       task_views_(tasks_, floor_, batches_, ui_scale_),
       inventory_views_(inventory_, floor_, library_, units_, ui_scale_),

@@ -5,6 +5,7 @@
 #include "app/inventory_service.h"
 #include "app/packaged_goods_service.h"
 #include "app/session.h"
+#include "app/user_service.h"
 #include "data/database.h"
 #include "data/migrations.h"
 #include "test_helpers.h"
@@ -41,7 +42,7 @@ struct Brewery {
     app::InventoryService inventory{db, session};
     app::PackagedGoodsService goods{db, session};
     app::BatchService batches{db, session, floor, inventory, goods};
-    app::ExportService exports{db, units};
+    app::ExportService exports{db, units, session};
 
     Brewery() {
         units.set(calc::Measure::Gravity, calc::Unit::SpecificGravity);
@@ -105,16 +106,34 @@ TEST_CASE("tables export with names, readable keys and the brewery's units") {
 
 TEST_CASE("every table exports, and all of them can be saved at once") {
     Brewery brewery;
-    for (const app::ExportTable& table : app::ExportService::tables()) {
+    for (const app::ExportTable& table : brewery.exports.tables()) {
         CAPTURE(table.key);
         CHECK_FALSE(brewery.exports.csv(table.key).empty());
     }
 
     const fs::path folder = fs::temp_directory_path() / ("ninkasi-export-" + std::to_string(std::random_device{}()));
     const std::vector<fs::path> files = brewery.exports.save_all(folder);
-    CHECK(files.size() == app::ExportService::tables().size());
+    CHECK(files.size() == brewery.exports.tables().size());
     for (const fs::path& file : files) CHECK(fs::exists(file));
     CHECK(fs::exists(folder / "Batches.csv"));
     std::error_code error;
     fs::remove_all(folder, error);
+}
+
+TEST_CASE("only admins export the brewery's money") {
+    Brewery brewery;
+    app::UserService users(brewery.db, app::PasswordCost{1024, 1});
+    users.set_password(brewery.session, brewery.session.user_id, "admin");
+    const app::Session brewer = *users.sign_in(users.add(brewery.session, "Sam", domain::Role::Brewer, ""), "");
+    app::ExportService exports(brewery.db, brewery.units, brewer);
+    bool sales = false;
+    bool customers = false;
+    for (const app::ExportTable& table : exports.tables()) {
+        sales = sales || table.key == "sales";
+        customers = customers || table.key == "customers";
+    }
+    CHECK_FALSE(sales);
+    CHECK(customers);
+    CHECK_THROWS_AS(exports.csv("expenses"), app::NotAllowed);
+    CHECK(brewery.exports.csv("sales").find("Price each") != std::string::npos);
 }

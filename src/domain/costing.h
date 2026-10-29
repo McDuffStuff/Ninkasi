@@ -97,7 +97,8 @@ struct BatchCost {
     double brewed_l = 0.0;
     double packaged_l = 0.0;
     int cans_packaged = 0;
-    bool finished = false;  // all of it packaged or dumped
+    double can_volume_l = 0.0;  // what its cans hold, if it was canned
+    bool finished = false;      // all of it packaged or dumped
 
     // Its beer's cost per liter: over the liters packaged once it's
     // finished; before, over the liters brewed. nullopt with nothing drawn,

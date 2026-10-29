@@ -217,7 +217,10 @@ std::map<std::int64_t, BatchCost> batch_costs(std::span<const CostedDraw> draws,
         const auto found = costs.find(movement.batch_id);
         if (found == costs.end()) continue;
         found->second.packaged_l += movement.quantity * movement.unit_volume_l;
-        if (movement.type == PackageType::Can) found->second.cans_packaged += movement.quantity;
+        if (movement.type == PackageType::Can) {
+            found->second.cans_packaged += movement.quantity;
+            found->second.can_volume_l = movement.unit_volume_l;
+        }
     }
     return costs;
 }

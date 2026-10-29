@@ -244,6 +244,8 @@ public:
     Overview overview(const InsightsQuery& query) const;
     SalesInsights sales(const InsightsQuery& query) const;
     BeerDetail beer_detail(const std::string& beer, const InsightsQuery& query) const;
+    // The sales recorded from `from` to `to`, newest first: the rows behind a bar.
+    std::vector<domain::Sale> sales_between(domain::Date from, domain::Date to) const;
     std::vector<BeerRunway> stock(domain::Date today) const;
     IngredientInsights ingredients(const InsightsQuery& query) const;
     ProductionInsights production(const InsightsQuery& query) const;

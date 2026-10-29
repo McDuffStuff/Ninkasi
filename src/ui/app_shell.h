@@ -3,10 +3,12 @@
 
 #include "app/backup_service.h"
 #include "app/batch_service.h"
+#include "app/costing_service.h"
 #include "app/expense_service.h"
 #include "app/export_service.h"
 #include "app/floor_service.h"
 #include "app/formula_service.h"
+#include "app/insights_service.h"
 #include "app/ingredient_library.h"
 #include "app/inventory_service.h"
 #include "app/packaged_goods_service.h"
@@ -25,6 +27,7 @@
 #include "ui/cellar/cellar_dialogs.h"
 #include "ui/elements/element_windows.h"
 #include "ui/floor/floor_view.h"
+#include "ui/insights/insights_window.h"
 #include "ui/inventory/inventory_views.h"
 #include "ui/packaging/packaging_views.h"
 #include "ui/people_window.h"
@@ -115,6 +118,8 @@ private:
     app::TtbService ttb_;
     app::SalesService sales_;
     app::ExpenseService expenses_;
+    app::CostingService costing_;
+    app::InsightsService insights_;
     app::BackupService backups_;
     app::ExportService exports_;
     CellarDialogs dialogs_;
@@ -133,6 +138,7 @@ private:
     TakingsDialog takings_dialog_;
     PosImportWindow pos_import_window_;
     ExpensesWindow expenses_window_;
+    InsightsWindow insights_window_;
     FloorView floor_view_;
     RecipeEditors recipe_editors_;
     RecipeLibraryWindow recipe_library_;

@@ -34,6 +34,13 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       ttb_(db, session_, settings_),
       sales_(db, session_, settings_, packaged_goods_),
       expenses_(db, session_),
+      costing_(db, session_),
+      // The figures are worked out again when any ledger they come from changes.
+      insights_(db, session_, settings_, ttb_, expenses_, costing_,
+                [this] {
+                    return inventory_.revision() + packaged_goods_.revision() + batches_.revision() +
+                           sales_.revision() + expenses_.revision();
+                }),
       backups_(db, session_, settings_, std::filesystem::path(db_path_)),
       exports_(db, units_),
       dialogs_(batches_, floor_, recipes_, inventory_, packaged_goods_, units_, calc_settings_, ui_scale_),
@@ -53,6 +60,7 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       takings_dialog_(sales_, ui_scale_),
       pos_import_window_(sales_, recipes_, batches_, inventory_, units_, ui_scale_),
       expenses_window_(expenses_, sales_, ui_scale_),
+      insights_window_(insights_, sales_, expenses_, units_, ui_scale_),
       floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
                   packaging_views_, personal_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, personal_, units_, calc_settings_, ui_scale_),
@@ -132,6 +140,7 @@ void AppShell::draw() {
     sales_history_.draw();
     pos_import_window_.draw();
     expenses_window_.draw();
+    insights_window_.draw();
     sale_dialog_.draw();
     takings_dialog_.draw();
     task_views_.draw();
@@ -171,6 +180,8 @@ void AppShell::draw_menu_bar() {
         ImGui::MenuItem("Tasks", nullptr, task_views_.window_visible());
         ImGui::MenuItem("Inventory", nullptr, inventory_views_.window_visible());
         ImGui::MenuItem("TTB reports", nullptr, ttb_window_.visible());
+        if (ImGui::MenuItem("Insights")) insights_window_.show();
+        ImGui::SetItemTooltip("Sales, stock, ingredients and production over time, in charts");
         ImGui::Separator();
         if (ImGui::BeginMenu("Theme")) {
             if (ImGui::MenuItem("Dark", nullptr, theme_ == Theme::Dark)) set_theme(Theme::Dark);

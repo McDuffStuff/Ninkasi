@@ -359,6 +359,14 @@ BeerDetail InsightsService::beer_detail(const std::string& beer, const InsightsQ
     return detail;
 }
 
+std::vector<domain::Sale> InsightsService::sales_between(domain::Date from, domain::Date to) const {
+    std::vector<domain::Sale> found;
+    for (const domain::Sale& sale : data_.sales) {
+        if (in(from, to, sale.at)) found.push_back(sale);
+    }
+    return found;  // the sales are read newest first
+}
+
 // --- Stock and planning -----------------------------------------------------------
 
 std::vector<BeerRunway> InsightsService::stock(domain::Date today) const {

@@ -2,6 +2,7 @@
 // Small reusable ImGui widgets for Ninkasi's data.
 
 #include "calc/units.h"
+#include "domain/money.h"
 #include "domain/recipe.h"
 #include "domain/recipe_math.h"
 #include "ui/search_combo.h"
@@ -38,6 +39,9 @@ bool input_quantity(const char* label, double& canonical_value, calc::Unit unit)
 bool edit_quantity(const char* label, double& canonical_value, calc::Unit unit, bool show_symbol = true);
 bool edit_number(const char* label, double& value, int decimals, const char* suffix = nullptr);
 bool edit_percent(const char* label, double& fraction, int decimals = 1);
+// An amount of money, with the currency's symbol beside the box ("$" before
+// it, or "€" after), so the box holds just the number.
+bool edit_money(const char* label, double& amount, const domain::Currency& currency);
 // A volume per mass (grain absorption, mash thickness) stored in L/kg, shown
 // as qt/lb when grain is weighed in pounds or ounces.
 bool edit_volume_per_mass(const char* label, double& l_per_kg, calc::Unit mass_unit);

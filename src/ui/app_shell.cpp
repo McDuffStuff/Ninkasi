@@ -32,6 +32,7 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       batches_(db, session_, floor_, inventory_, packaged_goods_),
       tasks_(db, session_),
       ttb_(db, session_, settings_),
+      sales_(db, session_, settings_),
       backups_(db, session_, settings_, std::filesystem::path(db_path_)),
       exports_(db, units_),
       dialogs_(batches_, floor_, recipes_, inventory_, packaged_goods_, units_, calc_settings_, ui_scale_),
@@ -44,6 +45,8 @@ AppShell::AppShell(data::Database& db, app::UserService& users, app::Session ses
       ttb_window_(ttb_, batches_, packaged_goods_, ui_scale_),
       backup_window_(backups_, exports_, ui_scale_),
       people_window_(users_, session_, ui_scale_),
+      customers_window_(sales_, ui_scale_),
+      price_list_window_(sales_, batches_, recipes_, inventory_, units_, ui_scale_),
       floor_view_(floor_, batches_, tasks_, inventory_, packaged_goods_, element_windows_, dialogs_,
                   packaging_views_, personal_, units_, calc_settings_, ui_scale_),
       recipe_editors_(recipes_, library_, personal_, units_, calc_settings_, ui_scale_),
@@ -118,6 +121,8 @@ void AppShell::draw() {
     ttb_window_.draw();
     backup_window_.draw();
     people_window_.draw();
+    customers_window_.draw();
+    price_list_window_.draw();
     task_views_.draw();
     inventory_views_.draw();
     packaging_views_.draw();
@@ -174,6 +179,7 @@ void AppShell::draw_menu_bar() {
         ImGui::SetItemTooltip("Every formula Ninkasi calculates with, written out");
         ImGui::EndMenu();
     }
+    draw_sales_menu();
     draw_units_menu();
     if (ImGui::BeginMenu("Help")) {
         ImGui::MenuItem("About Ninkasi", nullptr, &show_about_);
@@ -202,6 +208,19 @@ void AppShell::draw_account_menu() {
     const bool can_sign_out = users_.sign_in_needed();
     if (ImGui::MenuItem("Sign out", nullptr, false, can_sign_out)) sign_out_requested_ = true;
     if (!can_sign_out) ImGui::SetItemTooltip("With one person and no password, Ninkasi opens without signing in.");
+    ImGui::EndMenu();
+}
+
+void AppShell::draw_sales_menu() {
+    if (!ImGui::BeginMenu("Sales")) return;
+    if (ImGui::MenuItem("Customers")) customers_window_.show();
+    ImGui::SetItemTooltip("Distributors, bars, stores and others you sell to");
+    // The brewery's prices are its money: admins only.
+    if (session_.is_admin()) {
+        ImGui::Separator();
+        if (ImGui::MenuItem("Price list")) price_list_window_.show();
+        ImGui::SetItemTooltip("What each beer sells for, by channel, and the currency");
+    }
     ImGui::EndMenu();
 }
 

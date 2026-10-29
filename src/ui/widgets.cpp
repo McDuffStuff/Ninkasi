@@ -99,6 +99,23 @@ bool edit_percent(const char* label, double& fraction, int decimals) {
     return changed;
 }
 
+bool edit_money(const char* label, double& amount, const domain::Currency& currency) {
+    const float gap = ImGui::GetStyle().ItemInnerSpacing.x;
+    if (!currency.symbol_after && !currency.symbol.empty()) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(currency.symbol.c_str());
+        ImGui::SameLine(0.0f, gap);
+    }
+    char format[16];
+    format_for(format, currency.decimals);
+    const bool changed = ImGui::InputDouble(label, &amount, 0.0, 0.0, format, kNumberFlags);
+    if (currency.symbol_after && !currency.symbol.empty()) {
+        ImGui::SameLine(0.0f, gap);
+        ImGui::TextUnformatted(currency.symbol.c_str());
+    }
+    return changed;
+}
+
 bool edit_volume_per_mass(const char* label, double& l_per_kg, calc::Unit mass_unit) {
     const bool imperial = uses_imperial_mass(mass_unit);
     // 1 L/kg is 0.479 US qt/lb.

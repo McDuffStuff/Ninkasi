@@ -10,6 +10,7 @@
 #include "app/inventory_service.h"
 #include "app/packaged_goods_service.h"
 #include "app/recipe_service.h"
+#include "app/sales_service.h"
 #include "app/session.h"
 #include "app/task_service.h"
 #include "app/ttb_service.h"
@@ -30,6 +31,8 @@
 #include "ui/recipes/ingredient_library_window.h"
 #include "ui/recipes/recipe_editors.h"
 #include "ui/recipes/recipe_library_window.h"
+#include "ui/sales/customers_window.h"
+#include "ui/sales/price_list_window.h"
 #include "ui/tasks/task_views.h"
 #include "ui/theme.h"
 #include "ui/ttb/ttb_window.h"
@@ -71,6 +74,7 @@ public:
 private:
     void draw_menu_bar();
     void draw_units_menu();
+    void draw_sales_menu();
     void draw_account_menu();
     void draw_about_window();
     void draw_notice();
@@ -103,6 +107,7 @@ private:
     app::BatchService batches_;
     app::TaskService tasks_;
     app::TtbService ttb_;
+    app::SalesService sales_;
     app::BackupService backups_;
     app::ExportService exports_;
     CellarDialogs dialogs_;
@@ -114,6 +119,8 @@ private:
     TtbWindow ttb_window_;
     BackupWindow backup_window_;
     PeopleWindow people_window_;
+    CustomersWindow customers_window_;
+    PriceListWindow price_list_window_;
     FloorView floor_view_;
     RecipeEditors recipe_editors_;
     RecipeLibraryWindow recipe_library_;

@@ -56,9 +56,11 @@ add_library(ninkasi_core STATIC
     src/domain/element.cpp
     src/domain/fuzzy_match.cpp
     src/domain/inventory.cpp
+    src/domain/money.cpp
     src/domain/packaging.cpp
     src/domain/recipe.cpp
     src/domain/recipe_math.cpp
+    src/domain/sales.cpp
     src/domain/timestamp.cpp
     src/domain/ttb.cpp
     src/domain/user.cpp
@@ -74,6 +76,7 @@ add_library(ninkasi_core STATIC
     src/data/packaging_repository.cpp
     src/data/recipe_json.cpp
     src/data/recipe_repository.cpp
+    src/data/sales_repository.cpp
     src/data/settings_repository.cpp
     src/data/task_repository.cpp
     src/data/ttb_repository.cpp
@@ -93,6 +96,7 @@ add_library(ninkasi_core STATIC
     src/app/picture.cpp
     src/app/paths.cpp
     src/app/recipe_service.cpp
+    src/app/sales_service.cpp
     src/app/session.cpp
     src/app/task_service.cpp
     src/app/ttb_service.cpp
@@ -137,6 +141,8 @@ add_executable(ninkasi
     src/ui/recipes/recipe_editors.cpp
     src/ui/recipes/recipe_library_window.cpp
     src/ui/recipes/recipe_sections.cpp
+    src/ui/sales/customers_window.cpp
+    src/ui/sales/price_list_window.cpp
     src/ui/tasks/task_views.cpp
     src/ui/texture.cpp
     src/ui/theme.cpp
@@ -188,6 +194,7 @@ if(NINKASI_BUILD_TESTS)
         tests/app/test_backup_service.cpp
         tests/app/test_batch_service.cpp
         tests/app/test_beerjson_import.cpp
+        tests/app/test_csv.cpp
         tests/app/test_export_service.cpp
         tests/app/test_floor_service.cpp
         tests/app/test_formula_service.cpp
@@ -196,6 +203,7 @@ if(NINKASI_BUILD_TESTS)
         tests/app/test_password.cpp
         tests/app/test_picture.cpp
         tests/app/test_recipe_service.cpp
+        tests/app/test_sales_service.cpp
         tests/app/test_task_service.cpp
         tests/app/test_ttb_service.cpp
         tests/app/test_unit_settings.cpp
@@ -219,8 +227,10 @@ if(NINKASI_BUILD_TESTS)
         tests/domain/test_element.cpp
         tests/domain/test_fuzzy_match.cpp
         tests/domain/test_inventory.cpp
+        tests/domain/test_money.cpp
         tests/domain/test_packaging.cpp
         tests/domain/test_recipe_math.cpp
+        tests/domain/test_sales.cpp
         tests/domain/test_timestamp.cpp
         tests/domain/test_ttb.cpp
     )

@@ -377,6 +377,36 @@ constexpr Migration kMigrations[] = {
             opacity   REAL NOT NULL       -- 1 is solid
         );
     )sql"},
+    {14, R"sql(
+        -- People and businesses beer is sold to.
+        CREATE TABLE customers (
+            id         INTEGER PRIMARY KEY,
+            name       TEXT NOT NULL,
+            channel    TEXT NOT NULL,                  -- see Channel in domain/sales.h
+            contact    TEXT NOT NULL DEFAULT '',
+            notes      TEXT NOT NULL DEFAULT '',
+            active     INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+
+        -- The price list. A price applies from its date until a later price for
+        -- the same thing takes over, so sales keep the prices they had.
+        CREATE TABLE prices (
+            id             INTEGER PRIMARY KEY,
+            beer           TEXT NOT NULL DEFAULT '',   -- '' for every beer without its own price
+            channel        TEXT NOT NULL,
+            priced_as      TEXT NOT NULL,              -- 'package' or 'pour'
+            package        TEXT NOT NULL DEFAULT '',   -- packages: 'half_barrel', 'sixtel' or 'can'
+            unit_volume_l  REAL NOT NULL DEFAULT 0,    -- cans: what one holds (0 for any can)
+            pack_size      INTEGER NOT NULL DEFAULT 1, -- packages in each unit sold
+            pour_l         REAL NOT NULL DEFAULT 0,    -- pours: how much one is
+            yield          REAL NOT NULL DEFAULT 1,    -- pours: the share of a keg sold as pours
+            price          REAL NOT NULL,              -- each unit sold, in the brewery's currency
+            effective_from TEXT NOT NULL,              -- local date
+            user_id        INTEGER NOT NULL REFERENCES users(id),
+            recorded_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+    )sql"},
 };
 
 } // namespace

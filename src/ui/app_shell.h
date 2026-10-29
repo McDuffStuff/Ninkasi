@@ -3,6 +3,7 @@
 
 #include "app/backup_service.h"
 #include "app/batch_service.h"
+#include "app/expense_service.h"
 #include "app/export_service.h"
 #include "app/floor_service.h"
 #include "app/formula_service.h"
@@ -32,6 +33,7 @@
 #include "ui/recipes/recipe_editors.h"
 #include "ui/recipes/recipe_library_window.h"
 #include "ui/sales/customers_window.h"
+#include "ui/sales/expenses_window.h"
 #include "ui/sales/pos_import_window.h"
 #include "ui/sales/price_list_window.h"
 #include "ui/sales/sale_dialog.h"
@@ -112,6 +114,7 @@ private:
     app::TaskService tasks_;
     app::TtbService ttb_;
     app::SalesService sales_;
+    app::ExpenseService expenses_;
     app::BackupService backups_;
     app::ExportService exports_;
     CellarDialogs dialogs_;
@@ -129,6 +132,7 @@ private:
     SalesHistoryWindow sales_history_;
     TakingsDialog takings_dialog_;
     PosImportWindow pos_import_window_;
+    ExpensesWindow expenses_window_;
     FloorView floor_view_;
     RecipeEditors recipe_editors_;
     RecipeLibraryWindow recipe_library_;

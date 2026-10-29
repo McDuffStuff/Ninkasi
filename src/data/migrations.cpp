@@ -470,6 +470,43 @@ constexpr Migration kMigrations[] = {
             pack_size     INTEGER NOT NULL DEFAULT 1
         );
     )sql"},
+    {17, R"sql(
+        -- What the brewery spends besides what it brews with, by category.
+        CREATE TABLE expense_categories (
+            id     INTEGER PRIMARY KEY,
+            name   TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            active INTEGER NOT NULL DEFAULT 1   -- offered for new expenses
+        );
+        INSERT INTO expense_categories (name) VALUES
+            ('Rent'), ('Wages'), ('Utilities'), ('Insurance'), ('Repairs and maintenance'),
+            ('Cleaning and lab supplies'), ('Taproom supplies'), ('Marketing'), ('Licenses and fees'),
+            ('Professional services'), ('Delivery and freight'), ('Other');
+
+        CREATE TABLE expenses (
+            id          INTEGER PRIMARY KEY,
+            day         TEXT NOT NULL,              -- local date
+            payee       TEXT NOT NULL DEFAULT '',
+            category_id INTEGER NOT NULL REFERENCES expense_categories(id),
+            amount      REAL NOT NULL,
+            number      TEXT NOT NULL DEFAULT '',   -- invoice or receipt number
+            note        TEXT NOT NULL DEFAULT '',
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE INDEX expenses_day ON expenses(day);
+
+        -- The same amount every month, counted on the first: rent, wages...
+        CREATE TABLE recurring_expenses (
+            id          INTEGER PRIMARY KEY,
+            category_id INTEGER NOT NULL REFERENCES expense_categories(id),
+            description TEXT NOT NULL,
+            monthly     REAL NOT NULL,
+            first_month TEXT NOT NULL,   -- 'YYYY-MM'
+            last_month  TEXT,            -- NULL while it goes on
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+    )sql"},
 };
 
 } // namespace

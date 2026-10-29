@@ -60,6 +60,7 @@ add_library(ninkasi_core STATIC
     src/domain/packaging.cpp
     src/domain/recipe.cpp
     src/domain/recipe_math.cpp
+    src/domain/expenses.cpp
     src/domain/sales.cpp
     src/domain/timestamp.cpp
     src/domain/ttb.cpp
@@ -76,6 +77,7 @@ add_library(ninkasi_core STATIC
     src/data/packaging_repository.cpp
     src/data/recipe_json.cpp
     src/data/recipe_repository.cpp
+    src/data/expense_repository.cpp
     src/data/sales_repository.cpp
     src/data/settings_repository.cpp
     src/data/task_repository.cpp
@@ -96,6 +98,7 @@ add_library(ninkasi_core STATIC
     src/app/picture.cpp
     src/app/paths.cpp
     src/app/recipe_service.cpp
+    src/app/expense_service.cpp
     src/app/pos_import.cpp
     src/app/sales_service.cpp
     src/app/session.cpp
@@ -143,6 +146,7 @@ add_executable(ninkasi
     src/ui/recipes/recipe_library_window.cpp
     src/ui/recipes/recipe_sections.cpp
     src/ui/sales/customers_window.cpp
+    src/ui/sales/expenses_window.cpp
     src/ui/sales/pos_import_window.cpp
     src/ui/sales/price_list_window.cpp
     src/ui/sales/sale_dialog.cpp
@@ -201,6 +205,7 @@ if(NINKASI_BUILD_TESTS)
         tests/app/test_batch_service.cpp
         tests/app/test_beerjson_import.cpp
         tests/app/test_csv.cpp
+        tests/app/test_expense_service.cpp
         tests/app/test_pos_import.cpp
         tests/app/test_export_service.cpp
         tests/app/test_floor_service.cpp
@@ -237,6 +242,7 @@ if(NINKASI_BUILD_TESTS)
         tests/domain/test_money.cpp
         tests/domain/test_packaging.cpp
         tests/domain/test_recipe_math.cpp
+        tests/domain/test_expenses.cpp
         tests/domain/test_sales.cpp
         tests/domain/test_timestamp.cpp
         tests/domain/test_ttb.cpp

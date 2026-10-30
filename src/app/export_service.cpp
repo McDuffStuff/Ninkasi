@@ -145,10 +145,10 @@ const std::vector<Spec>& specs() {
           text("Description"), text("Note"), text("Who")}},
         {{"price_list", "Price list", "Every price, earlier ones included", true},
          "SELECT CASE beer WHEN '' THEN 'Every beer' ELSE beer END, channel, priced_as, package, unit_volume_l, "
-         "pack_size, pour_l, yield, price, effective_from FROM prices "
+         "pack_size, yield, price, effective_from FROM prices "
          "ORDER BY channel, beer COLLATE NOCASE, effective_from, id;",
          {text("Beer"), key("Channel"), key("Sold as"), key("Package"), number("Each holds (L)", 3),
-          number("In a pack", 0), number("Pour (L)", 3), number("Yield", 2), number("Price", 2), text("From")}},
+          number("In a pack", 0), number("Yield", 2), number("Price (pours: per liter)", 4), text("From")}},
         {{"expenses", "Expenses", "What the brewery spent, by day and category", true},
          "SELECT e.day, e.payee, c.name, e.amount, e.number, e.note, u.display_name FROM expenses e "
          "JOIN expense_categories c ON c.id = e.category_id JOIN users u ON u.id = e.user_id ORDER BY e.day, e.id;",

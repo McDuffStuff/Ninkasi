@@ -42,7 +42,7 @@ struct Customer {
 // What a price is for.
 enum class PricedAs {
     Package,  // packages: a keg, or cans sold one at a time or in packs
-    Pour,     // a pour in the taproom
+    Pour,     // beer by the pour, priced by volume: in the taproom, or a growler filled
 };
 inline constexpr std::array kPricedAs = {PricedAs::Package, PricedAs::Pour};
 
@@ -56,9 +56,10 @@ struct PriceEntry {
     PackageType package = PackageType::HalfBarrel;  // packages
     double unit_volume_l = 0.0;  // cans: what one holds, or 0 for any can; unused for kegs
     int pack_size = 1;           // packages in each unit sold: a case of cans is 24
-    double pour_l = 0.0;         // pours: how much one is
-    double yield = 0.9;          // pours: the share of a keg that's sold as pours
-    double price = 0.0;          // each unit sold, a pack or a pour, in the brewery's currency
+    double yield = 0.9;          // pours: the share of a keg that reaches glasses
+    // In the brewery's currency: each unit sold (a keg, a pack); for pours, a
+    // liter (shown per fl oz or per 50 mL).
+    double price = 0.0;
     Date effective_from{};
 
     bool operator==(const PriceEntry&) const = default;
@@ -72,15 +73,14 @@ struct PriceQuery {
     PackageType package = PackageType::HalfBarrel;
     double unit_volume_l = 0.0;  // cans
     int pack_size = 1;
-    double pour_l = 0.0;  // pours; 0 for whichever pour is largest (a pint, usually)
     Date on{};
 };
 
 // Whether two names are the same beer: case is ignored, as in packaged goods.
 bool same_beer(std::string_view a, std::string_view b);
 
-// Whether two entries price the same thing (beer, channel, package or pour,
-// size): a later one of them replaces an earlier one.
+// Whether two entries price the same thing (beer, channel, and the package
+// and its size, or pours): a later one of them replaces an earlier one.
 bool same_priced_thing(const PriceEntry& a, const PriceEntry& b);
 
 // The price list entry for `query`: the beer's own price before the price
@@ -92,9 +92,8 @@ const PriceEntry* find_price(std::span<const PriceEntry> prices, const PriceQuer
 // started by then. In the order given.
 std::vector<PriceEntry> prices_in_effect(std::span<const PriceEntry> prices, Date date);
 
-// What a keg brings in sold by the pour: the pours it gives (its volume times
-// the pour's yield, divided by the pour size) at the pour's price. 0 if the
-// pour has no size.
+// What a keg brings in sold by the pour: its volume times the pour price's
+// yield, at its price per liter.
 double keg_pour_value(double keg_l, const PriceEntry& pour);
 
 // --- Sales ----------------------------------------------------------------------
@@ -173,10 +172,10 @@ struct Sale {
 // deposits and other lines.
 std::optional<PriceQuery> price_query(const Sale& sale, const SaleLine& line);
 
-// The price list's price for a line of a sale (see price_query). A keg used
-// up in the taproom is priced by what it brings in by the pour (see
-// keg_pour_value), at the beer's largest taproom pour. nullopt if the price
-// list has none.
+// The price list's price for a line of a sale (see price_query): a pour's
+// is its size at the price per liter. A keg used up in the taproom is priced
+// by what it brings in by the pour (see keg_pour_value). nullopt if the
+// price list has none.
 std::optional<double> list_price(std::span<const PriceEntry> prices, const Sale& sale, const SaleLine& line);
 
 // --- Taproom revenue ---------------------------------------------------------------

@@ -85,9 +85,8 @@ struct Brewery {
         domain::PriceEntry pint;
         pint.channel = Channel::Taproom;
         pint.priced_as = domain::PricedAs::Pour;
-        pint.pour_l = 0.473;
         pint.yield = 0.9;
-        pint.price = 7.0;
+        pint.price = 7.0 / 0.473;  // $7 a pint, per liter
         pint.effective_from = {2026, 1, 1};
         sales->add_price(pint);
 

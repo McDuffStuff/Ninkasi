@@ -143,7 +143,6 @@ void SalesService::check(const domain::PriceEntry& price) {
         throw std::invalid_argument("A pack holds at least one package.");
     }
     if (price.priced_as == domain::PricedAs::Pour) {
-        if (!(price.pour_l > 0.0)) throw std::invalid_argument("A pour needs a size.");
         if (!(price.yield > 0.0 && price.yield <= 1.0)) {
             throw std::invalid_argument("A keg's yield is between 0 and 100 %.");
         }

@@ -18,5 +18,8 @@ int schema_version(Database& db);
 
 // Applies every migration newer than the database's current version.
 void migrate(Database& db);
+// Applies those up to `version` only: for testing a migration that changes
+// data, on data written as the version before it would have.
+void migrate(Database& db, int version);
 
 } // namespace ninkasi::data

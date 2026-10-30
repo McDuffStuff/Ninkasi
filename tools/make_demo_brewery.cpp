@@ -121,7 +121,7 @@ public:
     // The year from `first` to `last`, brewing from the day after the first.
     void make(Date first, Date last) {
         first_brew_ = domain::add_days(first, 1);
-        set_up(first);
+        set_up(first, last);
         for (Date day = first; day <= last; day = domain::add_days(day, 1)) live(day, day == last);
     }
 
@@ -155,7 +155,7 @@ private:
         return 1.3 - 0.3 * std::cos((year_part - 0.04) * 2.0 * 3.14159265358979);
     }
 
-    void set_up(Date first) {
+    void set_up(Date first, Date last) {
         // The floor: a 10-barrel brewhouse, four 20-barrel fermenters, and the rooms.
         brewhouse_ = floor_.add(domain::ElementType::Brewhouse, 120.0, 120.0);
         floor_.set_capacity(brewhouse_, 10.0 * kBarrel);
@@ -201,15 +201,15 @@ private:
         domain::PriceEntry pint;
         pint.channel = domain::Channel::Taproom;
         pint.priced_as = domain::PricedAs::Pour;
-        pint.pour_l = kPint;
         pint.yield = 0.88;
-        pint.price = 7.0;
+        pint.price = 7.0 / kPint;  // $7 a pint, per liter
         pint.effective_from = from;
         sales_.add_price(pint);
-        // Prices went up in the spring.
-        const Date spring{first.year + (first.month > 3 ? 1 : 0), 4, 1};
-        add_price(domain::Channel::Distributor, PackageType::HalfBarrel, 1, 168.0, spring);
-        add_price(domain::Channel::ToGo, PackageType::Can, 4, 17.0, spring);
+        // Prices went up halfway through, at the start of a month.
+        const Date middle = domain::add_days(first, domain::days_between(first, last) / 2);
+        const Date rise{middle.year, middle.month, 1};
+        add_price(domain::Channel::Distributor, PackageType::HalfBarrel, 1, 168.0, rise);
+        add_price(domain::Channel::ToGo, PackageType::Can, 4, 17.0, rise);
         sales_.set_keg_deposits({30.0, 30.0});
 
         // What it costs to run.

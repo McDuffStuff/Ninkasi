@@ -20,14 +20,13 @@ domain::PriceEntry read_price(const Statement& stmt) {
     price.package = domain::package_type_from_key(stmt.column_text(4)).value_or(domain::PackageType::HalfBarrel);
     price.unit_volume_l = stmt.column_double(5);
     price.pack_size = static_cast<int>(stmt.column_int64(6));
-    price.pour_l = stmt.column_double(7);
-    price.yield = stmt.column_double(8);
-    price.price = stmt.column_double(9);
-    price.effective_from = domain::parse_date(stmt.column_text(10)).value_or(domain::Date{});
+    price.yield = stmt.column_double(7);
+    price.price = stmt.column_double(8);
+    price.effective_from = domain::parse_date(stmt.column_text(9)).value_or(domain::Date{});
     return price;
 }
 
-// Binds a price's fields to parameters 1 to 10.
+// Binds a price's fields to parameters 1 to 9.
 void bind_price(Statement& stmt, const domain::PriceEntry& price) {
     stmt.bind(1, price.beer)
         .bind(2, domain::key(price.channel))
@@ -36,10 +35,9 @@ void bind_price(Statement& stmt, const domain::PriceEntry& price) {
         .bind(4, price.priced_as == domain::PricedAs::Package ? domain::key(price.package) : std::string_view(""))
         .bind(5, price.unit_volume_l)
         .bind(6, price.pack_size)
-        .bind(7, price.pour_l)
-        .bind(8, price.yield)
-        .bind(9, price.price)
-        .bind(10, domain::to_iso8601(price.effective_from));
+        .bind(7, price.yield)
+        .bind(8, price.price)
+        .bind(9, domain::to_iso8601(price.effective_from));
 }
 
 } // namespace
@@ -87,7 +85,7 @@ void SalesRepository::update(const domain::Customer& customer) {
 std::vector<domain::PriceEntry> SalesRepository::prices() {
     std::vector<domain::PriceEntry> prices;
     auto stmt = db_.prepare(
-        "SELECT id, beer, channel, priced_as, package, unit_volume_l, pack_size, pour_l, yield, price, "
+        "SELECT id, beer, channel, priced_as, package, unit_volume_l, pack_size, yield, price, "
         "effective_from FROM prices ORDER BY beer COLLATE NOCASE, channel, priced_as, effective_from, id;");
     while (stmt.step()) prices.push_back(read_price(stmt));
     return prices;
@@ -95,10 +93,10 @@ std::vector<domain::PriceEntry> SalesRepository::prices() {
 
 std::int64_t SalesRepository::insert(const domain::PriceEntry& price, std::int64_t user_id) {
     auto stmt = db_.prepare(
-        "INSERT INTO prices (beer, channel, priced_as, package, unit_volume_l, pack_size, pour_l, yield, price, "
-        "effective_from, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+        "INSERT INTO prices (beer, channel, priced_as, package, unit_volume_l, pack_size, yield, price, "
+        "effective_from, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
     bind_price(stmt, price);
-    stmt.bind(11, user_id);
+    stmt.bind(10, user_id);
     stmt.execute();
     return db_.last_insert_id();
 }
@@ -106,9 +104,9 @@ std::int64_t SalesRepository::insert(const domain::PriceEntry& price, std::int64
 void SalesRepository::update(const domain::PriceEntry& price) {
     auto stmt = db_.prepare(
         "UPDATE prices SET beer = ?, channel = ?, priced_as = ?, package = ?, unit_volume_l = ?, pack_size = ?, "
-        "pour_l = ?, yield = ?, price = ?, effective_from = ? WHERE id = ?;");
+        "yield = ?, price = ?, effective_from = ? WHERE id = ?;");
     bind_price(stmt, price);
-    stmt.bind(11, price.id);
+    stmt.bind(10, price.id);
     stmt.execute();
 }
 

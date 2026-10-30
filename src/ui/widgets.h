@@ -42,8 +42,10 @@ bool edit_percent(const char* label, double& fraction, int decimals = 1);
 // An amount of money in a box `width` wide (as for SetNextItemWidth), with
 // the currency's symbol beside it ("$" before it, or "€" after), so the box
 // holds just the number. It's drawn as a group, so IsItemDeactivatedAfterEdit()
-// and tooltips after it see the box.
-bool edit_money(const char* label, double& amount, const domain::Currency& currency, float width);
+// and tooltips after it see the box. `extra_decimals` shows finer amounts
+// than the currency's, such as a price per fl oz.
+bool edit_money(const char* label, double& amount, const domain::Currency& currency, float width,
+                int extra_decimals = 0);
 // A volume per mass (grain absorption, mash thickness) stored in L/kg, shown
 // as qt/lb when grain is weighed in pounds or ounces.
 bool edit_volume_per_mass(const char* label, double& l_per_kg, calc::Unit mass_unit);

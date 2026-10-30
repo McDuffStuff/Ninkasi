@@ -507,6 +507,12 @@ constexpr Migration kMigrations[] = {
             recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
     )sql"},
+    {18, R"sql(
+        -- Pours are priced by volume: a pour price is now per liter (shown per
+        -- fl oz or 50 mL), whatever the pour. Each becomes its price per liter.
+        UPDATE prices SET price = price / pour_l WHERE priced_as = 'pour' AND pour_l > 0;
+        ALTER TABLE prices DROP COLUMN pour_l;
+    )sql"},
 };
 
 } // namespace
@@ -522,6 +528,10 @@ int schema_version(Database& db) {
 }
 
 void migrate(Database& db) {
+    migrate(db, latest_schema_version());
+}
+
+void migrate(Database& db, int version) {
     const int current = schema_version(db);
     if (current > latest_schema_version()) {
         throw DbError("This brewery's data was saved by a newer version of Ninkasi (database version " +
@@ -529,7 +539,7 @@ void migrate(Database& db) {
                       std::to_string(latest_schema_version()) + "). Install the latest Ninkasi to open it.");
     }
     for (const auto& migration : kMigrations) {
-        if (migration.version <= current) continue;
+        if (migration.version <= current || migration.version > version) continue;
         Transaction tx(db);
         db.exec(migration.sql);
         db.exec("PRAGMA user_version = " + std::to_string(migration.version) + ";");

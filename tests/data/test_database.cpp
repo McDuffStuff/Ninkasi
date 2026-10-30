@@ -92,3 +92,15 @@ TEST_CASE("bad SQL raises DbError") {
     CHECK_THROWS_AS(db.exec("NOT VALID SQL;"), data::DbError);
     CHECK_THROWS_AS(db.prepare("SELECT * FROM missing_table;"), data::DbError);
 }
+
+TEST_CASE("migration 18 prices pours by the liter") {
+    data::Database db{":memory:"};
+    data::migrate(db, 17);  // the first migration adds user 1
+    db.exec("INSERT INTO prices (beer, channel, priced_as, pour_l, yield, price, effective_from, user_id) "
+            "VALUES ('', 'taproom', 'pour', 0.5, 0.9, 7.0, '2026-01-01', 1);");
+    data::migrate(db);
+    auto stmt = db.prepare("SELECT price, yield FROM prices;");
+    REQUIRE(stmt.step());
+    CHECK(stmt.column_double(0) == doctest::Approx(14.0));  // $7 for half a liter
+    CHECK(stmt.column_double(1) == doctest::Approx(0.9));
+}

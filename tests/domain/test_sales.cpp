@@ -24,15 +24,14 @@ PriceEntry keg_price(std::string beer, Channel channel, double price, Date from,
     return entry;
 }
 
-PriceEntry pour_price(std::string beer, double pour_l, double price, Date from, std::int64_t id) {
+PriceEntry pour_price(std::string beer, double per_l, Date from, std::int64_t id) {
     PriceEntry entry;
     entry.id = id;
     entry.beer = std::move(beer);
     entry.channel = Channel::Taproom;
     entry.priced_as = PricedAs::Pour;
-    entry.pour_l = pour_l;
     entry.yield = 0.9;
-    entry.price = price;
+    entry.price = per_l;
     entry.effective_from = from;
     return entry;
 }
@@ -107,28 +106,35 @@ TEST_CASE("can prices are for a can size and a pack size") {
     CHECK(domain::find_price(prices, query)->price == 16.0);  // any can
 }
 
-TEST_CASE("pours are priced by size, and a keg is worth its pours") {
+TEST_CASE("pours are priced by volume, and a keg is worth what it pours") {
+    // $15 a liter from January, $16 from July.
     const std::vector<PriceEntry> prices = {
-        pour_price("Red Ale", 0.473, 7.0, {2026, 1, 1}, 1),
-        pour_price("Red Ale", 0.296, 5.0, {2026, 1, 1}, 2),
+        pour_price("Red Ale", 15.0, {2026, 1, 1}, 1),
+        pour_price("Red Ale", 16.0, {2026, 7, 1}, 2),
     };
     PriceQuery query;
     query.beer = "Red Ale";
     query.channel = Channel::Taproom;
     query.priced_as = PricedAs::Pour;
     query.on = {2026, 2, 1};
-    // Any pour: the largest, a pint.
-    const PriceEntry* pint = domain::find_price(prices, query);
-    REQUIRE(pint);
-    CHECK(pint->price == 7.0);
-    query.pour_l = 0.296;
-    CHECK(domain::find_price(prices, query)->price == 5.0);
+    const PriceEntry* per_liter = domain::find_price(prices, query);
+    REQUIRE(per_liter);
+    CHECK(per_liter->price == 15.0);
+    CHECK(domain::same_priced_thing(prices[0], prices[1]));
 
-    // A half-barrel (58.67 L) at 90 % yield in pints: 111.6 pours at $7.
-    CHECK(domain::keg_pour_value(58.67, *pint) == near(58.67 * 0.9 / 0.473 * 7.0, 1e-9));
-    PriceEntry no_size = *pint;
-    no_size.pour_l = 0.0;
-    CHECK(domain::keg_pour_value(58.67, no_size) == 0.0);
+    // A half-barrel (58.67 L) at 90 % yield: 52.8 L poured at $15.
+    CHECK(domain::keg_pour_value(58.67, *per_liter) == near(58.67 * 0.9 * 15.0, 1e-9));
+
+    // A pint poured is its 0.473 L at the price per liter.
+    domain::Sale sale;
+    sale.channel = Channel::Taproom;
+    sale.at = *domain::parse_iso8601("2026-08-01T18:00:00Z");
+    domain::SaleLine pint;
+    pint.kind = domain::LineKind::Pour;
+    pint.beer = "Red Ale";
+    pint.pour_l = 0.473;
+    pint.quantity = 1;
+    CHECK(*domain::list_price(prices, sale, pint) == near(0.473 * 16.0, 1e-9));
 }
 
 TEST_CASE("the same priced thing, and the same beer") {
@@ -250,20 +256,15 @@ TEST_CASE("sale sources and line kinds round-trip through their keys") {
     CHECK_FALSE(domain::can_delete(domain::SaleSource::Pos));
 }
 
-TEST_CASE("a keg used up in the taproom is priced by the pours it gives") {
-    PriceEntry pint;
-    pint.id = 1;
-    pint.channel = Channel::Taproom;
-    pint.priced_as = PricedAs::Pour;
-    pint.pour_l = 0.473;
-    pint.yield = 0.9;
-    pint.price = 7.0;
-    pint.effective_from = {2026, 1, 1};
-    PriceEntry half_pint = pint;
-    half_pint.id = 2;
-    half_pint.pour_l = 0.237;
-    half_pint.price = 4.0;
-    const std::vector<PriceEntry> prices{half_pint, pint};
+TEST_CASE("a keg used up in the taproom is priced by what it pours") {
+    PriceEntry per_liter;
+    per_liter.id = 1;
+    per_liter.channel = Channel::Taproom;
+    per_liter.priced_as = PricedAs::Pour;
+    per_liter.yield = 0.9;
+    per_liter.price = 15.0;
+    per_liter.effective_from = {2026, 1, 1};
+    const std::vector<PriceEntry> prices{per_liter};
 
     domain::Sale sale;
     sale.channel = Channel::Taproom;
@@ -273,9 +274,8 @@ TEST_CASE("a keg used up in the taproom is priced by the pours it gives") {
     keg.beer = "Red Ale";
     keg.package = PackageType::HalfBarrel;
     keg.quantity = 1;
-    // By the largest pour.
     CHECK(*domain::list_price(prices, sale, keg) ==
-          doctest::Approx(domain::keg_volume_l(PackageType::HalfBarrel) * 0.9 / 0.473 * 7.0));
+          doctest::Approx(domain::keg_volume_l(PackageType::HalfBarrel) * 0.9 * 15.0));
     sale.source = domain::SaleSource::Entered;
     CHECK_FALSE(domain::list_price(prices, sale, keg));  // no price for a keg sold whole
 }

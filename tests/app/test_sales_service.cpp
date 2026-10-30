@@ -92,10 +92,8 @@ TEST_CASE("the price list is kept, and only admins change it") {
     CHECK(again.price_for(query)->price == 140.0);
 
     CHECK_THROWS_AS(sales.add_price(half_barrel("", -1.0)), std::invalid_argument);
-    domain::PriceEntry pour = half_barrel("", 7.0);
+    domain::PriceEntry pour = half_barrel("", 15.0);
     pour.priced_as = domain::PricedAs::Pour;
-    CHECK_THROWS_AS(sales.add_price(pour), std::invalid_argument);  // no pour size
-    pour.pour_l = 0.473;
     pour.yield = 1.2;
     CHECK_THROWS_AS(sales.add_price(pour), std::invalid_argument);  // over 100 %
     pour.yield = 0.9;
@@ -106,7 +104,7 @@ TEST_CASE("the price list is kept, and only admins change it") {
         if (price.id != pour_id) continue;
         found = true;
         CHECK(price.priced_as == domain::PricedAs::Pour);
-        CHECK(price.pour_l == doctest::Approx(0.473));
+        CHECK(price.price == doctest::Approx(15.0));
         CHECK(price.yield == doctest::Approx(0.9));
     }
     CHECK(found);
@@ -377,9 +375,8 @@ TEST_CASE("kegs used up in the taproom are sold by the pour, when that's where i
     domain::PriceEntry pint;
     pint.channel = Channel::Taproom;
     pint.priced_as = domain::PricedAs::Pour;
-    pint.pour_l = 0.473;
     pint.yield = 0.9;
-    pint.price = 7.0;
+    pint.price = 7.0 / 0.473;  // $7 a pint, per liter
     pint.effective_from = {2026, 1, 1};
     sales.add_price(pint);
 
@@ -388,7 +385,7 @@ TEST_CASE("kegs used up in the taproom are sold by the pour, when that's where i
     const domain::Sale sale = sales.sales().front();
     CHECK(sale.source == domain::SaleSource::TaproomKeg);
     CHECK(sale.channel == Channel::Taproom);
-    CHECK(sale.revenue() == doctest::Approx(2 * cooler.half * 0.9 / 0.473 * 7.0));
+    CHECK(sale.revenue() == doctest::Approx(2 * cooler.half * 0.9 * 7.0 / 0.473));
     REQUIRE(cooler.taken_for(sale.lines[0].id).size() == 1);
     CHECK(cooler.taken_for(sale.lines[0].id).front().movement.reason == domain::PackagedReason::Taproom);
     CHECK(cooler.goods->kegs(PackageType::HalfBarrel).dirty == 2);  // emptied, back to be cleaned

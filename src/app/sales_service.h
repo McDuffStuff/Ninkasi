@@ -68,7 +68,7 @@ public:
     // The price for `query` (see domain::find_price), if there is one.
     std::optional<domain::PriceEntry> price_for(const domain::PriceQuery& query) const;
     // Each throws std::invalid_argument for a negative price, a pack of fewer
-    // than one, a pour without a size or a yield outside 0–100 %.
+    // than one or a yield outside 0–100 %.
     std::int64_t add_price(const domain::PriceEntry& price);
     void update_price(const domain::PriceEntry& price);
     void remove_price(std::int64_t id);

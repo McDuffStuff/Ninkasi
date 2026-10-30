@@ -93,7 +93,6 @@ domain::PriceEntry PriceListWindow::starting_price(domain::Channel channel) cons
     price.effective_from = domain::today();
     if (channel == domain::Channel::Taproom) {
         price.priced_as = PricedAs::Pour;
-        price.pour_l = default_pour_l(units_);
         price.yield = 0.9;
     } else if (channel == domain::Channel::ToGo) {
         price.package = PackageType::Can;
@@ -105,7 +104,7 @@ domain::PriceEntry PriceListWindow::starting_price(domain::Channel channel) cons
 void PriceListWindow::draw() {
     if (!visible_) return;
     if (revision_ != sales_.revision()) reload();
-    ImGui::SetNextWindowSize(ImVec2(940.0f, 540.0f) * ui_scale_, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(1150.0f, 560.0f) * ui_scale_, ImGuiCond_FirstUseEver);
     const bool raise = focus_;
     if (focus_) {
         ImGui::SetNextWindowFocus();
@@ -240,12 +239,12 @@ void PriceListWindow::draw_channel(domain::Channel channel) {
     if (ImGui::BeginTable("##prices", 8, kTableFlags, ImVec2(0.0f, -FLT_MIN))) {
         const float s = ui_scale_;
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Beer", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Beer", ImGuiTableColumnFlags_WidthFixed, 180 * s);
         ImGui::TableSetupColumn("Sold as", ImGuiTableColumnFlags_WidthFixed, 110 * s);
         ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 120 * s);
         ImGui::TableSetupColumn("In a pack", ImGuiTableColumnFlags_WidthFixed, 80 * s);
         ImGui::TableSetupColumn("Yield", ImGuiTableColumnFlags_WidthFixed, 70 * s);
-        ImGui::TableSetupColumn("Price", ImGuiTableColumnFlags_WidthFixed, 110 * s);
+        ImGui::TableSetupColumn("Price", ImGuiTableColumnFlags_WidthFixed, 160 * s);
         ImGui::TableSetupColumn("From", ImGuiTableColumnFlags_WidthFixed, 130 * s);
         ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthFixed, 110 * s);
         ImGui::TableHeadersRow();
@@ -284,8 +283,21 @@ void PriceListWindow::draw_channel(domain::Channel channel) {
                 ImGui::SetItemTooltip("The share of a keg sold as pours, after foam, spills and the last drops");
             }
             ImGui::TableNextColumn();
-            edit_money("##price", price.price, sales_.currency(), 80.0f * ui_scale_);
-            changed |= finished();
+            if (price.priced_as == PricedAs::Pour) {
+                // A price per liter, shown and typed per fl oz or per 50 mL.
+                const bool ounces = fill_volume_unit(units_) == calc::Unit::UsFluidOunce;
+                const double per = ounces ? calc::to_canonical(1.0, calc::Unit::UsFluidOunce) : 0.05;
+                double shown = price.price * per;
+                if (edit_money("##price", shown, sales_.currency(), 70.0f * ui_scale_, 1)) price.price = shown / per;
+                changed |= finished();
+                ImGui::SetItemTooltip("A keg sent to the taproom is expected to bring in its volume times the yield "
+                                      "at this price");
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", ounces ? "/ fl oz" : "/ 50 mL");
+            } else {
+                edit_money("##price", price.price, sales_.currency(), 80.0f * ui_scale_);
+                changed |= finished();
+            }
             ImGui::TableNextColumn();
             changed |= date_picker("##from", price.effective_from);
             ImGui::EndDisabled();
@@ -333,7 +345,6 @@ bool PriceListWindow::sold_as_combo(domain::PriceEntry& price) {
             if (choice == SoldAs::HalfBarrel) price.package = PackageType::HalfBarrel;
             if (choice == SoldAs::Sixtel) price.package = PackageType::Sixtel;
             if (choice == SoldAs::Cans) price.package = PackageType::Can;
-            if (choice == SoldAs::Pour && !(price.pour_l > 0.0)) price.pour_l = starting_price(domain::Channel::Taproom).pour_l;
         }
         end_search_combo();
     }
@@ -343,9 +354,9 @@ bool PriceListWindow::sold_as_combo(domain::PriceEntry& price) {
 bool PriceListWindow::size_field(domain::PriceEntry& price) {
     const calc::Unit unit = fill_volume_unit(units_);
     if (price.priced_as == PricedAs::Pour) {
-        ImGui::SetNextItemWidth(70.0f * ui_scale_);
-        edit_quantity("##pour", price.pour_l, unit);
-        return finished();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("any pour");
+        return false;
     }
     if (price.package != PackageType::Can) {
         // A keg's size, in gallons where cans are in fluid ounces, else liters.

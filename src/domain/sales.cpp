@@ -19,7 +19,7 @@ bool same_volume(double a, double b) {
 // Whether `entry` prices what `query` asks about, whatever its beer and date.
 bool prices(const PriceEntry& entry, const PriceQuery& query) {
     if (entry.channel != query.channel || entry.priced_as != query.priced_as) return false;
-    if (entry.priced_as == PricedAs::Pour) return query.pour_l <= 0.0 || same_volume(entry.pour_l, query.pour_l);
+    if (entry.priced_as == PricedAs::Pour) return true;  // by volume, whatever the pour
     if (entry.package != query.package || entry.pack_size != query.pack_size) return false;
     // A can price is for one size of can, or for any can.
     return entry.package != PackageType::Can || entry.unit_volume_l <= 0.0 ||
@@ -75,7 +75,7 @@ bool same_beer(std::string_view a, std::string_view b) {
 
 bool same_priced_thing(const PriceEntry& a, const PriceEntry& b) {
     if (!same_beer(a.beer, b.beer) || a.channel != b.channel || a.priced_as != b.priced_as) return false;
-    if (a.priced_as == PricedAs::Pour) return same_volume(a.pour_l, b.pour_l);
+    if (a.priced_as == PricedAs::Pour) return true;
     return a.package == b.package && a.pack_size == b.pack_size &&
            (a.package != PackageType::Can || same_volume(a.unit_volume_l, b.unit_volume_l));
 }
@@ -91,12 +91,7 @@ const PriceEntry* find_price(std::span<const PriceEntry> prices_list, const Pric
                 best = &entry;
                 continue;
             }
-            // Of pours of any size, the largest; otherwise the latest to start
-            // (and of two starting the same day, the one entered last).
-            if (query.priced_as == PricedAs::Pour && query.pour_l <= 0.0 && !same_volume(entry.pour_l, best->pour_l)) {
-                if (entry.pour_l > best->pour_l) best = &entry;
-                continue;
-            }
+            // The latest to start (and of two starting the same day, the one entered last).
             if (entry.effective_from > best->effective_from ||
                 (entry.effective_from == best->effective_from && entry.id > best->id)) {
                 best = &entry;
@@ -122,8 +117,7 @@ std::vector<PriceEntry> prices_in_effect(std::span<const PriceEntry> prices_list
 }
 
 double keg_pour_value(double keg_l, const PriceEntry& pour) {
-    if (!(pour.pour_l > 0.0)) return 0.0;
-    return keg_l * pour.yield / pour.pour_l * pour.price;
+    return keg_l * pour.yield * pour.price;
 }
 
 // --- Sales ----------------------------------------------------------------------
@@ -177,7 +171,6 @@ std::optional<PriceQuery> price_query(const Sale& sale, const SaleLine& line) {
     query.on = local_date(sale.at);
     if (line.kind == LineKind::Pour) {
         query.priced_as = PricedAs::Pour;
-        query.pour_l = line.pour_l;
     } else {
         query.priced_as = PricedAs::Package;
         query.package = line.package;
@@ -193,7 +186,6 @@ std::optional<double> list_price(std::span<const PriceEntry> prices_list, const 
         query.beer = line.beer;
         query.channel = Channel::Taproom;
         query.priced_as = PricedAs::Pour;
-        query.pour_l = 0.0;  // the largest
         query.on = local_date(sale.at);
         if (const PriceEntry* pour = find_price(prices_list, query)) {
             return keg_pour_value(line.unit_volume_l > 0.0 ? line.unit_volume_l : keg_volume_l(line.package), *pour);
@@ -202,8 +194,10 @@ std::optional<double> list_price(std::span<const PriceEntry> prices_list, const 
     }
     const std::optional<PriceQuery> query = price_query(sale, line);
     if (!query) return std::nullopt;
-    if (const PriceEntry* price = find_price(prices_list, *query)) return price->price;
-    return std::nullopt;
+    const PriceEntry* price = find_price(prices_list, *query);
+    if (!price) return std::nullopt;
+    if (line.kind == LineKind::Pour) return line.pour_l * price->price;  // by volume
+    return price->price;
 }
 
 // --- Point-of-sale exports ------------------------------------------------------------

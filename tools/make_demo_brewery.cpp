@@ -1,7 +1,8 @@
-// ninkasi_demo: makes a demo brewery, a year of a small brewery's life up to
-// today, for trying Ninkasi and checking its Insights by eye.
+// ninkasi_demo: makes a demo brewery, months of a small brewery's life up
+// to today (a year unless told), for trying Ninkasi and checking its
+// Insights by eye.
 //
-//   ninkasi_demo <new database file>
+//   ninkasi_demo <new database file> [months]
 //
 // Everything goes through Ninkasi's own services, as if a brewer had
 // entered it day by day, so the data is consistent the way real data is:
@@ -32,6 +33,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -481,8 +483,9 @@ private:
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::fprintf(stderr, "Usage: ninkasi_demo <new database file>\n");
+    const int months = argc == 3 ? std::atoi(argv[2]) : 12;
+    if (argc < 2 || argc > 3 || months < 1 || months > 60) {
+        std::fprintf(stderr, "Usage: ninkasi_demo <new database file> [months, 1 to 60; 12 if left out]\n");
         return 2;
     }
     const std::filesystem::path path = argv[1];
@@ -493,13 +496,13 @@ int main(int argc, char** argv) {
     try {
         if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path());
         const Date last = domain::today();
-        const Date first = domain::add_days(last, -364);
+        const Date first = domain::add_days(last, -static_cast<int>(std::lround(months * 365.25 / 12.0)) + 1);
         DemoBrewery brewery(path);
         brewery.make(first, last);
         const std::filesystem::path pos = path.parent_path() / "pos-export.csv";
         brewery.write_pos_export(pos, last);
-        std::printf("Made %s (a year to %s) and %s.\n", path.string().c_str(), domain::to_iso8601(last).c_str(),
-                    pos.string().c_str());
+        std::printf("Made %s (%s to %s) and %s.\n", path.string().c_str(), domain::to_iso8601(first).c_str(),
+                    domain::to_iso8601(last).c_str(), pos.string().c_str());
         return 0;
     } catch (const std::exception& e) {
         std::fprintf(stderr, "Couldn't make the demo brewery: %s\n", e.what());

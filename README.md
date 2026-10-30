@@ -126,7 +126,7 @@ Choose on the price list where the taproom's revenue is counted from, so it isn'
 
 Brewers see volumes, rates and ingredient use; money is for admins.
 
-**A demo brewery:** `build\debug\ninkasi_demo.exe demo\brewery.db` makes a year of a small brewery's life up to today (brewing, packaging, sales, taproom kegs, deliveries and expenses), and a `pos-export.csv` beside it to try the POS import with. Open it with `ninkasi.exe --db demo\brewery.db`. The demo isn't shipped.
+**A demo brewery:** `build\debug\ninkasi_demo.exe demo\brewery.db` makes a year of a small brewery's life up to today (brewing, packaging, sales, taproom kegs, deliveries and expenses; add a number of months after the file for a shorter or longer time), and a `pos-export.csv` beside it to try the POS import with. Open it with `ninkasi.exe --db demo\brewery.db`. The demo isn't shipped.
 
 ### Backups and export
 - **File > Back up now** saves a complete copy of the brewery's data in the backup folder ("backups" beside the database, unless you choose another). With **Every day** on (the default), a backup is also made the first time Ninkasi starts each day, and the newest 14 are kept.

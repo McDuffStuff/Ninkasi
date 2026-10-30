@@ -57,10 +57,6 @@ constexpr SourceText kSourceTexts[] = {
 
 constexpr std::string_view kLineKindKeys[] = {"package", "pour", "deposit", "other"};  // by LineKind
 
-constexpr std::string_view kTaproomRevenueKeys[] = {"kegs", "pos", "takings"};  // by TaproomRevenue
-constexpr std::string_view kTaproomRevenueNames[] = {"Kegs used up in the taproom", "Point-of-sale imports",
-                                                     "Takings entered by hand"};
-
 constexpr std::string_view kPosItemKindKeys[] = {"pour", "package", "other", "ignore"};  // by PosItemKind
 constexpr std::string_view kPosItemKindNames[] = {"A pour of beer", "Cans to go", "Something else",
                                                   "Leave it out"};
@@ -180,8 +176,12 @@ std::optional<PriceQuery> price_query(const Sale& sale, const SaleLine& line) {
     return query;
 }
 
+bool is_expected(const Sale& sale, const SaleLine& line) {
+    return sale.channel == Channel::Taproom && line.kind == LineKind::Package && is_keg(line.package);
+}
+
 std::optional<double> list_price(std::span<const PriceEntry> prices_list, const Sale& sale, const SaleLine& line) {
-    if (sale.source == SaleSource::TaproomKeg && line.kind == LineKind::Package && is_keg(line.package)) {
+    if (is_expected(sale, line)) {
         PriceQuery query;
         query.beer = line.beer;
         query.channel = Channel::Taproom;
@@ -390,21 +390,6 @@ std::string_view key(LineKind kind) {
 std::optional<LineKind> line_kind_from_key(std::string_view text) {
     for (LineKind kind : kLineKinds) {
         if (key(kind) == text) return kind;
-    }
-    return std::nullopt;
-}
-
-std::string_view name(TaproomRevenue revenue) {
-    return kTaproomRevenueNames[static_cast<std::size_t>(revenue)];
-}
-
-std::string_view key(TaproomRevenue revenue) {
-    return kTaproomRevenueKeys[static_cast<std::size_t>(revenue)];
-}
-
-std::optional<TaproomRevenue> taproom_revenue_from_key(std::string_view text) {
-    for (TaproomRevenue revenue : kTaproomRevenues) {
-        if (key(revenue) == text) return revenue;
     }
     return std::nullopt;
 }

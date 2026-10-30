@@ -19,7 +19,6 @@ constexpr const char* kDecimalCommaKey = "money.decimal_comma";
 constexpr const char* kDecimalsKey = "money.decimals";
 constexpr const char* kHalfBarrelDepositKey = "sales.deposit.half_barrel";
 constexpr const char* kSixtelDepositKey = "sales.deposit.sixtel";
-constexpr const char* kTaproomRevenueKey = "sales.taproom_revenue";
 constexpr const char* kPosTakeCansKey = "pos.take_cans";
 constexpr const char* kPosColumnsKey = "pos.columns.";  // and the header's signature
 
@@ -63,8 +62,6 @@ SalesService::SalesService(data::Database& db, Session session, data::SettingsRe
     }
     deposits_.half_barrel = money_setting(settings_, kHalfBarrelDepositKey);
     deposits_.sixtel = money_setting(settings_, kSixtelDepositKey);
-    taproom_revenue_ = domain::taproom_revenue_from_key(settings_.get_or(kTaproomRevenueKey, ""))
-                           .value_or(domain::TaproomRevenue::KegsUsedUp);
     reload();
 }
 
@@ -328,49 +325,6 @@ void SalesService::delete_sale(std::int64_t sale_id) {
     data::record_audit(db_, session_.user_id, "sale.delete", "sale", sale_id,
                        std::string(domain::name(sale->channel)) + ": " + std::to_string(sale->revenue()));
     tx.commit();
-    goods_.refresh();
-    reload();
-}
-
-// --- Taproom revenue --------------------------------------------------------------------
-
-void SalesService::set_taproom_revenue(domain::TaproomRevenue revenue) {
-    require_admin(session_, "choose where the taproom's revenue comes from");
-    taproom_revenue_ = revenue;
-    settings_.set(kTaproomRevenueKey, std::string(domain::key(revenue)));
-    ++revision_;
-}
-
-void SalesService::take_to_taproom(const PackagedRemoval& removal) {
-    PackagedRemoval taken = removal;
-    taken.reason = domain::PackagedReason::Taproom;
-    if (taproom_revenue_ != domain::TaproomRevenue::KegsUsedUp) {
-        goods_.remove(taken);
-        return;
-    }
-
-    domain::Sale sale;
-    sale.at = removal.at;
-    sale.channel = domain::Channel::Taproom;
-    sale.source = domain::SaleSource::TaproomKeg;
-    sale.note = removal.note;
-    domain::SaleLine line;
-    line.beer = removal.beer;
-    line.package = removal.type;
-    line.unit_volume_l = removal.unit_volume_l;
-    line.quantity = removal.count;
-    line.unit_price = domain::list_price(prices_, sale, line);
-    sale.lines.push_back(std::move(line));
-    try {
-        data::Transaction tx(db_);
-        const std::int64_t id = write_sale(sale);
-        data::record_audit(db_, session_.user_id, "sale.taproom_keg", "sale", id,
-                           removal.beer + ": " + std::to_string(sale.revenue()));
-        tx.commit();
-    } catch (...) {
-        goods_.refresh();
-        throw;
-    }
     goods_.refresh();
     reload();
 }

@@ -276,8 +276,8 @@ TEST_CASE("a keg used up in the taproom is priced by what it pours") {
     keg.quantity = 1;
     CHECK(*domain::list_price(prices, sale, keg) ==
           doctest::Approx(domain::keg_volume_l(PackageType::HalfBarrel) * 0.9 * 15.0));
-    sale.source = domain::SaleSource::Entered;
-    CHECK_FALSE(domain::list_price(prices, sale, keg));  // no price for a keg sold whole
+    sale.channel = Channel::Distributor;
+    CHECK_FALSE(domain::list_price(prices, sale, keg));  // no distributor price for it
 }
 
 TEST_CASE("a point-of-sale export makes a sale in the taproom, and one to go, each day") {
@@ -317,4 +317,21 @@ TEST_CASE("a point-of-sale export makes a sale in the taproom, and one to go, ea
     REQUIRE(to_go.lines.size() == 1);
     CHECK(to_go.lines[0].packages() == 4);
     CHECK(to_go.revenue() == doctest::Approx(16.0));
+}
+
+TEST_CASE("kegs sold to the taproom are its expected revenue") {
+    domain::Sale sale;
+    sale.channel = Channel::Taproom;
+    domain::SaleLine keg;
+    keg.package = PackageType::Sixtel;
+    keg.quantity = 1;
+    domain::SaleLine cans = keg;
+    cans.package = PackageType::Can;
+    domain::SaleLine pour;
+    pour.kind = domain::LineKind::Pour;
+    CHECK(domain::is_expected(sale, keg));
+    CHECK_FALSE(domain::is_expected(sale, cans));
+    CHECK_FALSE(domain::is_expected(sale, pour));
+    sale.channel = Channel::Retail;
+    CHECK_FALSE(domain::is_expected(sale, keg));
 }

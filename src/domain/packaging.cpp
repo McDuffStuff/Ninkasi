@@ -47,7 +47,7 @@ constexpr EnumText<PackagedReason> kPackagedTexts[] = {
     {PackagedReason::Unfit,              "unfit",          "Unfit, used in manufacturing"},
     {PackagedReason::ConsumedOnPremises, "consumed",       "Drunk at the brewery"},
     {PackagedReason::LabSamples,         "lab_samples",    "Lab samples"},
-    {PackagedReason::Destroyed,          "destroyed",      "Destroyed"},
+    {PackagedReason::Destroyed,          "destroyed",      "Dumped or destroyed"},
     {PackagedReason::Lost,               "lost",           "Lost or stolen"},
     {PackagedReason::Shortage,           "shortage",       "Count shortage"},
     {PackagedReason::Overage,            "overage",        "Count overage"},

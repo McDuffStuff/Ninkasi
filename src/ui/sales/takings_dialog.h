@@ -1,7 +1,8 @@
 #pragma once
 // Sales > Taproom takings: what the taproom (or the to-go counter) took in a
-// day, entered by hand, for a brewery that counts its taproom revenue that
-// way. Fill it in and press Enter.
+// day, entered by hand, for a brewery without a point of sale to import.
+// Like an import, they replace the day's expected taproom revenue. Fill it
+// in and press Enter.
 
 #include "app/sales_service.h"
 #include "domain/sales.h"

@@ -121,7 +121,6 @@ void PriceListWindow::draw() {
     if (!admin) wrapped_note("Only an admin can change prices.");
     draw_currency();
     draw_deposits();
-    draw_taproom_revenue();
     ImGui::Spacing();
     wrapped_note("A price applies from its date. To change one and keep earlier sales at the old price, use New "
                  "price; to correct a mistake, edit it. A beer's own price comes before the one for every beer.");
@@ -199,30 +198,6 @@ void PriceListWindow::draw_deposits() {
             revision_ = ~0ull;  // put the saved deposits back
         }
     }
-}
-
-void PriceListWindow::draw_taproom_revenue() {
-    const bool admin = sales_.can_set_prices();
-    ImGui::BeginDisabled(!admin);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Taproom revenue from");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(260.0f * ui_scale_);
-    domain::TaproomRevenue revenue = sales_.taproom_revenue();
-    if (enum_combo("##taproom_revenue", revenue, domain::kTaproomRevenues) && admin) {
-        try {
-            sales_.set_taproom_revenue(revenue);
-        } catch (const std::exception& e) {
-            error_ = e.what();
-        }
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
-    ImGui::SetItemTooltip("Kegs used up: each keg taken out for the taproom counts as the pours it gives, at the "
-                          "taproom's pour price and yield.\nPoint-of-sale imports or takings: kegs taken out count "
-                          "only as beer used, and the imports or takings say what came in.\nUse one, or the "
-                          "taproom's revenue is counted twice.");
 }
 
 void PriceListWindow::draw_channel(domain::Channel channel) {

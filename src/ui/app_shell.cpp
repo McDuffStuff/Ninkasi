@@ -236,7 +236,8 @@ void AppShell::draw_account_menu() {
 void AppShell::draw_sales_menu() {
     if (!ImGui::BeginMenu("Sales")) return;
     if (ImGui::MenuItem("Record a sale...")) sale_dialog_.open();
-    ImGui::SetItemTooltip("Beer sold to a customer or over the counter: it leaves packaged goods");
+    ImGui::SetItemTooltip("Beer sold to a customer, over the counter, or kegs sent to the taproom: it leaves "
+                          "packaged goods");
     if (ImGui::MenuItem("Taproom takings...")) takings_dialog_.open();
     ImGui::SetItemTooltip("What the taproom took in a day, entered by hand");
     if (ImGui::MenuItem("Import POS sales...")) pos_import_window_.show();

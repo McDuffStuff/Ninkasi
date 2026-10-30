@@ -369,7 +369,7 @@ TEST_CASE("beer sold in the taproom is removed for the taproom") {
     CHECK(cooler.taken_for(line.id).front().movement.reason == domain::PackagedReason::Taproom);
 }
 
-TEST_CASE("kegs used up in the taproom are sold by the pour, when that's where its revenue comes from") {
+TEST_CASE("kegs sold to the taproom count as poured: their revenue is expected") {
     Cooler cooler;
     app::SalesService sales = cooler.sales(cooler.admin);
     domain::PriceEntry pint;
@@ -380,25 +380,18 @@ TEST_CASE("kegs used up in the taproom are sold by the pour, when that's where i
     pint.effective_from = {2026, 1, 1};
     sales.add_price(pint);
 
-    sales.take_to_taproom({.beer = "Red Ale", .type = PackageType::HalfBarrel, .unit_volume_l = cooler.half,
-                           .count = 2, .at = day(4)});
+    domain::Sale taproom = sale_to(cooler.hopkins, {kegs(2)}, 4);
+    taproom.channel = Channel::Taproom;
+    taproom.customer_id.reset();
+    sales.set_keg_deposits({30.0, 30.0});
+    sales.record_sale(taproom, true);  // no deposits without a customer
     const domain::Sale sale = sales.sales().front();
-    CHECK(sale.source == domain::SaleSource::TaproomKeg);
-    CHECK(sale.channel == Channel::Taproom);
+    CHECK(domain::is_expected(sale, sale.lines[0]));
     CHECK(sale.revenue() == doctest::Approx(2 * cooler.half * 0.9 * 7.0 / 0.473));
+    CHECK(sale.deposits() == 0.0);
     REQUIRE(cooler.taken_for(sale.lines[0].id).size() == 1);
     CHECK(cooler.taken_for(sale.lines[0].id).front().movement.reason == domain::PackagedReason::Taproom);
     CHECK(cooler.goods->kegs(PackageType::HalfBarrel).dirty == 2);  // emptied, back to be cleaned
-
-    // Counted at the point of sale instead: the kegs only leave packaged goods.
-    sales.set_taproom_revenue(domain::TaproomRevenue::PointOfSale);
-    sales.take_to_taproom({.beer = "Red Ale", .type = PackageType::HalfBarrel, .unit_volume_l = cooler.half,
-                           .count = 1, .at = day(5)});
-    CHECK(sales.sales().size() == 1);
-    CHECK(cooler.on_hand(cooler.batch40, PackageType::HalfBarrel) == 7);
-    CHECK(cooler.sales(cooler.admin).taproom_revenue() == domain::TaproomRevenue::PointOfSale);
-    CHECK_THROWS_AS(cooler.sales(cooler.brewer()).set_taproom_revenue(domain::TaproomRevenue::KegsUsedUp),
-                    app::NotAllowed);
 }
 
 TEST_CASE("a point-of-sale export records each day's sales, and replaces days imported again") {

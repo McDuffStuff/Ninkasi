@@ -11,10 +11,12 @@
 // into kegs and cans when ready; a distributor's weekly order, retail
 // accounts, taproom kegs used up by the pour and cans to go, more in summer;
 // kegs coming back with their deposits refunded; rent, wages and bills. The
-// random choices come from a fixed seed, so every run makes the same
-// brewery (for the same "today"). Beside the database it writes
-// pos-export.csv, the last two weeks of a taproom point of sale, to try the
-// POS import with. Not shipped with Ninkasi.
+// taproom's point of sale is imported for the two weeks before the last two,
+// its pints a little short of what the kegs sent there should pour, so
+// expected and actual revenue can be compared. The random choices come from
+// a fixed seed, so every run makes the same brewery (for the same "today").
+// Beside the database it writes pos-export.csv, the last two weeks of the
+// point of sale, to try the import with. Not shipped with Ninkasi.
 
 #include "app/batch_service.h"
 #include "app/expense_service.h"
@@ -123,19 +125,17 @@ public:
         first_brew_ = domain::add_days(first, 1);
         set_up(first, last);
         for (Date day = first; day <= last; day = domain::add_days(day, 1)) live(day, day == last);
+        import_pos(domain::add_days(last, -27), domain::add_days(last, -14));
     }
 
     // The last two weeks of a taproom point of sale, as Square writes it.
     void write_pos_export(const std::filesystem::path& path, Date last) {
         std::ofstream file(path, std::ios::binary);
         file << "Date,Time,Category,Item,Qty,Gross Sales,Discounts,Net Sales,Tax\r\n";
-        for (Date day = domain::add_days(last, -13); day <= last; day = domain::add_days(day, 1)) {
-            for (const Beer& beer : kBeers) {
-                const int pints = 8 + static_cast<int>(uniform(0.0, 20.0) * beer.popularity);
-                write_pos_row(file, day, "Beer", beer.name + " Pint", pints, 7.0);
-            }
-            write_pos_row(file, day, "Food", "Pretzel", 3 + static_cast<int>(uniform(0.0, 8.0)), 9.0);
-            write_pos_row(file, day, "Merch", "T-shirt", static_cast<int>(uniform(0.0, 3.0)), 25.0);
+        for (const domain::PosRow& row : pos_rows(domain::add_days(last, -13), last)) {
+            const bool beer = row.item.find("Pint") != std::string::npos;
+            write_pos_row(file, row.day, beer ? "Beer" : row.item == "Pretzel" ? "Food" : "Merch", row.item,
+                          static_cast<int>(row.quantity), row.amount / row.quantity);
         }
     }
 
@@ -422,9 +422,61 @@ private:
         }
         if (on_tap.empty()) return;
         const Beer& beer = *on_tap[static_cast<std::size_t>(uniform(0.0, static_cast<double>(on_tap.size()) - 0.001))];
-        sales_.take_to_taproom({.beer = beer.name, .type = PackageType::HalfBarrel,
-                                .unit_volume_l = domain::keg_volume_l(PackageType::HalfBarrel), .count = 1,
-                                .at = at(day, 18)});
+        domain::Sale sale;
+        sale.at = at(day, 18);
+        sale.channel = domain::Channel::Taproom;
+        domain::SaleLine keg;
+        keg.beer = beer.name;
+        keg.package = PackageType::HalfBarrel;
+        keg.unit_volume_l = domain::keg_volume_l(PackageType::HalfBarrel);
+        keg.quantity = 1;
+        sale.lines.push_back(keg);
+        sales_.record_sale(sale, false);  // counted as poured: expected revenue
+        tapped_[day][beer.name] += keg.unit_volume_l;
+    }
+
+    // The taproom's point of sale from `from` to `to`: each beer's pints are
+    // what its kegs tapped then should pour, a little short (over-pours and
+    // waste), spread over the days; with pretzels and T-shirts.
+    std::vector<domain::PosRow> pos_rows(Date from, Date to) {
+        std::vector<domain::PosRow> rows;
+        std::vector<Date> days;
+        for (Date day = from; day <= to; day = domain::add_days(day, 1)) days.push_back(day);
+        for (const Beer& beer : kBeers) {
+            double liters = 0.0;
+            for (Date day : days) {
+                const auto found = tapped_.find(day);
+                if (found != tapped_.end() && found->second.count(beer.name)) liters += found->second.at(beer.name);
+            }
+            const double pints = liters * 0.88 / kPint * uniform(0.86, 0.96);
+            std::vector<double> weights;
+            double sum = 0.0;
+            for (std::size_t i = 0; i < days.size(); ++i) {
+                weights.push_back(uniform(0.5, 1.5) * (domain::weekday(days[i]) >= 5 ? 1.6 : 1.0));
+                sum += weights.back();
+            }
+            for (std::size_t i = 0; i < days.size(); ++i) {
+                const double count = std::round(pints * weights[i] / sum);
+                if (count > 0.0) rows.push_back({days[i], beer.name + " Pint", count, count * 7.0});
+            }
+        }
+        for (Date day : days) {
+            const double pretzels = 3.0 + std::floor(uniform(0.0, 8.0));
+            const double shirts = std::floor(uniform(0.0, 3.0));
+            rows.push_back({day, "Pretzel", pretzels, pretzels * 9.0});
+            if (shirts > 0.0) rows.push_back({day, "T-shirt", shirts, shirts * 25.0});
+        }
+        return rows;
+    }
+
+    // What the point of sale's items are, and the days from `from` to `to` imported.
+    void import_pos(Date from, Date to) {
+        for (const Beer& beer : kBeers) {
+            sales_.save_pos_item({beer.name + " Pint", domain::PosItemKind::Pour, beer.name, kPint});
+        }
+        sales_.save_pos_item({"Pretzel", domain::PosItemKind::Other});
+        sales_.save_pos_item({"T-shirt", domain::PosItemKind::Other});
+        sales_.import_pos("pos-export-earlier.csv", pos_rows(from, to), false, false);
     }
 
     void return_kegs(Date day) {
@@ -467,6 +519,7 @@ private:
     std::vector<Tank> tanks_;
     std::map<std::string, std::int64_t> items_;
     std::map<std::string, bool> pending_;
+    std::map<Date, std::map<std::string, double>> tapped_;  // liters sent to the taproom, by day and beer
     std::vector<std::pair<Date, std::string>> deliveries_due_;
     int deliveries_ = 0;
     std::int64_t distributor_ = 0;

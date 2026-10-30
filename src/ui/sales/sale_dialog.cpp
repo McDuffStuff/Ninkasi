@@ -79,15 +79,20 @@ void SaleDialog::draw() {
 }
 
 std::optional<double> SaleDialog::list_price(const BeerLine& line) const {
-    domain::PriceQuery query;
-    query.beer = line.beer;
-    query.channel = channel_;
-    query.package = line.type;
-    query.unit_volume_l = line.unit_volume_l;
-    query.pack_size = line.pack_size;
-    query.on = domain::local_date(at_);
-    if (const std::optional<domain::PriceEntry> price = sales_.price_for(query)) return price->price;
-    return std::nullopt;
+    domain::Sale sale;
+    sale.at = at_;
+    sale.channel = channel_;
+    domain::SaleLine priced;
+    priced.beer = line.beer;
+    priced.package = line.type;
+    priced.unit_volume_l = line.unit_volume_l;
+    priced.quantity = line.packs;
+    priced.pack_size = line.pack_size;
+    return domain::list_price(sales_.prices(), sale, priced);
+}
+
+bool SaleDialog::expected(const BeerLine& line) const {
+    return channel_ == domain::Channel::Taproom && domain::is_keg(line.type);
 }
 
 domain::Sale SaleDialog::sale() const {
@@ -105,7 +110,8 @@ domain::Sale SaleDialog::sale() const {
         line.unit_volume_l = draft.unit_volume_l;
         line.quantity = draft.packs;
         line.pack_size = draft.pack_size;
-        if (draft.price_set) line.unit_price = draft.price;  // otherwise the price list prices it
+        // Otherwise the price list prices it; a keg to the taproom always is.
+        if (draft.price_set && !expected(draft)) line.unit_price = draft.price;
         sale.lines.push_back(std::move(line));
     }
     for (const OtherLine& draft : other_lines_) {
@@ -189,17 +195,24 @@ void SaleDialog::draw_form() {
     // What it comes to.
     if (admin) {
         double total = 0.0;
+        double expected_total = 0.0;
         int unpriced = 0;
         for (const BeerLine& line : beer_lines_) {
             if (line.beer.empty()) continue;
-            const std::optional<double> price = line.price_set ? std::optional<double>(line.price) : list_price(line);
+            const std::optional<double> price =
+                line.price_set && !expected(line) ? std::optional<double>(line.price) : list_price(line);
             if (!price) ++unpriced;
             total += line.packs * price.value_or(0.0);
+            if (expected(line)) expected_total += line.packs * price.value_or(0.0);
         }
         for (const OtherLine& line : other_lines_) {
             if (!is_blank(line.description)) total += line.quantity * line.price;
         }
         ImGui::Text("Total %s", domain::format_money(total, sales_.currency()).c_str());
+        if (expected_total > 0.0) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%s of it expected)", domain::format_money(expected_total, sales_.currency()).c_str());
+        }
         double deposit_total = 0.0;
         for (const domain::SaleLine& line : deposit_lines) deposit_total += line.amount();
         if (deposit_total > 0.0) {
@@ -310,16 +323,28 @@ void SaleDialog::draw_beer_lines(bool admin) {
         if (admin) {
             // The price list's price, until another is typed for this sale.
             const std::optional<double> listed = chosen ? list_price(line) : std::nullopt;
-            if (!line.price_set) line.price = listed.value_or(0.0);
+            const bool is_expected = chosen && expected(line);
+            if (!line.price_set || is_expected) line.price = listed.value_or(0.0);
             ImGui::TableNextColumn();
-            if (chosen && edit_money("##price", line.price, sales_.currency(), 80.0f * s)) line.price_set = true;
-            if (chosen && !line.price_set && !listed) {
+            if (is_expected) {
+                // What the keg should bring in by the pour; not typed.
+                ImGui::AlignTextToFramePadding();
+                if (listed) ImGui::TextDisabled("%s", domain::format_money(line.price, sales_.currency()).c_str());
+                ImGui::SetItemTooltip("Its volume times the yield at the taproom's price per fl oz");
+            } else if (chosen && edit_money("##price", line.price, sales_.currency(), 80.0f * s)) {
+                line.price_set = true;
+            }
+            if (chosen && !is_expected && !line.price_set && !listed) {
                 ImGui::SetItemTooltip("Not on the price list: type a price, or leave it to price later");
             }
             ImGui::TableNextColumn();
             ImGui::AlignTextToFramePadding();
             if (chosen && (line.price_set || listed)) {
                 ImGui::TextUnformatted(domain::format_money(line.packs * line.price, sales_.currency()).c_str());
+                if (is_expected) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("expected");
+                }
             } else if (chosen) {
                 ImGui::TextColored(kWarningColor, "No price");
             }
@@ -336,6 +361,12 @@ void SaleDialog::draw_beer_lines(bool admin) {
     ImGui::EndTable();
     if (remove) beer_lines_.erase(beer_lines_.begin() + static_cast<std::ptrdiff_t>(*remove));
     if (products.empty()) wrapped_note("There's no packaged beer on hand to sell.");
+    if (std::any_of(beer_lines_.begin(), beer_lines_.end(),
+                    [this](const BeerLine& line) { return !line.beer.empty() && expected(line); })) {
+        wrapped_note("Kegs sold to the taproom count as poured: they're expected to bring in their volume times "
+                     "the yield at the taproom's price per fl oz, until the point of sale is imported (or the "
+                     "takings entered) for the day.");
+    }
 }
 
 void SaleDialog::draw_other_lines() {

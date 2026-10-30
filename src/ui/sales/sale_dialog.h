@@ -5,7 +5,9 @@
 //
 // Admins see the prices, and can change them for this sale or add other
 // charges (merchandise, delivery...); everyone else records what was sold
-// and the price list prices it.
+// and the price list prices it. Kegs sold to the taproom count as poured:
+// their revenue is what they should bring in at the price per fl oz,
+// expected until the point of sale is imported for the day.
 
 #include "app/packaged_goods_service.h"
 #include "app/sales_service.h"
@@ -57,6 +59,8 @@ private:
     domain::Sale sale() const;
     // The price list's price for a line, on the sale's date and channel.
     std::optional<double> list_price(const BeerLine& line) const;
+    // Whether a line is a keg sold to the taproom, its revenue expected.
+    bool expected(const BeerLine& line) const;
     void close();
 
     app::SalesService& sales_;

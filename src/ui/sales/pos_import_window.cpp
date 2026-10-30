@@ -417,15 +417,9 @@ void PosImportWindow::draw_import() {
     ImGui::Text("%zu %s, %s to %s", days.size(), days.size() == 1 ? "day" : "days", date_text(*days.begin()).c_str(),
                 date_text(*days.rbegin()).c_str());
 
-    // Counted another way too, the taproom's revenue would be counted twice.
-    const domain::TaproomRevenue revenue = sales_.taproom_revenue();
-    if (revenue != domain::TaproomRevenue::PointOfSale) {
-        ImGui::TextColored(kWarningColor, "Counted twice? The taproom's revenue comes from %s (Sales > Price list).",
-                           domain::name(revenue).data());
-    }
+    ImGui::TextDisabled("These days' sales replace the taproom's expected revenue from the kegs sent to it.");
     ImGui::Checkbox("Take cans sold to go out of packaged goods", &take_cans_);
-    ImGui::SetItemTooltip("Clear it if cans for the taproom are taken out of packaged goods first (Take out, for "
-                          "the taproom)");
+    ImGui::SetItemTooltip("Clear it if those cans already left packaged goods, on a sale to the taproom");
     if (days_imported_ > 0) {
         ImGui::TextColored(kWarningColor, "%d of these days %s imported before.", days_imported_,
                            days_imported_ == 1 ? "was" : "were");

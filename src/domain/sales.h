@@ -103,7 +103,7 @@ enum class SaleSource {
     Entered,     // the sale form
     TakeOut,     // packaged goods' Take out, as sold
     Pos,         // imported from the taproom's point of sale
-    TaproomKeg,  // a keg used up in the taproom, counted as sold by the pour
+    TaproomKeg,  // a keg sent to the taproom from packaged goods' Take out (before 0.10)
     Takings,     // the taproom's takings, entered by hand
     KegReturn,   // deposits refunded on kegs brought back
 };
@@ -172,23 +172,16 @@ struct Sale {
 // deposits and other lines.
 std::optional<PriceQuery> price_query(const Sale& sale, const SaleLine& line);
 
+// Whether a line of a sale is the taproom's expected revenue: a keg sold to
+// the taproom, counted as poured. It's an estimate, until the point of sale
+// (or the takings) for that day says what the taproom actually took.
+bool is_expected(const Sale& sale, const SaleLine& line);
+
 // The price list's price for a line of a sale (see price_query): a pour's
-// is its size at the price per liter. A keg used up in the taproom is priced
-// by what it brings in by the pour (see keg_pour_value). nullopt if the
-// price list has none.
+// is its size at the price per liter, and an expected line's is what its keg
+// should bring in by the pour (see keg_pour_value). nullopt if the price
+// list has none.
 std::optional<double> list_price(std::span<const PriceEntry> prices, const Sale& sale, const SaleLine& line);
-
-// --- Taproom revenue ---------------------------------------------------------------
-
-// Where the taproom's revenue is counted from. Whichever it is, the others
-// would count it twice.
-enum class TaproomRevenue {
-    KegsUsedUp,   // each keg taken out for the taproom, as the pours it gives
-    PointOfSale,  // imported from the point of sale's exports
-    Takings,      // each day's takings, entered by hand
-};
-inline constexpr std::array kTaproomRevenues = {TaproomRevenue::KegsUsedUp, TaproomRevenue::PointOfSale,
-                                                TaproomRevenue::Takings};
 
 // --- Point-of-sale exports ------------------------------------------------------------
 
@@ -289,9 +282,6 @@ std::string_view key(SaleSource source);
 std::string_view key(LineKind kind);
 std::optional<SaleSource> sale_source_from_key(std::string_view text);
 std::optional<LineKind> line_kind_from_key(std::string_view text);
-std::string_view name(TaproomRevenue revenue);  // "Kegs used up in the taproom"...
-std::string_view key(TaproomRevenue revenue);
-std::optional<TaproomRevenue> taproom_revenue_from_key(std::string_view text);
 std::string_view name(PosItemKind kind);  // "A pour of beer", "Cans to go"...
 std::string_view key(PosItemKind kind);
 std::optional<PosItemKind> pos_item_kind_from_key(std::string_view text);

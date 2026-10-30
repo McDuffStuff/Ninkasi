@@ -101,8 +101,14 @@ struct Brewery {
         kegs.unit_price = 150.0;
         sale.lines.push_back(kegs);
         sales->record_sale(sale, false);
-        sales->take_to_taproom({.beer = "Red Ale", .type = PackageType::HalfBarrel, .unit_volume_l = 50.0,
-                                .count = 2, .at = day(5)});
+        domain::Sale taproom;
+        taproom.at = day(5);
+        taproom.channel = Channel::Taproom;
+        domain::SaleLine tapped = kegs;
+        tapped.quantity = 2;
+        tapped.unit_price.reset();  // counted as poured
+        taproom.lines.push_back(tapped);
+        sales->record_sale(taproom, false);
 
         const std::int64_t rent = expenses->categories().front().id;
         expenses->add_recurring({0, rent, "Rent", 1000.0, {2026, 9}, std::nullopt});

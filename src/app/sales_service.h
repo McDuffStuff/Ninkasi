@@ -11,7 +11,9 @@
 // A sale's packaged beer leaves packaged goods (see PackagedGoodsService)
 // oldest batch first, each removal linked to the line it was sold on, so
 // what it cost can be traced to its batches. Kegs sold stay out at the
-// customer until they bring them back (return_kegs).
+// customer until they bring them back (return_kegs). Kegs sold to the
+// taproom count as poured, their revenue expected (see domain::is_expected)
+// until the point of sale is imported, or takings entered, for the day.
 
 #include "app/packaged_goods_service.h"
 #include "app/pos_import.h"
@@ -98,18 +100,6 @@ public:
     // deleted (see domain::can_delete).
     void delete_sale(std::int64_t sale_id);
 
-    // --- Taproom revenue -------------------------------------------------------------
-    // Where it's counted from (admins choose).
-    domain::TaproomRevenue taproom_revenue() const { return taproom_revenue_; }
-    void set_taproom_revenue(domain::TaproomRevenue revenue);
-    // Packaged beer taken out for the taproom (packaged goods' Take out).
-    // Where the taproom's revenue is counted from kegs used up, it's also
-    // recorded as a taproom sale, a keg priced by the pours it gives (see
-    // domain::list_price); otherwise it only leaves packaged goods, and the
-    // point of sale or takings say what it brought in. Throws
-    // std::invalid_argument, saving nothing, as PackagedGoodsService::remove does.
-    void take_to_taproom(const PackagedRemoval& removal);
-
     // --- Point-of-sale imports ----------------------------------------------------------
     // How each item on the point of sale is recorded. Anyone importing maps them.
     const std::vector<domain::PosItem>& pos_items() const { return pos_items_; }
@@ -160,7 +150,6 @@ private:
     data::SalesRepository repository_;
     domain::Currency currency_;
     domain::KegDeposits deposits_;
-    domain::TaproomRevenue taproom_revenue_ = domain::TaproomRevenue::KegsUsedUp;
     std::vector<domain::PosItem> pos_items_;
     std::vector<domain::Customer> customers_;
     std::vector<domain::PriceEntry> prices_;

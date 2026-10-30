@@ -155,8 +155,15 @@ void SalesHistoryWindow::draw_list(bool admin) {
             ImGui::TextUnformatted(sale_text(sale, units_).c_str());
             if (admin) {
                 ImGui::TableNextColumn();
+                const bool expected = std::any_of(sale.lines.begin(), sale.lines.end(), [&](const auto& line) {
+                    return domain::is_expected(sale, line);
+                });
                 if (sale.needs_price()) {
                     ImGui::TextColored(kWarningColor, "No price");
+                } else if (expected) {
+                    ImGui::TextDisabled("%s expected", domain::format_money(sale.revenue(), currency).c_str());
+                    ImGui::SetItemTooltip("Kegs sold to the taproom, counted as poured: an estimate until the "
+                                          "point of sale is imported for the day");
                 } else {
                     ImGui::TextUnformatted(domain::format_money(sale.revenue(), currency).c_str());
                 }
@@ -210,6 +217,10 @@ void SalesHistoryWindow::draw_details(domain::Sale& sale, bool admin) {
         ImGui::TableNextColumn();
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(line_text(line, units_).c_str());
+        if (domain::is_expected(sale, line)) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("to the taproom, counted as poured: expected");
+        }
         if (admin) {
             // A price typed here is saved when the field is left.
             ImGui::TableNextColumn();

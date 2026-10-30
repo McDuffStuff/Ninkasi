@@ -70,14 +70,10 @@ void TakingsDialog::draw_form() {
         ImGui::EndTable();
     }
 
-    // Counted another way too, it would be counted twice.
-    const domain::TaproomRevenue revenue = sales_.taproom_revenue();
-    if (channel_ == domain::Channel::Taproom && revenue != domain::TaproomRevenue::Takings) {
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 460.0f * ui_scale_);
-        ImGui::TextColored(kWarningColor, "Counted twice? The taproom's revenue comes from %s (Sales > Price list).",
-                           domain::name(revenue).data());
-        ImGui::PopTextWrapPos();
-    }
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 460.0f * ui_scale_);
+    ImGui::TextDisabled("They replace the day's expected taproom revenue, from the kegs sent to the taproom, as a "
+                        "point-of-sale import would.");
+    ImGui::PopTextWrapPos();
 
     if (!error_.empty()) ImGui::TextColored(kErrorColor, "%s", error_.c_str());
     ImGui::Spacing();

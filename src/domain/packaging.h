@@ -108,13 +108,14 @@ enum class PackagedReason {
     Returned,            // came back to the brewery after being removed
 };
 
-// The reasons beer is taken out of packaged goods, in the order the remove
-// dialog offers them. Counts and returns have their own dialogs.
+// The reasons beer is taken out of packaged goods by hand (packaged goods'
+// Take out), in the order offered. Beer sold, or sent to the taproom, leaves
+// on a sale instead (see SalesService); counts and returns have their own
+// dialogs.
 inline constexpr std::array kRemovalReasons = {
-    PackagedReason::Sold,          PackagedReason::Taproom,  PackagedReason::ConsumedOnPremises,
-    PackagedReason::Exported,      PackagedReason::Research, PackagedReason::LabSamples,
-    PackagedReason::SameOwnership, PackagedReason::Supplies, PackagedReason::Unfit,
-    PackagedReason::Destroyed,     PackagedReason::Lost,
+    PackagedReason::Destroyed, PackagedReason::ConsumedOnPremises, PackagedReason::LabSamples,
+    PackagedReason::Research,  PackagedReason::Exported,           PackagedReason::SameOwnership,
+    PackagedReason::Supplies,  PackagedReason::Unfit,              PackagedReason::Lost,
 };
 
 // Packaged, a count overage and returns add packages; everything else takes them away.

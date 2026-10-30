@@ -32,7 +32,6 @@ private:
     void reload();
     void draw_currency();
     void draw_deposits();
-    void draw_taproom_revenue();
     void draw_channel(domain::Channel channel);
     // Each returns true when the price changed.
     bool sold_as_combo(domain::PriceEntry& price);

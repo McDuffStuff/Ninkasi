@@ -11,6 +11,11 @@
 // Beer counts as sold when it leaves packaged goods for a sale, the
 // taproom, export or ships' supplies (see domain::counts_as_sold), whether
 // or not a sale was recorded for it; revenue comes from the sales recorded.
+//
+// Kegs sent to the taproom are its expected revenue (domain::is_expected).
+// On a day with actual taproom sales (a point-of-sale import or takings),
+// those count instead and the day's expected revenue is left out; on other
+// days the expected revenue counts, and the figures say they're estimates.
 
 #include "app/costing_service.h"
 #include "app/expense_service.h"
@@ -26,6 +31,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -35,6 +41,13 @@ struct InsightsQuery {
     domain::Period period;
     domain::Grouping grouping = domain::Grouping::Month;
     domain::Comparison comparison = domain::Comparison::PreviousPeriod;
+};
+
+// The taproom's expected revenue counted in a period: from kegs sent there
+// on days with no point-of-sale import or takings.
+struct ExpectedRevenue {
+    double amount = 0.0;
+    int days = 0;
 };
 
 // A figure over the period, over the one it's compared with, and per bucket.
@@ -57,6 +70,7 @@ struct Overview {
     std::optional<double> inventory_value;  // admins: today
     int kegs_out = 0;                       // at customers, today
     int beers_to_brew = 0;                  // brew soon or now
+    ExpectedRevenue expected;               // admins: of the revenue
 };
 
 // --- Sales ------------------------------------------------------------------------
@@ -66,8 +80,20 @@ struct Overview {
 // own, or Other for beer simply taken out as sold.
 struct ChannelSeries {
     domain::Channel channel = domain::Channel::Other;
+    bool expected = false;  // the taproom's expected revenue, apart from its actual
     std::vector<double> revenue;
     std::vector<double> volume_l;
+};
+
+// The taproom's expected revenue against what its point of sale says, on
+// the days its sales were imported.
+struct TaproomCheck {
+    std::vector<double> expected;  // by bucket: what the kegs sent there those days should bring in
+    std::vector<double> actual;    // by bucket: its beer those days, as the point of sale says
+    int actual_days = 0;           // days in the period with a point-of-sale import
+    double expected_on_those_days = 0.0;
+    double actual_on_those_days = 0.0;
+    ExpectedRevenue counted;  // expected revenue counted in the period
 };
 
 // One beer's sales.
@@ -87,6 +113,7 @@ struct SalesInsights {
     std::vector<ChannelSeries> channels;  // those with any sales, in kChannels order
     std::vector<BeerSales> beers;         // most sold first
     int unpriced_lines = 0;               // admins: sale lines in the period still without a price
+    std::optional<TaproomCheck> taproom;  // admins
 };
 
 // A beer's sales, looked at closely.
@@ -190,8 +217,9 @@ struct BatchCostRow {
 // --- Profit and loss (admins) -------------------------------------------------------
 
 struct ProfitLossColumn {
-    std::map<domain::Channel, double> revenue;
-    double total_revenue = 0.0;
+    std::map<domain::Channel, double> revenue;  // actual, by channel
+    ExpectedRevenue taproom_expected;           // the taproom's, where there's no actual
+    double total_revenue = 0.0;                 // both
     double cost_of_goods = 0.0;
     double gross_profit = 0.0;
     double excise = 0.0;
@@ -261,6 +289,10 @@ private:
     ProfitLossColumn profit_loss_column(domain::Date from, domain::Date to) const;
     // The beer a batch is, by its id.
     const domain::BatchFacts* batch(std::int64_t id) const;
+    // A line's revenue as counted: an expected line's is left out on a day
+    // with actual taproom sales.
+    double counted(const domain::Sale& sale, const domain::SaleLine& line) const;
+    ExpectedRevenue expected_between(domain::Date from, domain::Date to) const;
     // Days each batch of a beer took from brewing to packaging, oldest first.
     std::map<std::string, std::vector<int>> tank_days_by_beer() const;
     Figure figure(const InsightsQuery& query, const std::vector<domain::Bucket>& buckets,
@@ -276,6 +308,7 @@ private:
     std::optional<std::uint64_t> loaded_stamp_;
     data::AnalyticsData data_;
     std::map<std::int64_t, const domain::Sale*> sale_of_line_;  // by sale line id
+    std::set<domain::Date> actual_days_;  // with a point-of-sale import or takings
     std::uint64_t revision_ = 0;
 };
 

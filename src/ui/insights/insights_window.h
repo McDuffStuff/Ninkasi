@@ -41,6 +41,8 @@ private:
     void draw_sales();
     void draw_sales_bucket(std::size_t bucket);
     void draw_beer_detail();
+    // The taproom's expected revenue against its point of sale's.
+    void draw_taproom_check();
     void draw_stock();
     void draw_ingredients();
     void draw_production();
@@ -99,6 +101,7 @@ private:
     bool table_tanks_ = false;
     bool table_pl_ = false;
     bool table_overview_ = false;
+    bool table_taproom_ = false;
     int tank_days_ = 21;   // planning settings being edited
     int rate_weeks_ = 8;
 };

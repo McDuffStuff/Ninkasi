@@ -142,12 +142,17 @@ TEST_CASE("the overview and sales count beer sold and what it brought in") {
     CHECK(*overview.inventory_value == doctest::Approx(100.0 + 50.0));  // 50 kg of malt, 5 kegs
 
     const app::SalesInsights sales = insights.sales(kSeptember);
-    REQUIRE(sales.channels.size() == 2);
+    // The distributor; the taproom's kegs (volume); its expected revenue.
+    REQUIRE(sales.channels.size() == 3);
     CHECK(sales.channels[0].channel == Channel::Distributor);
     double distributor = 0.0;
     for (double volume : sales.channels[0].volume_l) distributor += volume;
     CHECK(distributor == doctest::Approx(150.0));
     CHECK(sales.channels[1].channel == Channel::Taproom);
+    CHECK(sales.channels[2].expected);
+    double expected = 0.0;
+    for (double revenue : sales.channels[2].revenue) expected += revenue;
+    CHECK(expected == doctest::Approx(kTaproomRevenue));
     REQUIRE(sales.beers.size() == 1);
     CHECK(sales.beers[0].beer == "Red Ale");
     CHECK(sales.beers[0].units.at(PackageType::HalfBarrel) == 5);
@@ -197,7 +202,9 @@ TEST_CASE("the profit and loss takes the cost of goods, excise, losses and expen
     const app::ProfitLoss statement = insights.profit_loss(kSeptember);
     const app::ProfitLossColumn& september = statement.now;
     CHECK(september.revenue.at(Channel::Distributor) == doctest::Approx(450.0));
-    CHECK(september.revenue.at(Channel::Taproom) == doctest::Approx(kTaproomRevenue));
+    CHECK_FALSE(september.revenue.count(Channel::Taproom));  // no actual taproom sales
+    CHECK(september.taproom_expected.amount == doctest::Approx(kTaproomRevenue));
+    CHECK(september.taproom_expected.days == 1);
     CHECK(september.cost_of_goods == doctest::Approx(50.0));
     CHECK(september.excise == near(2.13 * 3.50, 0.01));  // 250 L is 2.13 barrels, at the small brewer's rate
     CHECK(september.total_expenses == doctest::Approx(1000.0));
@@ -228,4 +235,43 @@ TEST_CASE("brewers see volumes, not money") {
     CHECK(insights.sales(kSeptember).beers[0].revenue == 0.0);
     CHECK_THROWS_AS(insights.profit_loss(kSeptember), app::NotAllowed);
     CHECK_THROWS_AS(insights.batch_costs(), app::NotAllowed);
+}
+
+TEST_CASE("the taproom's actual sales replace its expected revenue on the days they're imported") {
+    Brewery brewery;
+    app::InsightsService insights = brewery.insights(brewery.admin);
+    insights.refresh();
+    const app::Overview before = insights.overview(kSeptember);
+    CHECK(before.expected.amount == doctest::Approx(kTaproomRevenue));
+    CHECK(before.expected.days == 1);
+
+    // The 6th, when the kegs went to the taproom, imported from its point of
+    // sale: 180 pints and some food. The 7th's pints count too.
+    brewery.sales->save_pos_item({"Red Ale Pint", domain::PosItemKind::Pour, "Red Ale", 0.473});
+    brewery.sales->save_pos_item({"Pretzel", domain::PosItemKind::Other});
+    const std::vector<domain::PosRow> rows{
+        {{2026, 9, 6}, "Red Ale Pint", 180, 1260.0},
+        {{2026, 9, 6}, "Pretzel", 10, 90.0},
+        {{2026, 9, 7}, "Red Ale Pint", 20, 140.0},
+    };
+    brewery.sales->import_pos("export.csv", rows, false, false);
+    insights.refresh();
+
+    const app::Overview after = insights.overview(kSeptember);
+    CHECK(after.expected.amount == 0.0);
+    CHECK(after.revenue->now == doctest::Approx(450.0 + 1260.0 + 90.0 + 140.0));
+
+    const app::SalesInsights sales = insights.sales(kSeptember);
+    REQUIRE(sales.taproom);
+    CHECK(sales.taproom->actual_days == 2);
+    CHECK(sales.taproom->expected_on_those_days == doctest::Approx(kTaproomRevenue));
+    CHECK(sales.taproom->actual_on_those_days == doctest::Approx(1400.0));  // the pints, not the pretzels
+    double expected = 0.0;
+    for (double value : sales.taproom->expected) expected += value;
+    CHECK(expected == doctest::Approx(kTaproomRevenue));
+    for (const app::ChannelSeries& channel : sales.channels) CHECK_FALSE(channel.expected);
+
+    const app::ProfitLossColumn september = insights.profit_loss(kSeptember).now;
+    CHECK(september.taproom_expected.amount == 0.0);
+    CHECK(september.revenue.at(Channel::Taproom) == doctest::Approx(1490.0));
 }

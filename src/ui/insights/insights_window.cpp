@@ -97,6 +97,36 @@ void section(const char* title) {
     ImGui::SeparatorText(title);
 }
 
+// The chart series of sales by channel: revenue, with the taproom's expected
+// revenue as a series of its own beside its actual; or volume, in the
+// brewery's unit. Channels with nothing in the period are left out.
+std::vector<charts::Series> channel_series(const app::SalesInsights& sales, bool revenue,
+                                           const std::function<double(double)>& in_volume_unit) {
+    std::vector<charts::Series> series;
+    for (const app::ChannelSeries& channel : sales.channels) {
+        charts::Series entry{channel.expected ? "Taproom, expected" : std::string(domain::name(channel.channel)),
+                             channel.expected ? 6 : channel_slot(channel.channel), {}};
+        bool any = false;
+        for (std::size_t i = 0; i < sales.buckets.size(); ++i) {
+            const double value = revenue ? channel.revenue[i] : in_volume_unit(channel.volume_l[i]);
+            entry.values.push_back(value);
+            any = any || value != 0.0;
+        }
+        if (any) series.push_back(std::move(entry));
+    }
+    return series;
+}
+
+// That revenue is partly an estimate: a mark and words, in the warning color.
+void estimate_note(const std::string& amount, int days) {
+    ImGui::PushStyleColor(ImGuiCol_Text, kWarningColor);
+    ImGui::TextWrapped("(!) Estimate: %s of this is the taproom's expected revenue, from kegs sent there on %d %s "
+                       "with no point-of-sale import or takings. Import its sales for those days (Sales > Import "
+                       "POS sales) for what it actually took.",
+                       amount.c_str(), days, days == 1 ? "day" : "days");
+    ImGui::PopStyleColor();
+}
+
 } // namespace
 
 InsightsWindow::InsightsWindow(app::InsightsService& insights, const app::SalesService& sales,
@@ -270,8 +300,9 @@ void InsightsWindow::draw_overview() {
 
     if (overview.revenue) {
         next();
-        charts::stat_tile("revenue", "Revenue", money(overview.revenue->now), overview.revenue->change(), true,
-                          overview.revenue->series, width);
+        charts::stat_tile("revenue", overview.expected.amount > 0.0 ? "Revenue, partly expected" : "Revenue",
+                          money(overview.revenue->now), overview.revenue->change(), true, overview.revenue->series,
+                          width);
     }
     if (overview.gross_margin) {
         next();
@@ -297,19 +328,18 @@ void InsightsWindow::draw_overview() {
                       {}, width);
     ImGui::SetItemTooltip("Beers that run out before a new batch could be ready, or soon will: see Stock & planning");
 
+    if (overview.expected.amount > 0.0) {
+        ImGui::Spacing();
+        estimate_note(money(overview.expected.amount), overview.expected.days);
+    }
+
     // The period's sales by channel, as on the Sales tab.
     section("Sales");
     const app::SalesInsights& sales = *sales_insights_;
     const bool revenue = insights_.money();
     const std::vector<std::string> labels = labels_of(sales.buckets);
-    std::vector<charts::Series> series;
-    for (const app::ChannelSeries& channel : sales.channels) {
-        charts::Series entry{std::string(domain::name(channel.channel)), channel_slot(channel.channel), {}};
-        for (std::size_t i = 0; i < labels.size(); ++i) {
-            entry.values.push_back(revenue ? channel.revenue[i] : in_volume_unit(channel.volume_l[i]));
-        }
-        series.push_back(std::move(entry));
-    }
+    const std::vector<charts::Series> series =
+        channel_series(sales, revenue, [this](double liters) { return in_volume_unit(liters); });
     const charts::Format format = revenue ? charts::Format([this](double v) { return money(v); })
                                           : charts::Format([this](double v) { return number_text(v, 1, " " + volume_unit()); });
     charts::chart_header(revenue ? "Revenue by channel" : "Beer sold by channel", table_overview_,
@@ -341,17 +371,8 @@ void InsightsWindow::draw_sales() {
     }
     const bool revenue = admin && sales_by_revenue_;
     const std::vector<std::string> labels = labels_of(sales.buckets);
-    std::vector<charts::Series> series;
-    for (const app::ChannelSeries& channel : sales.channels) {
-        charts::Series entry{std::string(domain::name(channel.channel)), channel_slot(channel.channel), {}};
-        double total = 0.0;
-        for (std::size_t i = 0; i < labels.size(); ++i) {
-            const double value = revenue ? channel.revenue[i] : in_volume_unit(channel.volume_l[i]);
-            entry.values.push_back(value);
-            total += value;
-        }
-        if (total != 0.0) series.push_back(std::move(entry));
-    }
+    const std::vector<charts::Series> series =
+        channel_series(sales, revenue, [this](double liters) { return in_volume_unit(liters); });
     const charts::Format format = revenue ? charts::Format([this](double v) { return money(v); })
                                           : charts::Format([this](double v) { return number_text(v, 1, " " + volume_unit()); });
     charts::chart_header(revenue ? "Revenue by channel" : "Beer sold by channel", table_sales_,
@@ -367,7 +388,11 @@ void InsightsWindow::draw_sales() {
         bucket_sales_ = insights_.sales_between(bucket.first, bucket.last);
     }
     if (!table_sales_ && !series.empty()) ImGui::TextDisabled("Click a bar for the sales in it.");
+    if (revenue && sales.taproom && sales.taproom->counted.amount > 0.0) {
+        estimate_note(money(sales.taproom->counted.amount), sales.taproom->counted.days);
+    }
     if (sales_bucket_ && *sales_bucket_ < sales.buckets.size()) draw_sales_bucket(*sales_bucket_);
+    if (admin && sales.taproom) draw_taproom_check();
 
     // By beer.
     section("By beer");
@@ -423,6 +448,43 @@ void InsightsWindow::draw_sales() {
     }
     if (sales.beers.empty()) wrapped_note("No beer sold in this period.");
     if (!selected_beer_.empty()) draw_beer_detail();
+}
+
+void InsightsWindow::draw_taproom_check() {
+    const app::SalesInsights& sales = *sales_insights_;
+    const app::TaproomCheck& check = *sales.taproom;
+    const auto any = [](const std::vector<double>& values) {
+        return std::any_of(values.begin(), values.end(), [](double value) { return value != 0.0; });
+    };
+    section("Taproom: expected and actual");
+    if (check.actual_days == 0) {
+        wrapped_note("None of the taproom's sales are imported for this period yet, so its revenue is all "
+                     "expected: what the kegs sent there should bring in, their volume times the yield at the "
+                     "price per fl oz. Import its point of sale (Sales > Import POS sales) to compare.");
+        return;
+    }
+    {
+        ImGui::TextWrapped("On the %d %s imported from the point of sale, the kegs sent to the taproom should have "
+                           "brought in %s; its beer sold for %s (%s).",
+                           check.actual_days, check.actual_days == 1 ? "day" : "days",
+                           money(check.expected_on_those_days).c_str(), money(check.actual_on_those_days).c_str(),
+                           change_text(domain::change(check.actual_on_those_days, check.expected_on_those_days))
+                               .c_str());
+        ImGui::TextDisabled("A keg counts the day it's sent, and is poured over the days after: over weeks they "
+                            "should match.");
+    }
+    const std::vector<std::string> labels = labels_of(sales.buckets);
+    const std::vector<charts::Series> series{{"Expected, from kegs", 6, check.expected},
+                                             {"Actual, from the point of sale", 2, check.actual}};
+    const charts::Format format = [this](double v) { return money(v); };
+    if (!any(check.expected) && !any(check.actual)) return;
+    charts::chart_header("The taproom's beer on the days imported, expected and actual", table_taproom_,
+                         [&] { return charts::series_csv("Period", labels, series); });
+    if (table_taproom_) {
+        charts::series_table("##taproom_table", labels, series, format);
+    } else {
+        charts::grouped_bars("##taproom", labels, series, format, 240.0f * ui_scale_);
+    }
 }
 
 void InsightsWindow::draw_sales_bucket(std::size_t bucket) {
@@ -915,6 +977,7 @@ void InsightsWindow::draw_profit_loss() {
     const app::ProfitLossColumn* before = statement.before ? &*statement.before : nullptr;
     const float s = ui_scale_;
     wrapped_note("A management report from the sales, invoices and expenses recorded, not the brewery's books.");
+    if (now.taproom_expected.amount > 0.0) estimate_note(money(now.taproom_expected.amount), now.taproom_expected.days);
 
     // The statement: each line now, in the comparison period, and the change.
     struct Line {
@@ -942,6 +1005,10 @@ void InsightsWindow::draw_profit_loss() {
         });
         if (value_now == 0.0 && value_before.value_or(0.0) == 0.0) continue;
         add("Revenue, " + std::string(domain::name(channel)), value_now, value_before);
+    }
+    if (now.taproom_expected.amount != 0.0 || (before && before->taproom_expected.amount != 0.0)) {
+        add("Revenue, Taproom (expected)", now.taproom_expected.amount,
+            then([](const auto& c) { return c.taproom_expected.amount; }));
     }
     add("Revenue", now.total_revenue, then([](const auto& c) { return c.total_revenue; }), true);
     add("Cost of goods sold", now.cost_of_goods, then([](const auto& c) { return c.cost_of_goods; }));
@@ -1036,8 +1103,14 @@ void InsightsWindow::draw_profit_loss() {
     }
 
     // How sure it is.
-    if (statement.unpriced_lines > 0 || statement.uncosted_removals > 0 || statement.estimated_batches > 0) {
+    if (statement.unpriced_lines > 0 || statement.uncosted_removals > 0 || statement.estimated_batches > 0 ||
+        now.taproom_expected.amount > 0.0) {
         section("How sure it is");
+        if (now.taproom_expected.amount > 0.0) {
+            ImGui::TextColored(kWarningColor, "%s of the taproom's revenue is expected, on %d %s not yet imported.",
+                               money(now.taproom_expected.amount).c_str(), now.taproom_expected.days,
+                               now.taproom_expected.days == 1 ? "day" : "days");
+        }
         if (statement.unpriced_lines > 0) {
             ImGui::TextColored(kWarningColor, "%d sale %s no price: revenue is short (Sales > Sales history).",
                                statement.unpriced_lines, statement.unpriced_lines == 1 ? "line has" : "lines have");

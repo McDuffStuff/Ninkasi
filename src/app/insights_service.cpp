@@ -99,8 +99,12 @@ void InsightsService::refresh() {
     if (loaded_stamp_ == stamp) return;
     data_ = data::AnalyticsRepository(db_).load();
     sale_of_line_.clear();
+    actual_days_.clear();
     for (const domain::Sale& sale : data_.sales) {
         for (const domain::SaleLine& line : sale.lines) sale_of_line_[line.id] = &sale;
+        if (sale.source == domain::SaleSource::Pos || sale.source == domain::SaleSource::Takings) {
+            actual_days_.insert(domain::local_date(sale.at));
+        }
     }
     if (money()) costing_.refresh(stamp);
     loaded_stamp_ = stamp;
@@ -156,10 +160,33 @@ double InsightsService::brewed_l(domain::Date from, domain::Date to) const {
     return total;
 }
 
+double InsightsService::counted(const domain::Sale& sale, const domain::SaleLine& line) const {
+    if (domain::is_expected(sale, line) && actual_days_.count(domain::local_date(sale.at))) return 0.0;
+    return line.amount();
+}
+
+ExpectedRevenue InsightsService::expected_between(domain::Date from, domain::Date to) const {
+    ExpectedRevenue expected;
+    std::set<domain::Date> days;
+    for (const domain::Sale& sale : data_.sales) {
+        if (!in(from, to, sale.at)) continue;
+        for (const domain::SaleLine& line : sale.lines) {
+            if (!domain::is_expected(sale, line) || actual_days_.count(domain::local_date(sale.at))) continue;
+            expected.amount += line.amount();
+            days.insert(domain::local_date(sale.at));
+        }
+    }
+    expected.days = static_cast<int>(days.size());
+    return expected;
+}
+
 double InsightsService::revenue(domain::Date from, domain::Date to) const {
     double total = 0.0;
     for (const domain::Sale& sale : data_.sales) {
-        if (in(from, to, sale.at)) total += sale.revenue();
+        if (!in(from, to, sale.at)) continue;
+        for (const domain::SaleLine& line : sale.lines) {
+            if (line.kind != domain::LineKind::Deposit) total += counted(sale, line);
+        }
     }
     return total;
 }
@@ -229,6 +256,7 @@ Overview InsightsService::overview(const InsightsQuery& query) const {
         return (earned - costing_.period_costs(domain::start_of(a), domain::end_of(b)).sold) / earned;
     });
     overview.inventory_value = costing_.inventory_value().total();
+    overview.expected = expected_between(query.period.from, query.period.to);
     return overview;
 }
 
@@ -277,28 +305,56 @@ SalesInsights InsightsService::sales(const InsightsQuery& query) const {
         channel_series(channel).volume_l[*bucket] += volume;
     }
 
-    // Revenue, from the sales recorded.
+    // Revenue, from the sales recorded: the taproom's expected revenue apart,
+    // and left out on days with its actual sales.
+    ChannelSeries expected_series;
+    expected_series.channel = domain::Channel::Taproom;
+    expected_series.expected = true;
+    expected_series.revenue.resize(n);
+    expected_series.volume_l.resize(n);
     if (money()) {
+        TaproomCheck check;
+        check.expected.resize(n);
+        check.actual.resize(n);
         for (const domain::Sale& sale : data_.sales) {
             const domain::Date day = domain::local_date(sale.at);
             const std::optional<std::size_t> bucket = domain::bucket_index(insights.buckets, day);
+            const bool actual_day = actual_days_.count(day) > 0;
             for (const domain::SaleLine& line : sale.lines) {
                 if (line.kind == domain::LineKind::Deposit) continue;
+                const double amount = counted(sale, line);
+                const bool expected = domain::is_expected(sale, line);
                 if (!line.beer.empty()) {
                     BeerSales& entry = beer_sales(line.beer);
-                    entry.lifetime_revenue += line.amount();
-                    if (bucket) entry.revenue += line.amount();
+                    entry.lifetime_revenue += amount;
+                    if (bucket) entry.revenue += amount;
                 }
                 if (!bucket) continue;
-                channel_series(sale.channel).revenue[*bucket] += line.amount();
+                (expected ? expected_series : channel_series(sale.channel)).revenue[*bucket] += amount;
                 if (!line.unit_price) ++insights.unpriced_lines;
+                // Expected against actual: the kegs sent, and the point of sale's beer.
+                if (expected && actual_day) {
+                    check.expected[*bucket] += line.amount();
+                    check.expected_on_those_days += line.amount();
+                } else if (sale.source == domain::SaleSource::Pos && line.kind == domain::LineKind::Pour) {
+                    check.actual[*bucket] += line.amount();
+                    check.actual_on_those_days += line.amount();
+                }
             }
         }
+        for (domain::Date day : actual_days_) {
+            if (query.period.contains(day)) ++check.actual_days;
+        }
+        check.counted = expected_between(query.period.from, query.period.to);
+        insights.taproom = std::move(check);
     }
 
     for (domain::Channel channel : domain::kChannels) {
         const auto found = channels.find(channel);
         if (found != channels.end()) insights.channels.push_back(found->second);
+        const bool any_expected = std::any_of(expected_series.revenue.begin(), expected_series.revenue.end(),
+                                              [](double value) { return value != 0.0; });
+        if (channel == domain::Channel::Taproom && any_expected) insights.channels.push_back(expected_series);
     }
     for (auto& [key, entry] : beers) {
         if (entry.volume_l == 0.0 && entry.revenue == 0.0 && !entry.volume_before) continue;
@@ -350,7 +406,7 @@ BeerDetail InsightsService::beer_detail(const std::string& beer, const InsightsQ
             BeerDetail::Customer& customer = customers[name];
             customer.name = name;
             customer.volume_l += line.volume_l();
-            if (money()) customer.revenue += line.amount();
+            if (money()) customer.revenue += counted(sale, line);
         }
     }
     for (auto& [name, customer] : customers) detail.customers.push_back(std::move(customer));
@@ -612,10 +668,14 @@ ProfitLossColumn InsightsService::profit_loss_column(domain::Date from, domain::
     ProfitLossColumn column;
     for (const domain::Sale& sale : data_.sales) {
         if (!in(from, to, sale.at)) continue;
-        const double earned = sale.revenue();
-        column.revenue[sale.channel] += earned;
-        column.total_revenue += earned;
+        for (const domain::SaleLine& line : sale.lines) {
+            if (line.kind == domain::LineKind::Deposit || domain::is_expected(sale, line)) continue;
+            column.revenue[sale.channel] += line.amount();
+            column.total_revenue += line.amount();
+        }
     }
+    column.taproom_expected = expected_between(from, to);
+    column.total_revenue += column.taproom_expected.amount;
     const CostingService::PeriodCosts costs = costing_.period_costs(domain::start_of(from), domain::end_of(to));
     column.cost_of_goods = costs.sold;
     column.beer_lost = costs.lost + costs.dumped;
@@ -655,7 +715,9 @@ ProfitLoss InsightsService::profit_loss(const InsightsQuery& query) const {
         if (!query.period.contains(domain::local_date(sale.at))) continue;
         for (const domain::SaleLine& line : sale.lines) {
             if (!line.unit_price) ++statement.unpriced_lines;
-            if (line.kind != domain::LineKind::Deposit && !line.beer.empty()) beer_margin(line.beer).revenue += line.amount();
+            if (line.kind != domain::LineKind::Deposit && !line.beer.empty()) {
+                beer_margin(line.beer).revenue += counted(sale, line);
+            }
         }
     }
     std::set<std::int64_t> estimated;

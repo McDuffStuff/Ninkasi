@@ -1,6 +1,7 @@
 Ninkasi {version}
 Brewery management: the brewery floor, recipes, batches, inventory,
-packaging, TTB reports and backups, all on this computer.
+packaging, sales, costs and profit, charts of how the brewery is doing,
+TTB reports and backups, all on this computer.
 
 Starting it
   Run ninkasi.exe (or Ninkasi in the Start menu, if you used the
